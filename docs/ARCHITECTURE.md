@@ -60,3 +60,11 @@ SpooVault is an enterprise-grade document custody and secret sharing application
 To prevent client-side leaks of Pinata API credentials:
 - Production requests route through a lightweight proxy script (`scripts/pinata-proxy.mjs`).
 - Upload payloads are authenticated using ephemeral tokens or scoped proxy headers.
+
+---
+
+## 5. Read-Call Caching
+
+`contract.service.ts` caches the results of read-only view calls (`hasActiveAccess`, `getVault`) for a 10-second TTL, keyed by their arguments (document/vault/user), with concurrent duplicate calls deduped into a single underlying request. This avoids re-issuing the same RPC call on every page navigation or component remount. Write actions that change cached state (e.g. `approveAccess`, `acceptGuardianInvite`, `burnAccessToken`) invalidate the relevant cache entries immediately, and `contractService.clear()` resets the cache on wallet disconnect. See `src/utils/ttlCache.ts` for the generic cache implementation.
+
+The Stellar/Soroban path currently has no real RPC calls (reads are `localStorage`-backed mocks pending real Soroban integration — see the `// TODO (Contributor)` markers in `stellar.service.ts`), so this caching layer reduces real RPC volume only on the Avalanche path today. It is wired at the ecosystem-agnostic `proxied*` layer so it applies automatically once real Soroban reads are implemented.

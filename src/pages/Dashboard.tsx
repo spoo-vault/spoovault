@@ -36,8 +36,12 @@ import { formatDistanceToNow } from "date-fns";
 import { buttonClasses } from "../utils/buttonClasses";
 import { shortenAddress } from "../utils/helpers";
 import { captureError } from "../services/telemetry.service";
-import { encryptWithPublicKey } from "../utils/crypto";
+import { encryptWithPublicKey, decryptWithPrivateKey } from "../utils/crypto";
+import { clientKeyringService } from "../services/clientKeyring.service";
+import { verifyShare, parseEncryptedMetadataPayload } from "../services/secrets.service";
+
 import { AuditLogTimeline } from "../components/audit/AuditLogTimeline";
+import { getExplorerTxUrl } from "../utils/explorer";
 import { InheritanceSettings } from "../components/vaults/InheritanceSettings";
 
 const DASHBOARD_CACHE_PREFIX = "spoovault-dashboard-cache";
@@ -464,18 +468,33 @@ const Dashboard = () => {
 
       let encryptedShareForBeneficiary = "";
       if (encryptedShare && encryptedShare.trim()) {
-        if (!window.ethereum) {
-          throw new Error("Web3 provider not found. Please connect your wallet.");
+        if (!account) {
+          throw new Error("Wallet not connected");
         }
 
-        toast("Decrypting key share in your wallet...");
-        const decryptedShare = await window.ethereum.request({
-          method: "eth_decrypt",
-          params: [encryptedShare, account],
-        });
+        toast("Decrypting key share from secure keyring...");
+        const guardianPrivateKey = await clientKeyringService.getDecryptedPrivateKey(account);
+        const decryptedShare = await decryptWithPrivateKey(encryptedShare, guardianPrivateKey);
 
         if (!decryptedShare) {
-          throw new Error("Failed to decrypt share with wallet");
+          throw new Error("Failed to decrypt share with keyring private key");
+        }
+
+        // VSS share verification
+        let doc = documents.find((d) => d.id === approvalInfo.documentId);
+        if (!doc) {
+          const docs = await contractService.fetchDocumentsForVaults([approvalInfo.vaultId]);
+          doc = docs.find((d) => d.id === approvalInfo.documentId);
+        }
+
+        if (doc) {
+          const { commitments } = parseEncryptedMetadataPayload(doc.encryptedMetadata);
+          if (commitments && commitments.length > 0) {
+            const isValid = verifyShare(decryptedShare, commitments);
+            if (!isValid) {
+              throw new Error("Verifiable Secret Sharing (VSS) verification failed: invalid share point received");
+            }
+          }
         }
 
         // Fetch beneficiary's public key
@@ -485,7 +504,7 @@ const Dashboard = () => {
         }
 
         // Re-encrypt the share for the beneficiary
-        encryptedShareForBeneficiary = encryptWithPublicKey(decryptedShare, beneficiaryPubKey);
+        encryptedShareForBeneficiary = await encryptWithPublicKey(decryptedShare, beneficiaryPubKey);
       }
 
       if (encryptedShareForBeneficiary) {
@@ -822,14 +841,25 @@ const Dashboard = () => {
                             ? formatDistanceToNow(new Date(activity.timestamp * 1000), { addSuffix: true })
                             : "-"}
                         </p>
-                        <Chip
-                          color={activity.status === "success" ? "success" : "warning"}
-                          variant="flat"
-                          size="sm"
-                          className="mt-1"
-                        >
-                          {activity.status}
-                        </Chip>
+                        <div className="flex items-center justify-end gap-2 mt-1">
+                          <Chip
+                            color={activity.status === "success" ? "success" : "warning"}
+                            variant="flat"
+                            size="sm"
+                          >
+                            {activity.status}
+                          </Chip>
+                          {activity.txHash && (
+                            <a
+                              href={getExplorerTxUrl(activity.txHash, activity.network)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
+                            >
+                              Tx <FiArrowUpRight className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

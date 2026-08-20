@@ -2,8 +2,10 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import { ethers } from "ethers";
 import { toast } from "react-hot-toast";
 import { contractService } from "../services/contract.service";
-import { stellarService } from "../services/stellar.service";
-import { sorobanEventWatcher } from "../services/sorobanEventWatcher.service";
+import {
+  stellarService,
+  type StellarWalletChangeEvent,
+} from "../services/stellar.service";
 
 const CONTRACT_ABI = [
   "function createVault(string name, string description, address[] guardians, uint256 approvalThreshold) external returns (uint256)",
@@ -39,6 +41,7 @@ interface Web3ContextType {
   isFujiNetwork: boolean;
   ecosystem: "avalanche" | "stellar";
   setEcosystem: (eco: "avalanche" | "stellar") => void;
+  stellarNetwork: string | null;
 }
 
 const Web3Context = createContext<Web3ContextType | undefined>(undefined);
@@ -51,6 +54,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   const [contract, setContract] = useState<ethers.Contract | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [stellarNetwork, setStellarNetwork] = useState<string | null>(null);
 
   const [ecosystem, setEcosystemState] = useState<"avalanche" | "stellar">(() => {
     if (typeof window !== "undefined") {
@@ -77,6 +81,16 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
   const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
   const FUJI_CHAIN_ID = 43113;
+  const EXPECTED_STELLAR_NETWORK = "TESTNET";
+  const validateStellarNetwork = useCallback((network?: string | null) => {
+    if (!network) return;
+    const normalized = String(network).toUpperCase();
+    if (normalized !== EXPECTED_STELLAR_NETWORK) {
+      toast.error(
+        `Freighter is on the wrong network (${network}). Switch to Stellar Testnet to continue.`
+      );
+    }
+  }, []);
   const isMobileDevice = (): boolean => {
     if (typeof navigator === "undefined") return false;
     return /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(
@@ -121,7 +135,11 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
         const address = await stellarService.initialize();
         if (address) {
           setAccount(address);
-          sorobanEventWatcher.start(stellarService.getRpcUrl(), stellarService.getContractId());
+          const network = await stellarService.getNetwork();
+          if (network) {
+            setStellarNetwork(network);
+            validateStellarNetwork(network);
+          }
         }
       } catch (error) {
         console.error("Stellar connection check failed:", error);
@@ -157,7 +175,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error("Error checking connection:", error);
     }
-  }, [initContract, ecosystem]);
+  }, [initContract, ecosystem, validateStellarNetwork]);
 
   useEffect(() => {
     checkConnection();
@@ -194,6 +212,46 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     }
   }, [checkConnection, ecosystem]);
 
+  useEffect(() => {
+    if (ecosystem !== "stellar") {
+      setStellarNetwork(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const handleWalletChange = (event: StellarWalletChangeEvent) => {
+      if (cancelled) return;
+      if (event.account) {
+        setAccount(event.account);
+        toast.success(
+          `Connected Freighter: ${event.account.slice(0, 6)}...${event.account.slice(-4)}`
+        );
+      }
+      if (event.network) {
+        setStellarNetwork(event.network);
+        validateStellarNetwork(event.network);
+      }
+    };
+
+    const unsubscribe = stellarService.subscribeToWalletChanges(handleWalletChange);
+
+    // Validate the currently active network on subscription (environment check).
+    void stellarService
+      .getNetwork()
+      .then((network) => {
+        if (cancelled || !network) return;
+        setStellarNetwork(network);
+        validateStellarNetwork(network);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [ecosystem, validateStellarNetwork]);
+
   const connect = async () => {
     if (ecosystem === "stellar") {
       setIsConnecting(true);
@@ -205,6 +263,11 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
         setSigner(null);
         setChainId(null);
         setContract(null);
+        const network = await stellarService.getNetwork().catch(() => "");
+        if (network) {
+          setStellarNetwork(network);
+          validateStellarNetwork(network);
+        }
         toast.success(`Connected Freighter: ${address.slice(0, 6)}...${address.slice(-4)}`);
       } catch (error: any) {
         toast.error(error.message || "Failed to connect Freighter wallet");
@@ -271,6 +334,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     setAccount(null);
     setChainId(null);
     setContract(null);
+    setStellarNetwork(null);
     contractService.clear();
     if (notify) {
       toast.success("Disconnected");
@@ -337,6 +401,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     isFujiNetwork: ecosystem === "stellar" ? true : chainId === FUJI_CHAIN_ID,
     ecosystem,
     setEcosystem,
+    stellarNetwork,
   };
 
   return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>;

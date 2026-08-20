@@ -18,7 +18,7 @@ Only the latest release tag and master branch are supported with security update
 ## Threat Model & Guarantees
 
 1. **Client-Side Encryption**: Document payloads are encrypted client-side using AES-256-GCM. Unencrypted plaintext never touches the IPFS gateway or smart contract state.
-2. **Key Isolation**: Master keys are zeroized from memory post-encryption. Key shares are encrypted with recipient public keys (TweetNaCl `box`) before transmission.
+2. **Key Isolation**: Master keys are zeroized from memory post-encryption. Key shares are encrypted with recipient public keys using standard Web Crypto API ECIES (ECDH P-256 + AES-256-GCM) before transmission, with client private keys securely stored in browser IndexedDB (encrypted via PBKDF2-SHA256 and AES-256-GCM).
 3. **Threshold Enforcement**: Smart contracts enforce \( k \)-of-\( n \) consensus thresholds before unlocking access grant states.
 
 ---

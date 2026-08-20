@@ -52,6 +52,7 @@
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@vitejs/plugin-react": "^4.0.3",
+    "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.4.14",
     "hardhat": "^2.22.0",
     "hardhat-gas-reporter": "^2.3.0",

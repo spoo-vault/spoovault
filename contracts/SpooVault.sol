@@ -77,6 +77,26 @@ contract SpooVault is ERC721 {
         uint256 lastProofOfLife;
     }
 
+    struct GuardianRemovalProposal {
+        uint256 vaultId;
+        address guardianToRemove;
+        address proposedBy;
+        address[] approvedBy;
+        bool executed;
+        uint256 createdAt;
+        uint256 expiresAt;
+    }
+
+    struct ThresholdUpdateProposal {
+        uint256 vaultId;
+        uint256 newThreshold;
+        address proposedBy;
+        address[] approvedBy;
+        bool executed;
+        uint256 createdAt;
+        uint256 expiresAt;
+    }
+
     error AtLeastOneGuardian();
     error InvalidApprovalThreshold();
     error VaultNotActive();
@@ -100,6 +120,14 @@ contract SpooVault is ERC721 {
     error InvalidInactivityPeriod();
     error VaultNotExist();
     error ReleaseConditionLocked();
+    error GuardianNotExists();
+    error ProposalNotExist();
+    error InsufficientApprovalsForExecution();
+    error InvalidNewThreshold();
+    error ProposalExpired();
+    error CannotRemoveOnlyGuardian();
+    error ProposalAlreadyExecuted();
+    error ApprovalAlreadyGiven();
 
     mapping(uint256 => Vault) public vaults;
     mapping(uint256 => Document) public documents;
@@ -107,7 +135,8 @@ contract SpooVault is ERC721 {
     mapping(uint256 => mapping(address => bool)) public isGuardian;
     mapping(uint256 => mapping(address => bool)) public hasAccess;
     mapping(uint256 => mapping(address => AccessLevel)) public userAccessLevel;
-    mapping(address => GuardianInvite[]) public guardianInvites;
+    mapping(address => mapping(uint256 => GuardianInvite)) public guardianInvites;
+    mapping(address => uint256[]) public userInviteVaultIds;
     mapping(uint256 => mapping(address => bool)) public hasApprovedRequest;
     mapping(uint256 => mapping(address => uint256)) public latestRequestId;
     mapping(uint256 => string) public tokenURIs;
@@ -128,6 +157,12 @@ contract SpooVault is ERC721 {
     mapping(uint256 => mapping(address => uint256)) private _documentAccessVersion;
     mapping(uint256 => VaultReleaseState) private _vaultReleaseStates;
 
+    // Guardian rotation and threshold adjustment governance
+    mapping(uint256 => mapping(address => GuardianRemovalProposal)) public guardianRemovalProposals;
+    mapping(uint256 => mapping(uint256 => ThresholdUpdateProposal)) public thresholdUpdateProposals;
+    mapping(uint256 => mapping(address => mapping(address => bool))) public hasApprovedRemoval;
+    mapping(uint256 => mapping(uint256 => mapping(address => bool))) public hasApprovedThreshold;
+
     event VaultCreated(uint256 indexed vaultId, address indexed creator, string name);
     event GuardianAdded(uint256 indexed vaultId, address indexed guardian);
     event GuardianRemoved(uint256 indexed vaultId, address indexed guardian);
@@ -145,6 +180,11 @@ contract SpooVault is ERC721 {
     event PublicKeyRegistered(address indexed user, string publicKey);
     event GuardianSharesSaved(uint256 indexed documentId);
     event ShareSubmittedForBeneficiary(uint256 indexed requestId, address indexed guardian, string encryptedShare);
+    event GuardianRemovalProposed(uint256 indexed vaultId, address indexed guardian, address indexed proposedBy);
+    event GuardianRemovalApproved(uint256 indexed vaultId, address indexed guardian, address indexed approver);
+    event ThresholdUpdateProposed(uint256 indexed vaultId, uint256 newThreshold, address indexed proposedBy);
+    event ThresholdUpdateApproved(uint256 indexed vaultId, uint256 newThreshold, address indexed approver);
+    event VaultReconfigurationExecuted(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold);
 
     function registerPublicKey(string calldata publicKey) external {
         userPublicKeys[msg.sender] = publicKey;
@@ -220,14 +260,16 @@ contract SpooVault is ERC721 {
                 continue;
             }
 
-            guardianInvites[guardian].push(
-                GuardianInvite({
-                    guardian: guardian,
-                    vaultId: vaultId,
-                    accepted: false,
-                    expiresAt: block.timestamp + 7 days
-                })
-            );
+            if (guardianInvites[guardian][vaultId].expiresAt == 0) {
+                userInviteVaultIds[guardian].push(vaultId);
+            }
+            guardianInvites[guardian][vaultId] = GuardianInvite({
+                guardian: guardian,
+                vaultId: vaultId,
+                accepted: false,
+                expiresAt: block.timestamp + 7 days
+            });
+
         }
 
         emit VaultCreated(vaultId, msg.sender, name);
@@ -241,33 +283,17 @@ contract SpooVault is ERC721 {
         if (!vaults[vaultId].isActive) revert VaultNotActive();
         if (isGuardian[vaultId][msg.sender]) revert AlreadyGuardian();
 
-        GuardianInvite[] storage invites = guardianInvites[msg.sender];
-        bool hasInvite = false;
-        bool hasExpiredInvite = false;
+        GuardianInvite storage invite = guardianInvites[msg.sender][vaultId];
 
-        for (uint256 i = 0; i < invites.length; i++) {
-            GuardianInvite storage invite = invites[i];
-            if (invite.vaultId != vaultId || invite.accepted) {
-                continue;
-            }
+        if (invite.guardian == address(0)) revert NoValidInvite();
+        if (invite.accepted) revert NoValidInvite();
+        if (invite.expiresAt <= block.timestamp) revert InviteExpired();
 
-            hasInvite = true;
+        invite.accepted = true;
+        isGuardian[vaultId][msg.sender] = true;
+        vaults[vaultId].guardians.push(msg.sender);
 
-            if (invite.expiresAt <= block.timestamp) {
-                hasExpiredInvite = true;
-                continue;
-            }
-
-            invite.accepted = true;
-            isGuardian[vaultId][msg.sender] = true;
-            vaults[vaultId].guardians.push(msg.sender);
-
-            emit GuardianAdded(vaultId, msg.sender);
-            return;
-        }
-
-        if (hasExpiredInvite) revert InviteExpired();
-        if (!hasInvite) revert NoValidInvite();
+        emit GuardianAdded(vaultId, msg.sender);
     }
 
     /**
@@ -432,6 +458,178 @@ contract SpooVault is ERC721 {
             state.lastProofOfLife,
             unlocked
         );
+    }
+
+    /**
+     * @dev Propose removal of a guardian from the vault.
+     * Requires majority consensus (>50%) of guardians to approve before execution.
+     */
+    function proposeGuardianRemoval(uint256 vaultId, address guardianToRemove) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+        if (!isGuardian[vaultId][guardianToRemove]) revert GuardianNotExists();
+        if (vaults[vaultId].guardians.length <= 1) revert CannotRemoveOnlyGuardian();
+
+        GuardianRemovalProposal storage proposal = guardianRemovalProposals[vaultId][guardianToRemove];
+        
+        if (proposal.createdAt != 0 && proposal.expiresAt > block.timestamp && !proposal.executed) {
+            revert ProposalNotExist();
+        }
+
+        uint256 expiresAt = block.timestamp + 7 days;
+        guardianRemovalProposals[vaultId][guardianToRemove] = GuardianRemovalProposal({
+            vaultId: vaultId,
+            guardianToRemove: guardianToRemove,
+            proposedBy: msg.sender,
+            approvedBy: new address[](0),
+            executed: false,
+            createdAt: block.timestamp,
+            expiresAt: expiresAt
+        });
+
+        emit GuardianRemovalProposed(vaultId, guardianToRemove, msg.sender);
+    }
+
+    /**
+     * @dev Approve a guardian removal proposal.
+     * Once >50% of guardians approve, the proposal is ready for execution.
+     */
+    function approveGuardianRemoval(uint256 vaultId, address guardianToRemove) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+
+        GuardianRemovalProposal storage proposal = guardianRemovalProposals[vaultId][guardianToRemove];
+        if (proposal.createdAt == 0) revert ProposalNotExist();
+        if (proposal.expiresAt <= block.timestamp) revert ProposalExpired();
+        if (proposal.executed) revert ProposalAlreadyExecuted();
+        if (hasApprovedRemoval[vaultId][guardianToRemove][msg.sender]) revert ApprovalAlreadyGiven();
+
+        hasApprovedRemoval[vaultId][guardianToRemove][msg.sender] = true;
+        proposal.approvedBy.push(msg.sender);
+
+        emit GuardianRemovalApproved(vaultId, guardianToRemove, msg.sender);
+    }
+
+    /**
+     * @dev Propose an update to the vault's approval threshold.
+     * Requires majority consensus (>50%) of guardians to approve before execution.
+     */
+    function proposeThresholdUpdate(uint256 vaultId, uint256 newThreshold) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+        if (newThreshold == 0 || newThreshold > vaults[vaultId].guardians.length) {
+            revert InvalidNewThreshold();
+        }
+
+        ThresholdUpdateProposal storage proposal = thresholdUpdateProposals[vaultId][newThreshold];
+        
+        if (proposal.createdAt != 0 && proposal.expiresAt > block.timestamp && !proposal.executed) {
+            revert ProposalNotExist();
+        }
+
+        uint256 expiresAt = block.timestamp + 7 days;
+        thresholdUpdateProposals[vaultId][newThreshold] = ThresholdUpdateProposal({
+            vaultId: vaultId,
+            newThreshold: newThreshold,
+            proposedBy: msg.sender,
+            approvedBy: new address[](0),
+            executed: false,
+            createdAt: block.timestamp,
+            expiresAt: expiresAt
+        });
+
+        emit ThresholdUpdateProposed(vaultId, newThreshold, msg.sender);
+    }
+
+    /**
+     * @dev Approve a threshold update proposal.
+     * Once >50% of guardians approve, the proposal is ready for execution.
+     */
+    function approveThresholdUpdate(uint256 vaultId, uint256 newThreshold) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+
+        ThresholdUpdateProposal storage proposal = thresholdUpdateProposals[vaultId][newThreshold];
+        if (proposal.createdAt == 0) revert ProposalNotExist();
+        if (proposal.expiresAt <= block.timestamp) revert ProposalExpired();
+        if (proposal.executed) revert ProposalAlreadyExecuted();
+        if (hasApprovedThreshold[vaultId][newThreshold][msg.sender]) revert ApprovalAlreadyGiven();
+
+        hasApprovedThreshold[vaultId][newThreshold][msg.sender] = true;
+        proposal.approvedBy.push(msg.sender);
+
+        emit ThresholdUpdateApproved(vaultId, newThreshold, msg.sender);
+    }
+
+    /**
+     * @dev Execute vault reconfiguration after guardian removal and/or threshold update approvals.
+     * Both proposals (if pending) must have >50% guardian consensus to execute.
+     * Execution is atomic: both changes are applied together or not at all.
+     */
+    function executeVaultReconfiguration(
+        uint256 vaultId,
+        address guardianToRemove,
+        uint256 newThreshold
+    ) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+
+        Vault storage vault = vaults[vaultId];
+        uint256 currentGuardianCount = vault.guardians.length;
+        uint256 requiredApprovals = (currentGuardianCount / 2) + 1;
+
+        GuardianRemovalProposal storage removalProposal = guardianRemovalProposals[vaultId][guardianToRemove];
+        ThresholdUpdateProposal storage thresholdProposal = thresholdUpdateProposals[vaultId][newThreshold];
+
+        bool hasRemovalProposal = removalProposal.createdAt != 0 && !removalProposal.executed && removalProposal.expiresAt > block.timestamp;
+        bool hasThresholdProposal = thresholdProposal.createdAt != 0 && !thresholdProposal.executed && thresholdProposal.expiresAt > block.timestamp;
+
+        if (!hasRemovalProposal && !hasThresholdProposal) {
+            revert ProposalNotExist();
+        }
+
+        if (hasRemovalProposal) {
+            if (removalProposal.approvedBy.length < requiredApprovals) {
+                revert InsufficientApprovalsForExecution();
+            }
+
+            _removeGuardian(vaultId, guardianToRemove);
+            removalProposal.executed = true;
+
+            currentGuardianCount--;
+        }
+
+        if (hasThresholdProposal) {
+            if (thresholdProposal.approvedBy.length < requiredApprovals) {
+                revert InsufficientApprovalsForExecution();
+            }
+
+            if (newThreshold > currentGuardianCount) {
+                revert InvalidNewThreshold();
+            }
+
+            vault.approvalThreshold = newThreshold;
+            thresholdProposal.executed = true;
+        }
+
+        emit VaultReconfigurationExecuted(vaultId, guardianToRemove, newThreshold);
+    }
+
+    /**
+     * @dev Internal helper to remove a guardian from a vault.
+     */
+    function _removeGuardian(uint256 vaultId, address guardianToRemove) internal {
+        Vault storage vault = vaults[vaultId];
+        
+        for (uint256 i = 0; i < vault.guardians.length; i++) {
+            if (vault.guardians[i] == guardianToRemove) {
+                vault.guardians[i] = vault.guardians[vault.guardians.length - 1];
+                vault.guardians.pop();
+                break;
+            }
+        }
+
+        isGuardian[vaultId][guardianToRemove] = false;
+        emit GuardianRemoved(vaultId, guardianToRemove);
     }
 
     function _addDocument(
@@ -649,11 +847,12 @@ contract SpooVault is ERC721 {
      * @dev Get user's pending invites.
      */
     function getPendingInvites(address user) external view returns (GuardianInvite[] memory) {
-        GuardianInvite[] storage invites = guardianInvites[user];
+        uint256[] storage vaultIds = userInviteVaultIds[user];
         uint256 count = 0;
 
-        for (uint256 i = 0; i < invites.length; i++) {
-            if (!invites[i].accepted && invites[i].expiresAt > block.timestamp) {
+        for (uint256 i = 0; i < vaultIds.length; i++) {
+            GuardianInvite storage invite = guardianInvites[user][vaultIds[i]];
+            if (!invite.accepted && invite.expiresAt > block.timestamp) {
                 count++;
             }
         }
@@ -661,9 +860,10 @@ contract SpooVault is ERC721 {
         GuardianInvite[] memory pending = new GuardianInvite[](count);
         uint256 index = 0;
 
-        for (uint256 i = 0; i < invites.length; i++) {
-            if (!invites[i].accepted && invites[i].expiresAt > block.timestamp) {
-                pending[index] = invites[i];
+        for (uint256 i = 0; i < vaultIds.length; i++) {
+            GuardianInvite storage invite = guardianInvites[user][vaultIds[i]];
+            if (!invite.accepted && invite.expiresAt > block.timestamp) {
+                pending[index] = invite;
                 index++;
             }
         }

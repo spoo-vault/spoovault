@@ -8,10 +8,12 @@ import {
   FiShare2,
   FiPlusCircle,
   FiKey,
+  FiArrowUpRight,
 } from "react-icons/fi";
 import { formatDistanceToNow } from "date-fns";
 import { VaultData, DocumentData, ActivityEvent } from "../../services/contract.service";
 import { auditService } from "../../services/audit.service";
+import { getExplorerTxUrl } from "../../utils/explorer";
 import { toast } from "react-hot-toast";
 
 export interface AuditLogTimelineProps {
@@ -107,9 +109,21 @@ export const AuditLogTimeline: React.FC<AuditLogTimelineProps> = ({
                   <span className="text-slate-400 font-mono">
                     Actor: <span className="text-slate-300 font-sans">{act.actor}</span>
                   </span>
-                  <span className="inline-flex items-center text-emerald-400 font-medium">
-                    <FiCheckCircle className="w-3 h-3 mr-1" /> {act.status}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {act.txHash && (
+                      <a
+                        href={getExplorerTxUrl(act.txHash, act.network)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-blue-400 hover:text-blue-300 font-medium"
+                      >
+                        Tx <FiArrowUpRight className="w-3 h-3 ml-0.5" />
+                      </a>
+                    )}
+                    <span className="inline-flex items-center text-emerald-400 font-medium">
+                      <FiCheckCircle className="w-3 h-3 mr-1" /> {act.status}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

@@ -35,3 +35,12 @@ Thumbs.db
 firebase-debug.log
 .firebase
 dev.log
+
+# Hardhat
+artifacts/
+cache/
+
+# Rust / Soroban
+target/
+contracts-stellar/target/
+

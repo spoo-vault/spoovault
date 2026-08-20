@@ -9,9 +9,15 @@ crate-type = ["cdylib"]
 [dependencies]
 soroban-sdk = "20.0.0"
 
+[dev-dependencies]
+soroban-sdk = { version = "20.0.0", features = ["testutils"] }
+
 [profile.release]
 opt-level = "z"
 overflow-checks = true
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[patch.crates-io]
+ethnum = { path = "patches/ethnum" }

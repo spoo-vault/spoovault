@@ -61,7 +61,7 @@ import { buttonClasses } from "../utils/buttonClasses";
 import { captureError } from "../services/telemetry.service";
 import { keyInboxService } from "../services/keyInbox.service";
 import { keyStoreService } from "../services/keyStore.service";
-import { splitSecret } from "../services/secrets.service";
+import { splitSecretVSS, parseEncryptedMetadataPayload } from "../services/secrets.service";
 import { encryptWithPublicKey } from "../utils/crypto";
 
 type WordArray = { words: number[]; sigBytes: number };
@@ -238,7 +238,8 @@ const Documents = () => {
     const key = getStoredKey(doc.id);
     if (!key) return null;
     try {
-      const raw = decryptData(doc.encryptedMetadata, key);
+      const { ciphertext } = parseEncryptedMetadataPayload(doc.encryptedMetadata);
+      const raw = decryptData(ciphertext, key);
       return JSON.parse(raw);
     } catch {
       return null;
@@ -383,7 +384,7 @@ const Documents = () => {
         return;
       }
 
-      const encryptedKey = encryptWithPublicKey(key, beneficiaryPubKey);
+      const encryptedKey = await encryptWithPublicKey(key, beneficiaryPubKey);
 
       const payload = {
         version: 1,
@@ -468,7 +469,7 @@ const Documents = () => {
         return;
       }
 
-      const encryptedKey = encryptWithPublicKey(key, beneficiaryPubKey);
+      const encryptedKey = await encryptWithPublicKey(key, beneficiaryPubKey);
 
       await keyInboxService.sendKeyEnvelope({
         version: 1,
@@ -651,11 +652,21 @@ const Documents = () => {
         type: selectedFile.type,
         lastModified: selectedFile.lastModified,
       };
-      const encryptedMetadata = encryptData(JSON.stringify(metadata), key);
-      const encryptedFile = await encryptFile(selectedFile, key);
       
-      // Split symmetric key using Shamir's Secret Sharing (SSS)
-      const keyShares = splitSecret(key, vault.guardians.length, vault.approvalThreshold);
+      // Split symmetric key using Feldmann Verifiable Secret Sharing (VSS)
+      const { shares: keyShares, commitments } = splitSecretVSS(
+        key,
+        vault.guardians.length,
+        vault.approvalThreshold
+      );
+
+      const ciphertext = encryptData(JSON.stringify(metadata), key);
+      const encryptedMetadata = JSON.stringify({
+        ciphertext,
+        commitments,
+      });
+
+      const encryptedFile = await encryptFile(selectedFile, key);
       
       // Encrypt each share for each guardian using their public key
       const encryptedShares: string[] = [];
@@ -663,7 +674,7 @@ const Documents = () => {
         const guardian = vault.guardians[i];
         const pubKey = guardianPubKeys[guardian];
         const share = keyShares[i];
-        const encrypted = encryptWithPublicKey(share, pubKey);
+        const encrypted = await encryptWithPublicKey(share, pubKey);
         encryptedShares.push(encrypted);
       }
 

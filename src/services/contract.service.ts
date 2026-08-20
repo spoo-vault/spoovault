@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { stellarService } from "./stellar.service";
+import { TtlCache } from "../utils/ttlCache";
 
 export interface VaultData {
   id: number;
@@ -10,6 +11,7 @@ export interface VaultData {
   approvalThreshold: number;
   isActive: boolean;
   createdAt: number;
+  network?: "avalanche" | "stellar";
 }
 
 export interface DocumentData {
@@ -35,6 +37,8 @@ export interface ActivityEvent {
   actor: string;
   timestamp: number;
   status: "success" | "pending";
+  txHash?: string;
+  network?: "avalanche" | "stellar";
 }
 
 export interface AccessRequestData {
@@ -124,6 +128,17 @@ let readContract: ethers.Contract | null = null;
 let writeContract: ethers.Contract | null = null;
 let verifiedAddress: string | null = null;
 let hasVerifiedCode = false;
+
+// Read-only view calls (hasActiveAccess, getVault) are idempotent within a short
+// window, so cache them for a bounded TTL instead of re-hitting the RPC endpoint
+// on every render/navigation. See invalidation calls in the write paths below.
+const VIEW_CALL_TTL_MS = 10_000;
+const hasActiveAccessCache = new TtlCache<boolean>(VIEW_CALL_TTL_MS);
+const getVaultCache = new TtlCache<any>(VIEW_CALL_TTL_MS);
+
+const clearAccessCache = (): void => hasActiveAccessCache.clear();
+const invalidateVaultCache = (vaultId: number): void =>
+  getVaultCache.invalidate(`getVault:${vaultId}`);
 
 const FUJI_RPC_URLS = [
   "https://api.avax-test.network/ext/bc/C/rpc",
@@ -643,6 +658,8 @@ const clear = (): void => {
   writeContract = null;
   verifiedAddress = null;
   hasVerifiedCode = false;
+  hasActiveAccessCache.clear();
+  getVaultCache.clear();
 };
 
 const isReady = (): boolean => !!readContract;
@@ -840,6 +857,8 @@ const acceptGuardianInvite = async (vaultId: number): Promise<void> => {
   const contract = ensureWriteContract();
   const tx = await contract.acceptGuardianInvite(vaultId);
   await waitForReceipt(tx);
+  // Guardian is pushed onto vault.guardians on-chain, which getVault() returns.
+  invalidateVaultCache(vaultId);
 };
 
 const mintAccessToken = async (
@@ -860,6 +879,10 @@ const mintAccessToken = async (
     try {
       const parsed = iface.parseLog(log);
       if (parsed && parsed.name === "NFTMinted") {
+        // Minting a vault pass does not retroactively grant hasActiveAccess for
+        // any document: access is only ever set by _grantAccess() inside
+        // approveAccess, and a request already rejected for lacking a token
+        // stays rejected. No cache invalidation needed here.
         return Number(parsed.args.tokenId);
       }
     } catch {
@@ -874,7 +897,15 @@ const burnAccessToken = async (tokenId: number): Promise<void> => {
   const contract = ensureWriteContract();
   const tx = await contract.burnAccessToken(tokenId);
   await waitForReceipt(tx);
+  // Burning bumps the vault's access version on-chain, revoking every prior
+  // grant for that owner+vault in O(1). We can't cheaply resolve which cached
+  // (documentId, user) keys that affects from here, so clear the whole
+  // hasActiveAccess cache rather than risk serving a stale "still has access".
+  clearAccessCache();
 };
+
+const cachedGetVault = (contract: ethers.Contract, vaultId: number): Promise<any> =>
+  getVaultCache.getOrFetch(`getVault:${vaultId}`, () => contract.getVault(vaultId));
 
 const mapVaultData = (vault: any): VaultData => ({
   id: Number(vault[0]),
@@ -885,6 +916,7 @@ const mapVaultData = (vault: any): VaultData => ({
   approvalThreshold: Number(vault[5]),
   isActive: vault[6],
   createdAt: Number(vault[7]),
+  network: "avalanche",
 });
 
 const mapDocumentData = (doc: any): DocumentData => ({
@@ -908,7 +940,7 @@ const fetchVaultsByIds = async (vaultIds: number[]): Promise<VaultData[]> => {
   const vaults = await Promise.all(
     uniqueIds.map(async (id) => {
       try {
-        const vault = await contract.getVault(id);
+        const vault = await cachedGetVault(contract, id);
         return mapVaultData(vault);
       } catch {
         return null;
@@ -927,7 +959,7 @@ const fetchVaults = async (): Promise<VaultData[]> => {
     new Set(logs.map((entry) => Number(entry.parsed.args.vaultId)))
   );
 
-  const vaults = await Promise.all(ids.map((id) => contract.getVault(id)));
+  const vaults = await Promise.all(ids.map((id) => cachedGetVault(contract, id)));
   return vaults.map((vault) => mapVaultData(vault));
 };
 
@@ -1057,7 +1089,10 @@ const hasActiveAccess = async (
   await ensureContractDeployed();
   const contract = ensureReadContract();
   try {
-    const allowed = await contract.hasActiveAccess(documentId, user);
+    const allowed = await hasActiveAccessCache.getOrFetch(
+      `hasActiveAccess:avalanche:${documentId}:${user.toLowerCase()}`,
+      () => contract.hasActiveAccess(documentId, user)
+    );
     return Boolean(allowed);
   } catch {
     return false;
@@ -1078,7 +1113,10 @@ const getActiveAccessMap = async (
   const entries = await Promise.all(
     documentIds.map(async (documentId) => {
       try {
-        const allowed = await contract.hasActiveAccess(documentId, user);
+        const allowed = await hasActiveAccessCache.getOrFetch(
+          `hasActiveAccess:avalanche:${documentId}:${user.toLowerCase()}`,
+          () => contract.hasActiveAccess(documentId, user)
+        );
         return [documentId, Boolean(allowed)] as const;
       } catch {
         return [documentId, false] as const;
@@ -1317,7 +1355,7 @@ const fetchPendingApprovalsForGuardian = async (
       const vaultId = Number(document[1]);
       let vault = vaultCache.get(vaultId);
       if (!vault) {
-        vault = await contract.getVault(vaultId);
+        vault = await cachedGetVault(contract, vaultId);
         vaultCache.set(vaultId, vault);
       }
 
@@ -1408,6 +1446,23 @@ const fetchUserTokens = async (account: string): Promise<TokenData[]> => {
     .sort((a, b) => b.tokenId - a.tokenId);
 };
 
+const hasVaultToken = async (account: string, vaultId: number): Promise<boolean> => {
+  if (!account || !vaultId || vaultId <= 0) return false;
+  try {
+    await ensureContractDeployed();
+    const contract = ensureReadContract();
+    const result = await contract.hasVaultToken(account, vaultId);
+    return Boolean(result);
+  } catch {
+    try {
+      const userTokens = await fetchUserTokens(account);
+      return userTokens.some((t) => t.vaultId === vaultId);
+    } catch {
+      return false;
+    }
+  }
+};
+
 const getActivePassCountByVault = async (
   vaultIds: number[]
 ): Promise<Record<number, number>> => {
@@ -1461,6 +1516,7 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
   await ensureContractDeployed();
   const contract = ensureReadContract();
   const perEventTail = Math.max(limit * 6, 40);
+  const network = getEcosystem();
   const [vaultLogs, documentLogs, requestLogs, nftLogs] = await Promise.all([
     getEventLogs("VaultCreated", { tail: perEventTail }),
     getEventLogs("DocumentAdded", { tail: perEventTail }),
@@ -1489,6 +1545,7 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
     limited.map(async (entry) => {
       const timestamp = await getBlockTimestamp(entry.log.blockNumber, blockCache);
       const name = entry.parsed.name;
+      const txHash = entry.log.transactionHash;
 
       if (name === "VaultCreated") {
         return {
@@ -1496,6 +1553,8 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
           actor: entry.parsed.args.creator,
           timestamp,
           status: "success" as const,
+          txHash,
+          network,
         };
       }
 
@@ -1507,6 +1566,8 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
             actor: doc[4],
             timestamp,
             status: "success" as const,
+            txHash,
+            network,
           };
         } catch {
           return {
@@ -1514,6 +1575,8 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
             actor: "Unknown",
             timestamp,
             status: "success" as const,
+            txHash,
+            network,
           };
         }
       }
@@ -1524,6 +1587,8 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
           actor: entry.parsed.args.requester,
           timestamp,
           status: "pending" as const,
+          txHash,
+          network,
         };
       }
 
@@ -1533,6 +1598,8 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
           actor: entry.parsed.args.to,
           timestamp,
           status: "success" as const,
+          txHash,
+          network,
         };
       }
 
@@ -1541,6 +1608,8 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
         actor: "Unknown",
         timestamp,
         status: "success" as const,
+        txHash,
+        network,
       };
     })
   );
@@ -1597,14 +1666,22 @@ const proxiedRequestAccess = async (documentId: number): Promise<number> => {
 
 const proxiedApproveAccess = async (requestId: number, encryptedShareForBeneficiary?: string): Promise<void> => {
   if (getEcosystem() === "stellar") {
-    return stellarService.approveAccess(requestId, encryptedShareForBeneficiary);
+    await stellarService.approveAccess(requestId, encryptedShareForBeneficiary);
+  } else {
+    await approveAccess(requestId, encryptedShareForBeneficiary);
   }
-  return approveAccess(requestId, encryptedShareForBeneficiary);
+  // Approval can flip hasActiveAccess for the requester on both ecosystems.
+  clearAccessCache();
 };
 
 const proxiedAcceptGuardianInvite = async (vaultId: number): Promise<void> => {
   if (getEcosystem() === "stellar") {
-    return stellarService.acceptGuardianInvite(vaultId);
+    await stellarService.acceptGuardianInvite(vaultId);
+    // Stellar's hasActiveAccess check grants access directly to a document's
+    // vault guardians (see proxiedHasActiveAccess below), unlike the EVM
+    // contract where guardianship alone never grants document access.
+    clearAccessCache();
+    return;
   }
   return acceptGuardianInvite(vaultId);
 };
@@ -1675,25 +1752,30 @@ const proxiedHasActiveAccess = async (documentId: number, user: string): Promise
   if (getEcosystem() === "stellar") {
     const account = stellarService.getAccount();
     if (!account) return false;
-    const vaults = await stellarService.fetchVaultsForAccount(account);
-    const docs = await stellarService.fetchDocumentsForVaults(vaults.map(v => v.id));
-    const doc = docs.find(d => d.id === documentId);
-    if (!doc) return false;
-    if (doc.uploadedBy.toLowerCase() === account.toLowerCase()) return true;
-    
-    const vault = vaults.find(v => v.id === doc.vaultId);
-    if (vault?.guardians.some(g => g.toLowerCase() === account.toLowerCase())) return true;
-    
-    try {
-      const requestsRaw = localStorage.getItem("spoovault-stellar-mock-requests");
-      if (requestsRaw) {
-        const requests = JSON.parse(requestsRaw) as any[];
-        return requests.some(
-          r => r.documentId === documentId && r.requester.toLowerCase() === account.toLowerCase() && r.status === 1
-        );
+    return hasActiveAccessCache.getOrFetch(
+      `hasActiveAccess:stellar:${documentId}:${account.toLowerCase()}`,
+      async () => {
+        const vaults = await stellarService.fetchVaultsForAccount(account);
+        const docs = await stellarService.fetchDocumentsForVaults(vaults.map(v => v.id));
+        const doc = docs.find(d => d.id === documentId);
+        if (!doc) return false;
+        if (doc.uploadedBy.toLowerCase() === account.toLowerCase()) return true;
+
+        const vault = vaults.find(v => v.id === doc.vaultId);
+        if (vault?.guardians.some(g => g.toLowerCase() === account.toLowerCase())) return true;
+
+        try {
+          const requestsRaw = localStorage.getItem("spoovault-stellar-mock-requests");
+          if (requestsRaw) {
+            const requests = JSON.parse(requestsRaw) as any[];
+            return requests.some(
+              r => r.documentId === documentId && r.requester.toLowerCase() === account.toLowerCase() && r.status === 1
+            );
+          }
+        } catch {}
+        return false;
       }
-    } catch {}
-    return false;
+    );
   }
   return hasActiveAccess(documentId, user);
 };
@@ -1739,6 +1821,42 @@ const proxiedGetLatestRequestsForUser = async (
   return getLatestRequestsForUser(user, documentIds);
 };
 
+const proxiedFetchUserTokens = async (account: string): Promise<TokenData[]> => {
+  if (getEcosystem() === "stellar") {
+    return stellarService.fetchUserTokens(account) as unknown as Promise<TokenData[]>;
+  }
+  return fetchUserTokens(account);
+};
+
+const proxiedHasVaultToken = async (
+  account: string,
+  vaultId: number,
+  network?: "avalanche" | "stellar"
+): Promise<boolean> => {
+  const targetNetwork = network || getEcosystem();
+  try {
+    if (targetNetwork === "stellar") {
+      return await stellarService.hasVaultToken(account, vaultId);
+    } else if (targetNetwork === "avalanche") {
+      return await hasVaultToken(account, vaultId);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+};
+
+const proxiedMintAccessToken = async (
+  vaultId: number,
+  to: string,
+  tokenURI: string
+): Promise<number> => {
+  if (getEcosystem() === "stellar") {
+    return stellarService.mintAccessToken(vaultId, to, tokenURI);
+  }
+  return mintAccessToken(vaultId, to, tokenURI);
+};
+
 export const contractService = {
   initialize,
   clear,
@@ -1748,7 +1866,7 @@ export const contractService = {
   requestAccess: proxiedRequestAccess,
   approveAccess: proxiedApproveAccess,
   acceptGuardianInvite: proxiedAcceptGuardianInvite,
-  mintAccessToken,
+  mintAccessToken: proxiedMintAccessToken,
   burnAccessToken,
   fetchVaults,
   fetchVaultsByIds,
@@ -1756,7 +1874,8 @@ export const contractService = {
   fetchDocuments,
   fetchDocumentsForVaults: proxiedFetchDocumentsForVaults,
   fetchPendingInvites: proxiedFetchPendingInvites,
-  fetchUserTokens,
+  fetchUserTokens: proxiedFetchUserTokens,
+  hasVaultToken: proxiedHasVaultToken,
   getActivePassCountByVault,
   getTotalSupply,
   hasActiveAccess: proxiedHasActiveAccess,

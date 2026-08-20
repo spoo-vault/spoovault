@@ -1,5 +1,7 @@
-const { expect } = require("chai");
-const { ethers } = require("hardhat");
+import { expect } from "chai";
+import hre from "hardhat";
+const { ethers } = hre;
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("SpooVault EVM Contract Unit Tests", function () {
   let spooVault;
@@ -31,7 +33,7 @@ describe("SpooVault EVM Contract Unit Tests", function () {
   describe("Vault Creation & Guardian Thresholds", function () {
     it("should create a vault with valid threshold and guardian invite list", async function () {
       const guardians = [guardian1.address, guardian2.address];
-      const threshold = 2; // threshold out of owner + 2 guardians = 3 total
+      const threshold = 2;
 
       const tx = await spooVault.connect(owner).createVault(
         "Executive Vault",
@@ -72,7 +74,7 @@ describe("SpooVault EVM Contract Unit Tests", function () {
       const guardians = [guardian1.address];
       await spooVault.connect(owner).createVault("Inheritance Vault", "Desc", guardians, 1);
 
-      await expect(spooVault.connect(owner).recordProofOfLife(1))
+      await expect(spooVault.connect(owner).proveLife(1))
         .to.emit(spooVault, "ProofOfLifeRecorded");
     });
 
@@ -80,9 +82,75 @@ describe("SpooVault EVM Contract Unit Tests", function () {
       const guardians = [guardian1.address];
       await spooVault.connect(owner).createVault("Emergency Vault", "Desc", guardians, 1);
 
-      await expect(spooVault.connect(owner).toggleEmergencyMode(1, true))
+      await expect(spooVault.connect(owner).setEmergencyMode(1, true))
         .to.emit(spooVault, "EmergencyModeUpdated")
         .withArgs(1, true);
+    });
+  });
+
+  describe("Guardian Invites", function () {
+    it("should allow a guardian to accept an invite and become an active guardian", async function () {
+      await spooVault.connect(owner).createVault("Vault A", "Desc", [guardian1.address], 1);
+
+      const pendingBefore = await spooVault.getPendingInvites(guardian1.address);
+      expect(pendingBefore.length).to.equal(1);
+      expect(pendingBefore[0].vaultId).to.equal(1);
+      expect(pendingBefore[0].accepted).to.equal(false);
+
+      await expect(spooVault.connect(guardian1).acceptGuardianInvite(1))
+        .to.emit(spooVault, "GuardianAdded")
+        .withArgs(1, guardian1.address);
+
+      const pendingAfter = await spooVault.getPendingInvites(guardian1.address);
+      expect(pendingAfter.length).to.equal(0);
+
+      const vault = await spooVault.vaults(1);
+      expect(vault.guardians).to.include(guardian1.address);
+    });
+
+    it("should revert acceptGuardianInvite for non-existent invite", async function () {
+      await spooVault.connect(owner).createVault("Vault A", "Desc", [guardian2.address], 1);
+
+      await expect(
+        spooVault.connect(guardian1).acceptGuardianInvite(1)
+      ).to.be.revertedWithCustomError(spooVault, "NoValidInvite");
+    });
+
+    it("should return pending invites for a user across multiple vaults", async function () {
+      await spooVault.connect(owner).createVault("Vault A", "Desc", [guardian1.address], 1);
+      await spooVault.connect(owner).createVault("Vault B", "Desc", [guardian1.address], 1);
+
+      const pending = await spooVault.getPendingInvites(guardian1.address);
+      expect(pending.length).to.equal(2);
+      const vaultIds = pending.map((inv) => Number(inv.vaultId)).sort();
+      expect(vaultIds).to.deep.equal([1, 2]);
+    });
+
+    it("should not include accepted invites in getPendingInvites", async function () {
+      await spooVault.connect(owner).createVault("Vault A", "Desc", [guardian1.address], 1);
+      await spooVault.connect(guardian1).acceptGuardianInvite(1);
+
+      const pending = await spooVault.getPendingInvites(guardian1.address);
+      expect(pending.length).to.equal(0);
+    });
+
+    it("should revert acceptGuardianInvite for expired invite", async function () {
+      await spooVault.connect(owner).createVault("Vault A", "Desc", [guardian1.address], 1);
+
+      await time.increase(7 * 24 * 60 * 60 + 1);
+
+      await expect(
+        spooVault.connect(guardian1).acceptGuardianInvite(1)
+      ).to.be.revertedWithCustomError(spooVault, "InviteExpired");
+    });
+
+    it("should exclude expired invites from getPendingInvites", async function () {
+      await spooVault.connect(owner).createVault("Vault A", "Desc", [guardian1.address], 1);
+
+      await time.increase(7 * 24 * 60 * 60 + 1);
+
+      const pending = await spooVault.getPendingInvites(guardian1.address);
+      expect(pending.length).to.equal(0);
     });
   });
 });
