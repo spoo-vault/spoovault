@@ -11,6 +11,8 @@ import {
   toVaultGID,
   parseVaultGID,
   getVaultGID,
+  buildVaultDocumentCounts,
+  keyRecordByVaultGID,
 } from '../utils/helpers';
 
 describe('Helper Utilities', () => {
@@ -100,6 +102,56 @@ describe('Helper Utilities', () => {
       expect(getVaultGID('stellar', null, 1)).toBe('stellar-testnet:1');
       expect(getVaultGID('avalanche', 43113, 1)).toBe('43113:1');
       expect(getVaultGID('avalanche', null, 2)).toBe('43113:2');
+    });
+  });
+  describe('buildVaultDocumentCounts (cross-chain cache safety)', () => {
+    it('should key document counts by VaultGID, not raw numeric id', () => {
+      const vaults = [{ id: 1 }];
+      const docs = [{ vaultId: 1 }, { vaultId: 1 }, { vaultId: 1 }];
+
+      const counts = buildVaultDocumentCounts('avalanche', 43113, vaults, docs);
+      expect(counts).toEqual({ '43113:1': 3 });
+    });
+
+    it('should not let a same-numbered vault on another chain leak into the count', () => {
+      const vaults = [{ id: 1 }];
+      const docs = [{ vaultId: 1 }];
+
+      const avalancheCounts = buildVaultDocumentCounts('avalanche', 43113, vaults, docs);
+      const stellarCounts = buildVaultDocumentCounts('stellar', null, vaults, docs);
+
+      expect(avalancheCounts['43113:1']).toBe(1);
+      expect(stellarCounts['stellar-testnet:1']).toBe(1);
+      expect(avalancheCounts['stellar-testnet:1']).toBeUndefined();
+      expect(stellarCounts['43113:1']).toBeUndefined();
+    });
+
+    it('should ignore documents belonging to vaults outside the visible set', () => {
+      const vaults = [{ id: 1 }];
+      const docs = [{ vaultId: 1 }, { vaultId: 2 }];
+
+      const counts = buildVaultDocumentCounts('avalanche', 43113, vaults, docs);
+      expect(counts).toEqual({ '43113:1': 1 });
+    });
+  });
+
+  describe('keyRecordByVaultGID (cross-chain cache safety)', () => {
+    it('should re-key a raw numeric-id record onto composite VaultGID', () => {
+      const raw = { '1': { emergencyMode: false }, '2': { emergencyMode: true } };
+
+      const result = keyRecordByVaultGID('avalanche', 43113, raw);
+      expect(result).toEqual({
+        '43113:1': { emergencyMode: false },
+        '43113:2': { emergencyMode: true },
+      });
+    });
+
+    it('should never fall back to a bare numeric key that could collide across chains', () => {
+      const raw = { '1': { emergencyMode: true } };
+
+      const result = keyRecordByVaultGID('stellar', null, raw);
+      expect(result).toEqual({ 'stellar-testnet:1': { emergencyMode: true } });
+      expect(result['1']).toBeUndefined();
     });
   });
 });

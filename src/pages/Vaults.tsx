@@ -39,11 +39,10 @@ import { useWeb3 } from "../context/Web3Context";
 import {
   contractService,
   VaultData,
-  DocumentData,
   VaultReleaseState,
 } from "../services/contract.service";
 import { toast } from "react-hot-toast";
-import { shortenAddress, isValidAddress, formatDate, getVaultGID } from "../utils/helpers";
+import { shortenAddress, isValidAddress, formatDate, getVaultGID, buildVaultDocumentCounts, keyRecordByVaultGID } from "../utils/helpers";
 import { buttonClasses } from "../utils/buttonClasses";
 
 interface Vault extends VaultData {
@@ -110,32 +109,22 @@ const Vaults = () => {
 
       const visibleVaults = vaultsData;
 
-      const visibleVaultSet = new Set<number>(visibleVaults.map((vault) => vault.id));
-      const docCounts: Record<number, number> = {};
-      docsData.forEach((doc: DocumentData) => {
-        if (visibleVaultSet.has(doc.vaultId)) {
-          docCounts[doc.vaultId] = (docCounts[doc.vaultId] || 0) + 1;
-        }
-      });
+      const docCounts = buildVaultDocumentCounts(ecosystem, chainId, visibleVaults, docsData);
 
-      const enriched: Vault[] = visibleVaults.map((vault) => ({
-        ...vault,
-        gid: getVaultGID(ecosystem, chainId, vault.id),
-        documentCount: docCounts[vault.id] || 0,
-      }));
+      const enriched: Vault[] = visibleVaults.map((vault) => {
+        const gid = getVaultGID(ecosystem, chainId, vault.id);
+        return {
+          ...vault,
+          gid,
+          documentCount: docCounts[gid] || 0,
+        };
+      });
 
       setVaults(enriched);
       const releaseStates = await contractService.fetchVaultReleaseStates(
         visibleVaults.map((vault) => vault.id)
       );
-      const keyedReleaseStates: Record<string, VaultReleaseState> = {};
-      Object.entries(releaseStates).forEach(([vaultIdStr, state]) => {
-        const numId = Number(vaultIdStr);
-        const gid = getVaultGID(ecosystem, chainId, numId);
-        keyedReleaseStates[gid] = state;
-        keyedReleaseStates[vaultIdStr] = state;
-      });
-      setReleaseStatesByVault(keyedReleaseStates);
+      setReleaseStatesByVault(keyRecordByVaultGID(ecosystem, chainId, releaseStates));
     } catch (error) {
       console.error("Error loading vaults:", error);
       const message = error instanceof Error ? error.message : "Failed to load vaults";
@@ -243,7 +232,7 @@ const Vaults = () => {
           documentCount: 0,
         };
         setVaults((prev: Vault[]) => {
-          const existingIndex = prev.findIndex((vault: Vault) => vault.gid === gid || vault.id === vaultId);
+          const existingIndex = prev.findIndex((vault: Vault) => vault.gid === gid);
           if (existingIndex >= 0) {
             const copy = [...prev];
             copy[existingIndex] = optimisticVault;
@@ -259,12 +248,7 @@ const Vaults = () => {
             lastProofOfLife: nowTs,
             postDeathUnlocked: false,
           },
-          [vaultId]: {
-            emergencyMode: false,
-            inactivityPeriod: draftForm.inactivityDays * 24 * 60 * 60,
-            lastProofOfLife: nowTs,
-            postDeathUnlocked: false,
-          },
+          
         }));
         try {
           await contractService.configureVaultRelease(
@@ -512,7 +496,7 @@ const Vaults = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredVaults.map((vault: Vault) => {
-            const releaseState = releaseStatesByVault[vault.gid] ?? releaseStatesByVault[vault.id] ?? {
+            const releaseState = releaseStatesByVault[vault.gid] ?? {
               emergencyMode: false,
               inactivityPeriod: 30 * 24 * 60 * 60,
               lastProofOfLife: vault.createdAt,
