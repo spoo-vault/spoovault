@@ -10,8 +10,23 @@
 // ---------------------------------------------------------------------------
 // Lightweight freighter shim – replaced by real API when package is present
 // ---------------------------------------------------------------------------
-type FreighterShim = { isConnected: () => Promise<boolean>; getAddress: () => Promise<string> };
-let _freighter: FreighterShim | null = null;
+export type FreighterShim = {
+  isConnected: () => Promise<boolean>;
+  getAddress: () => Promise<string>;
+  signTransaction: (xdr: string, opts?: any) => Promise<string>;
+  signAuthEntry: (preimageXdr: string, opts?: any) => Promise<{ signedAuthEntry: string; error?: string }>;
+};
+
+let _freighter: any = null;
+let _stellarSdk: any = null;
+
+export const setMockFreighter = (mock: any) => {
+  _freighter = mock;
+};
+
+export const setMockStellarSdk = (mock: any) => {
+  _stellarSdk = mock;
+};
 
 const loadFreighter = async (): Promise<FreighterShim> => {
   if (_freighter) return _freighter;
@@ -20,15 +35,33 @@ const loadFreighter = async (): Promise<FreighterShim> => {
     const dynamicImport = new Function("specifier", "return import(specifier)");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mod = await dynamicImport("@stellar/freighter-api") as any;
-    _freighter = { isConnected: mod.isConnected, getAddress: mod.getAddress };
+    _freighter = {
+      isConnected: mod.isConnected,
+      getAddress: mod.getAddress,
+      signTransaction: mod.signTransaction,
+      signAuthEntry: mod.signAuthEntry,
+    };
   } catch {
     // Package not installed – graceful fallback stubs
     _freighter = {
       isConnected: async () => false,
       getAddress: async () => "",
+      signTransaction: async () => "",
+      signAuthEntry: async () => ({ signedAuthEntry: "" }),
     };
   }
   return _freighter;
+};
+
+const loadStellarSdk = async (): Promise<any> => {
+  if (_stellarSdk) return _stellarSdk;
+  try {
+    const dynamicImport = new Function("specifier", "return import(specifier)");
+    _stellarSdk = await dynamicImport("@stellar/stellar-sdk");
+  } catch {
+    throw new Error("Stellar SDK is not installed or failed to load");
+  }
+  return _stellarSdk;
 };
 
 export interface StellarVaultData {
@@ -187,6 +220,165 @@ interface MockInvite {
   expiresAt: number;
 }
 
+const executeSorobanQuery = async (
+  functionName: string,
+  args: any[]
+): Promise<any> => {
+  const sdk = await loadStellarSdk();
+  const server = new sdk.rpc.Server(sorobanRpcUrl);
+  const contractAddress = getContractId();
+  
+  const sourceAddress = activeAccount || "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+  const sourceAccount = new sdk.Account(sourceAddress, "0");
+  
+  const scArgs = args.map(arg => {
+    if (typeof arg === "string" && arg.startsWith("G") && arg.length === 56) {
+      return sdk.nativeToScVal(new sdk.Address(arg));
+    }
+    return sdk.nativeToScVal(arg);
+  });
+  
+  const op = sdk.Operation.invokeContractFunction({
+    contract: new sdk.Address(contractAddress),
+    function: functionName,
+    args: scArgs,
+  });
+  
+  const tx = new sdk.TransactionBuilder(sourceAccount, {
+    fee: "100",
+    networkPassphrase: sdk.Networks.TESTNET,
+  })
+    .addOperation(op)
+    .setTimeout(30)
+    .build();
+    
+  const simulation = await server.simulateTransaction(tx);
+  if (sdk.rpc.Api.isSimulationError(simulation)) {
+    throw new Error(`Simulation failed: ${simulation.error}`);
+  }
+  
+  if (simulation.results && simulation.results.length > 0) {
+    const result = simulation.results[0];
+    if (result.retval) {
+      return sdk.scValToNative(result.retval);
+    }
+  }
+  return null;
+};
+
+const executeSorobanCall = async (
+  functionName: string,
+  args: any[]
+): Promise<any> => {
+  if (!activeAccount) throw new Error("Wallet not connected");
+  
+  const sdk = await loadStellarSdk();
+  const server = new sdk.rpc.Server(sorobanRpcUrl);
+  const contractAddress = getContractId();
+  
+  // 1. Fetch source account
+  const sourceAccount = await server.getAccount(activeAccount);
+  
+  // 2. Convert arguments
+  const scArgs = args.map(arg => {
+    if (typeof arg === "string" && arg.startsWith("G") && arg.length === 56) {
+      return sdk.nativeToScVal(new sdk.Address(arg));
+    }
+    if (Array.isArray(arg)) {
+      return sdk.nativeToScVal(arg.map(item => {
+        if (typeof item === "string" && item.startsWith("G") && item.length === 56) {
+          return new sdk.Address(item);
+        }
+        return item;
+      }));
+    }
+    return sdk.nativeToScVal(arg);
+  });
+  
+  // 3. Build Operation & Base transaction
+  const op = sdk.Operation.invokeContractFunction({
+    contract: new sdk.Address(contractAddress),
+    function: functionName,
+    args: scArgs,
+  });
+  
+  const tx = new sdk.TransactionBuilder(sourceAccount, {
+    fee: "100",
+    networkPassphrase: sdk.Networks.TESTNET,
+  })
+    .addOperation(op)
+    .setTimeout(60)
+    .build();
+    
+  // 4. Simulate transaction
+  const simulation = await server.simulateTransaction(tx);
+  if (sdk.rpc.Api.isSimulationError(simulation)) {
+    throw new Error(`Simulation failed: ${simulation.error}`);
+  }
+  
+  // 5. Sign auth entries (simulation entries) before Freighter submission
+  if (simulation.results && simulation.results.length > 0) {
+    const result = simulation.results[0];
+    if (result.auth && result.auth.length > 0) {
+      const freighter = await loadFreighter();
+      for (let i = 0; i < result.auth.length; i++) {
+        const entry = result.auth[i];
+        const preimageXdr = entry.preimage().toXDR("base64");
+        
+        const signResponse = await freighter.signAuthEntry(preimageXdr);
+        if (signResponse.error) {
+          throw new Error(`Freighter auth entry signing failed: ${signResponse.error}`);
+        }
+        
+        if (signResponse.signedAuthEntry) {
+          const signedEntryXdr = signResponse.signedAuthEntry;
+          const parsedEntry = sdk.xdr.SorobanAuthorizationEntry.fromXDR(signedEntryXdr, "base64");
+          result.auth[i] = parsedEntry;
+        }
+      }
+    }
+  }
+  
+  // 6. Assemble the transaction with simulated data
+  const preparedTx = sdk.rpc.assembleTransaction(tx, simulation).build();
+  
+  // 7. Request Freighter user signature for transaction envelope
+  const freighter = await loadFreighter();
+  const signedXdr = await freighter.signTransaction(preparedTx.toXDR(), {
+    network: "TESTNET"
+  });
+  
+  if (!signedXdr) {
+    throw new Error("Transaction signing rejected or failed");
+  }
+  
+  // 8. Submit the transaction
+  const signedTx = sdk.TransactionBuilder.fromXDR(signedXdr, sdk.Networks.TESTNET);
+  const response = await server.sendTransaction(signedTx);
+  if (response.status === "ERROR") {
+    throw new Error(`Transaction submission failed: ${JSON.stringify(response.errorResult)}`);
+  }
+  
+  // 9. Poll for status
+  let pollAttempts = 0;
+  while (pollAttempts < 30) {
+    const txStatus = await server.getTransaction(response.hash);
+    if (txStatus.status === "SUCCESS") {
+      if (simulation.results && simulation.results.length > 0 && simulation.results[0].retval) {
+        return sdk.scValToNative(simulation.results[0].retval);
+      }
+      return null;
+    } else if (txStatus.status === "FAILED") {
+      throw new Error(`Transaction execution failed: ${JSON.stringify(txStatus.resultXdr)}`);
+    }
+    const delayMs = typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 1000;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    pollAttempts++;
+  }
+  
+  throw new Error("Transaction polling timed out");
+};
+
 const createVault = async (
   name: string,
   description: string,
@@ -197,11 +389,19 @@ const createVault = async (
 
   // If contract is set up, perform genuine Soroban call
   if (isConfigured()) {
-    // TODO (Contributor): Build and submit a Soroban transaction here.
-    // Use sorobanRpcUrl + contractId with @stellar/stellar-sdk and Freighter.
-    // See CONTRIBUTING.md for setup instructions.
-    void sorobanRpcUrl; // referenced to avoid unused-variable lint
-    console.log("Soroban create_vault: contract skeleton ready at", sorobanRpcUrl);
+    try {
+      const vaultId = await executeSorobanCall("create_vault", [
+        activeAccount,
+        name,
+        description,
+        guardians,
+        approvalThreshold,
+      ]);
+      return Number(vaultId);
+    } catch (err) {
+      console.error("Soroban create_vault failed:", err);
+      throw err;
+    }
   }
 
   // Fallback to Mock Database for instantaneous UI execution and debugging
@@ -268,6 +468,25 @@ const addDocument = async (
 ): Promise<number> => {
   if (!activeAccount) throw new Error("Wallet not connected");
 
+  if (isConfigured()) {
+    try {
+      const docId = await executeSorobanCall("add_document", [
+        activeAccount,
+        vaultId,
+        encryptedMetadata,
+        ipfsHash,
+        requiredAccess,
+        releaseCondition,
+        guardiansList,
+        shares
+      ]);
+      return Number(docId);
+    } catch (err) {
+      console.error("Soroban add_document failed:", err);
+      throw err;
+    }
+  }
+
   const docs = getMockStorage<MockDocument[]>("documents", []);
   const nextId = docs.length + 1;
 
@@ -302,6 +521,19 @@ const fetchDocumentsForVaults = async (vaultIds: number[]): Promise<StellarDocum
 const requestAccess = async (documentId: number): Promise<number> => {
   if (!activeAccount) throw new Error("Wallet not connected");
 
+  if (isConfigured()) {
+    try {
+      const requestId = await executeSorobanCall("request_access", [
+        activeAccount,
+        documentId
+      ]);
+      return Number(requestId);
+    } catch (err) {
+      console.error("Soroban request_access failed:", err);
+      throw err;
+    }
+  }
+
   const requests = getMockStorage<MockRequest[]>("requests", []);
   const nextId = requests.length + 1;
 
@@ -323,6 +555,20 @@ const requestAccess = async (documentId: number): Promise<number> => {
 
 const approveAccess = async (requestId: number, encryptedShareForBeneficiary?: string): Promise<void> => {
   if (!activeAccount) throw new Error("Wallet not connected");
+
+  if (isConfigured()) {
+    try {
+      await executeSorobanCall("approve_access", [
+        activeAccount,
+        requestId,
+        encryptedShareForBeneficiary || null
+      ]);
+      return;
+    } catch (err) {
+      console.error("Soroban approve_access failed:", err);
+      throw err;
+    }
+  }
 
   const requests = getMockStorage<MockRequest[]>("requests", []);
   const reqIdx = requests.findIndex((r) => r.requestId === requestId);
@@ -412,6 +658,19 @@ const getPendingInvites = async (account: string): Promise<MockInvite[]> => {
 const acceptGuardianInvite = async (vaultId: number): Promise<void> => {
   if (!activeAccount) throw new Error("Wallet not connected");
 
+  if (isConfigured()) {
+    try {
+      await executeSorobanCall("accept_guardian_invite", [
+        activeAccount,
+        vaultId
+      ]);
+      return;
+    } catch (err) {
+      console.error("Soroban accept_guardian_invite failed:", err);
+      throw err;
+    }
+  }
+
   const invites = getMockStorage<MockInvite[]>("invites", []);
   const invIdx = invites.findIndex(
     (inv) => inv.vaultId === vaultId && inv.guardian.toLowerCase() === activeAccount!.toLowerCase()
@@ -434,12 +693,37 @@ const acceptGuardianInvite = async (vaultId: number): Promise<void> => {
 
 const registerPublicKey = async (publicKey: string): Promise<void> => {
   if (!activeAccount) throw new Error("Wallet not connected");
+
+  if (isConfigured()) {
+    try {
+      await executeSorobanCall("register_public_key", [
+        activeAccount,
+        publicKey
+      ]);
+      return;
+    } catch (err) {
+      console.error("Soroban register_public_key failed:", err);
+      throw err;
+    }
+  }
+
   const pubKeys = getMockStorage<Record<string, string>>("public_keys", {});
   pubKeys[activeAccount] = publicKey;
   saveMockStorage("public_keys", pubKeys);
 };
 
 const getUserPublicKey = async (user: string): Promise<string> => {
+  if (isConfigured()) {
+    try {
+      const pubKey = await executeSorobanQuery("get_public_key", [
+        user
+      ]);
+      return pubKey || "";
+    } catch (err) {
+      console.error("Soroban get_public_key failed:", err);
+    }
+  }
+
   const pubKeys = getMockStorage<Record<string, string>>("public_keys", {});
   return pubKeys[user] || "";
 };
@@ -478,7 +762,11 @@ const hasVaultToken = async (account: string, vaultId: number): Promise<boolean>
     if (hasMockToken) return true;
 
     if (isConfigured()) {
-      void sorobanRpcUrl;
+      const hasToken = await executeSorobanQuery("has_vault_token", [
+        account,
+        vaultId
+      ]);
+      return !!hasToken;
     }
     return false;
   } catch (error) {
@@ -492,6 +780,20 @@ const mintAccessToken = async (
   to: string,
   tokenURI: string
 ): Promise<number> => {
+  if (isConfigured()) {
+    try {
+      const tokenId = await executeSorobanCall("mint_access_token", [
+        vaultId,
+        to,
+        tokenURI
+      ]);
+      return Number(tokenId);
+    } catch (err) {
+      console.error("Soroban mint_access_token failed:", err);
+      throw err;
+    }
+  }
+
   const tokens = getMockStorage<MockToken[]>("tokens", []);
   const nextId = tokens.length + 1;
   const newToken: MockToken = {
@@ -529,4 +831,6 @@ export const stellarService = {
   hasVaultToken,
   mintAccessToken,
   isConfigured,
+  setMockStellarSdk,
+  setMockFreighter,
 };
