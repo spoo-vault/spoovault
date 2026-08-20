@@ -40,7 +40,6 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", () => {
       const pin = "secure-pin-9876";
       await clientKeyringService.generateAndSaveKeyPair(testAccount, pin);
 
-
       const record = await clientKeyringService.getKeyPairRecord(testAccount);
       expect(record?.hasPin).toBe(true);
 

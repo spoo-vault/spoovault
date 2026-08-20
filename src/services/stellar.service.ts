@@ -1,8 +1,5 @@
-// Stellar SDK packages are optional runtime dependencies for Soroban support.
-// They are loaded lazily through an eval-style import so that TypeScript's
-// static module resolution never fails at build time.
-// Contributors who want full Soroban support should run:
-//   npm install @stellar/freighter-api @stellar/stellar-sdk
+// Stellar SDK packages are loaded lazily so Soroban support stays out of the
+// initial application bundle while Vite can still split them into vendor chunks.
 //
 // import { isConnected, getAddress } from "@stellar/freighter-api";
 // import { rpc } from "@stellar/stellar-sdk";
@@ -61,10 +58,8 @@ export const setMockStellarSdk = (mock: any) => {
 const loadFreighter = async (): Promise<FreighterShim> => {
   if (_freighter) return _freighter;
   try {
-    // Use new Function to bypass TypeScript's static import analysis
-    const dynamicImport = new Function("specifier", "return import(specifier)");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mod = await dynamicImport("@stellar/freighter-api") as any;
+    const mod = await import("@stellar/freighter-api") as any;
     _freighter = {
       isConnected: async () => {
         try {
@@ -116,8 +111,7 @@ const loadFreighter = async (): Promise<FreighterShim> => {
 const loadStellarSdk = async (): Promise<any> => {
   if (_stellarSdk) return _stellarSdk;
   try {
-    const dynamicImport = new Function("specifier", "return import(specifier)");
-    _stellarSdk = await dynamicImport("@stellar/stellar-sdk");
+    _stellarSdk = await import("@stellar/stellar-sdk");
   } catch {
     throw new Error("Stellar SDK is not installed or failed to load");
   }
@@ -548,7 +542,7 @@ const executeSorobanCall = async (
       for (let i = 0; i < result.auth.length; i++) {
         const entry = result.auth[i];
         const preimageXdr = entry.preimage().toXDR("base64");
-        
+
         const signResponse = await freighter.signAuthEntry(preimageXdr);
         if (signResponse.error) {
           throw new Error(`Freighter auth entry signing failed: ${signResponse.error}`);

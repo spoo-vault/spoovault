@@ -62,7 +62,6 @@ import { captureError } from "../services/telemetry.service";
 import { keyInboxService } from "../services/keyInbox.service";
 import { keyStoreService } from "../services/keyStore.service";
 import { splitSecretVSS, parseEncryptedMetadataPayload } from "../services/secrets.service";
-
 import { encryptWithPublicKey } from "../utils/crypto";
 
 type WordArray = { words: number[]; sigBytes: number };

@@ -47,9 +47,6 @@ export function gfInverse(a: number): number {
   return EXP_TABLE[255 - LOG_TABLE[val]];
 }
 
-
-
-
 /**
  * Reconstruct a single byte from K shares
  * shares is an array of [x, y] coordinates
