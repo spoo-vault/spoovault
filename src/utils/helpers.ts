@@ -54,7 +54,7 @@ export const formatFileSize = (bytes: number): string => {
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };
 
 /**
@@ -113,7 +113,7 @@ export const reconstructKey = (parts: string[]): string => {
  * Generate a unique request ID
  */
 export const generateRequestId = (): string => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
 };
 
 /**
@@ -124,10 +124,39 @@ export const getCurrentYear = (): number => {
 };
 
 /**
- * Check if IPFS is configured
+ * Format composite global vault identifier (VaultGID)
+ * e.g. "43113:1" or "stellar-testnet:1"
  */
-export const isIPFSConfigured = (): boolean => {
-  return ipfsService.isConfigured();
+export const toVaultGID = (chainIdentifier: number | string, vaultId: number | string): string => {
+  return `${chainIdentifier}:${vaultId}`;
+};
+
+/**
+ * Parse a composite global vault identifier (VaultGID)
+ */
+export const parseVaultGID = (gid: string): { chainId: string; vaultId: number } => {
+  const parts = gid.split(":");
+  if (parts.length >= 2) {
+    const chainId = parts[0];
+    const vaultId = Number.parseInt(parts[1], 10);
+    return { chainId, vaultId: Number.isNaN(vaultId) ? 0 : vaultId };
+  }
+  const numeric = Number.parseInt(gid, 10);
+  return { chainId: "43113", vaultId: Number.isNaN(numeric) ? 0 : numeric };
+};
+
+/**
+ * Get standard VaultGID based on active ecosystem and chainId
+ */
+export const getVaultGID = (
+  ecosystem: "avalanche" | "stellar",
+  chainId: number | null,
+  vaultId: number
+): string => {
+  if (ecosystem === "stellar") {
+    return toVaultGID("stellar-testnet", vaultId);
+  }
+  return toVaultGID(chainId || 43113, vaultId);
 };
 
 

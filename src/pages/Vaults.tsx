@@ -43,10 +43,11 @@ import {
   VaultReleaseState,
 } from "../services/contract.service";
 import { toast } from "react-hot-toast";
-import { shortenAddress, isValidAddress, formatDate } from "../utils/helpers";
+import { shortenAddress, isValidAddress, formatDate, getVaultGID } from "../utils/helpers";
 import { buttonClasses } from "../utils/buttonClasses";
 
 interface Vault extends VaultData {
+  gid: string;
   documentCount: number;
 }
 
@@ -55,10 +56,10 @@ const Vaults = () => {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "mine" | "inactive">("all");
   const [searchParams] = useSearchParams();
-  const { account, isConnected, connect, provider, signer, isFujiNetwork } = useWeb3();
+  const { account, isConnected, connect, provider, signer, isFujiNetwork, ecosystem, chainId } = useWeb3();
 
   const [vaults, setVaults] = useState<Vault[]>([]);
-  const [releaseStatesByVault, setReleaseStatesByVault] = useState<Record<number, VaultReleaseState>>({});
+  const [releaseStatesByVault, setReleaseStatesByVault] = useState<Record<string, VaultReleaseState>>({});
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [togglingEmergencyVaultId, setTogglingEmergencyVaultId] = useState<number | null>(null);
@@ -80,13 +81,17 @@ const Vaults = () => {
   }, [searchParams, onOpen]);
 
   useEffect(() => {
-    if (isConnected && provider && signer && isFujiNetwork) {
-      contractService.initialize(provider, signer);
+    if (isConnected && ((provider && signer && isFujiNetwork) || ecosystem === "stellar")) {
+      if (provider && signer) {
+        contractService.initialize(provider, signer);
+      }
       loadVaults();
     } else {
       setLoading(false);
+      setVaults([]);
+      setReleaseStatesByVault({});
     }
-  }, [account, isConnected, provider, signer, isFujiNetwork]);
+  }, [account, isConnected, provider, signer, isFujiNetwork, ecosystem, chainId]);
 
   const loadVaults = async (options?: { silent?: boolean }) => {
     if (!account) {
@@ -113,8 +118,9 @@ const Vaults = () => {
         }
       });
 
-      const enriched = visibleVaults.map((vault) => ({
+      const enriched: Vault[] = visibleVaults.map((vault) => ({
         ...vault,
+        gid: getVaultGID(ecosystem, chainId, vault.id),
         documentCount: docCounts[vault.id] || 0,
       }));
 
@@ -122,7 +128,14 @@ const Vaults = () => {
       const releaseStates = await contractService.fetchVaultReleaseStates(
         visibleVaults.map((vault) => vault.id)
       );
-      setReleaseStatesByVault(releaseStates);
+      const keyedReleaseStates: Record<string, VaultReleaseState> = {};
+      Object.entries(releaseStates).forEach(([vaultIdStr, state]) => {
+        const numId = Number(vaultIdStr);
+        const gid = getVaultGID(ecosystem, chainId, numId);
+        keyedReleaseStates[gid] = state;
+        keyedReleaseStates[vaultIdStr] = state;
+      });
+      setReleaseStatesByVault(keyedReleaseStates);
     } catch (error) {
       console.error("Error loading vaults:", error);
       const message = error instanceof Error ? error.message : "Failed to load vaults";
@@ -163,7 +176,7 @@ const Vaults = () => {
   const handleRemoveGuardian = (address: string) => {
     setFormData({
       ...formData,
-      guardians: formData.guardians.filter((addr) => addr !== address),
+      guardians: formData.guardians.filter((addr: string) => addr !== address),
     });
   };
 
@@ -216,8 +229,10 @@ const Vaults = () => {
         toast.success(`Vault #${vaultId} created successfully!`);
         const nowTs = Math.floor(Date.now() / 1000);
         const ownerAddress = account || "";
+        const gid = getVaultGID(ecosystem, chainId, vaultId);
         const optimisticVault: Vault = {
           id: vaultId,
+          gid,
           creator: ownerAddress,
           name: draftForm.name,
           description: draftForm.description,
@@ -227,8 +242,8 @@ const Vaults = () => {
           createdAt: nowTs,
           documentCount: 0,
         };
-        setVaults((prev) => {
-          const existingIndex = prev.findIndex((vault) => vault.id === vaultId);
+        setVaults((prev: Vault[]) => {
+          const existingIndex = prev.findIndex((vault: Vault) => vault.gid === gid || vault.id === vaultId);
           if (existingIndex >= 0) {
             const copy = [...prev];
             copy[existingIndex] = optimisticVault;
@@ -236,8 +251,14 @@ const Vaults = () => {
           }
           return [optimisticVault, ...prev];
         });
-        setReleaseStatesByVault((prev) => ({
+        setReleaseStatesByVault((prev: Record<string, VaultReleaseState>) => ({
           ...prev,
+          [gid]: {
+            emergencyMode: false,
+            inactivityPeriod: draftForm.inactivityDays * 24 * 60 * 60,
+            lastProofOfLife: nowTs,
+            postDeathUnlocked: false,
+          },
           [vaultId]: {
             emergencyMode: false,
             inactivityPeriod: draftForm.inactivityDays * 24 * 60 * 60,
@@ -305,17 +326,23 @@ const Vaults = () => {
   };
 
   const filteredVaults = vaults
-    .filter((vault) =>
+    .filter((vault: Vault) =>
       vault.name.toLowerCase().includes(search.toLowerCase()) ||
       vault.description.toLowerCase().includes(search.toLowerCase()) ||
       vault.creator.toLowerCase().includes(search.toLowerCase())
     )
-    .filter((vault) => {
+    .filter((vault: Vault) => {
       if (filter === "active") return vault.isActive;
       if (filter === "inactive") return !vault.isActive;
       if (filter === "mine") return vault.creator.toLowerCase() === account?.toLowerCase();
       return true;
     });
+
+  const getRoleBadge = (isCreator: boolean, isGuardian: boolean): { roleLabel: string; roleColor: "danger" | "success" | "default" } => {
+    if (isCreator) return { roleLabel: "Owner", roleColor: "danger" };
+    if (isGuardian) return { roleLabel: "Guardian", roleColor: "success" };
+    return { roleLabel: "Beneficiary", roleColor: "default" };
+  };
 
   const stepChipClass = "bg-brand-700/12 text-brand-300 border border-brand-700/35";
   const modalInputClassNames = {
@@ -335,7 +362,7 @@ const Vaults = () => {
 
   useEffect(() => {
     if (formData.approvalThreshold > maxApprovalThreshold) {
-      setFormData((prev) => ({
+      setFormData((prev: typeof formData) => ({
         ...prev,
         approvalThreshold: maxApprovalThreshold,
       }));
@@ -422,7 +449,7 @@ const Vaults = () => {
           <FiFilter className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <select
             value={filter}
-            onChange={(event) => setFilter(event.target.value as typeof filter)}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setFilter(event.target.value as typeof filter)}
             className={filterSelectClass}
           >
             <option value="all">All Access Vaults</option>
@@ -484,8 +511,8 @@ const Vaults = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredVaults.map((vault) => {
-            const releaseState = releaseStatesByVault[vault.id] ?? {
+          {filteredVaults.map((vault: Vault) => {
+            const releaseState = releaseStatesByVault[vault.gid] ?? releaseStatesByVault[vault.id] ?? {
               emergencyMode: false,
               inactivityPeriod: 30 * 24 * 60 * 60,
               lastProofOfLife: vault.createdAt,
@@ -494,14 +521,13 @@ const Vaults = () => {
             const inactivityDays = Math.max(1, Math.round(releaseState.inactivityPeriod / 86400));
             const isCreator = vault.creator.toLowerCase() === account?.toLowerCase();
             const isGuardian = vault.guardians.some(
-              (guardian) => guardian.toLowerCase() === account?.toLowerCase()
+              (guardian: string) => guardian.toLowerCase() === account?.toLowerCase()
             );
-            const roleLabel = isCreator ? "Owner" : isGuardian ? "Guardian" : "Beneficiary";
-            const roleColor = isCreator ? "danger" : isGuardian ? "success" : "default";
+            const { roleLabel, roleColor } = getRoleBadge(isCreator, isGuardian);
 
             return (
               <Card
-                key={vault.id}
+                key={vault.gid || vault.id}
                 className="border border-gray-800 bg-gray-900/30 backdrop-blur-sm hover:border-brand-700/30 transition-all duration-300 group"
               >
                 <CardHeader className="flex justify-between items-start">
@@ -559,8 +585,8 @@ const Vaults = () => {
                       <span className="font-mono text-xs">{shortenAddress(vault.creator)}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-400">Vault ID</span>
-                      <span className="font-medium">#{vault.id}</span>
+                      <span className="text-gray-400">Vault GID</span>
+                      <span className="font-mono text-xs font-semibold text-brand-400">{vault.gid || `#${vault.id}`}</span>
                     </div>
                   </div>
 
@@ -671,7 +697,7 @@ const Vaults = () => {
                   <Input
                     placeholder="e.g., Family Estate Records, Insurance Files"
                     value={formData.name}
-                    onValueChange={(value) => setFormData({ ...formData, name: value })}
+                    onValueChange={(value: string) => setFormData({ ...formData, name: value })}
                     isRequired
                     classNames={modalInputClassNames}
                   />
@@ -679,7 +705,7 @@ const Vaults = () => {
                   <Textarea
                     placeholder="Describe which files this vault should protect for living, emergency, or inheritance access..."
                     value={formData.description}
-                    onValueChange={(value) => setFormData({ ...formData, description: value })}
+                    onValueChange={(value: string) => setFormData({ ...formData, description: value })}
                     minRows={4}
                     maxRows={6}
                     maxLength={650}
@@ -707,7 +733,7 @@ const Vaults = () => {
                   <Input
                     placeholder="Enter guardian's Ethereum address"
                     value={formData.newGuardian}
-                    onValueChange={(value) => setFormData({ ...formData, newGuardian: value })}
+                    onValueChange={(value: string) => setFormData({ ...formData, newGuardian: value })}
                     classNames={modalInputClassNames}
                   />
                   </div>
@@ -725,7 +751,7 @@ const Vaults = () => {
                   <div className="space-y-2">
                     <p className="text-sm text-gray-400">Guardians ({formData.guardians.length})</p>
                     <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                      {formData.guardians.map((address, index) => (
+                      {formData.guardians.map((address: string, index: number) => (
                         <div
                           key={address}
                           className="flex items-center justify-between p-3 bg-gray-900/65 border border-gray-700/70 rounded-xl"
@@ -789,7 +815,7 @@ const Vaults = () => {
                       max={maxApprovalThreshold}
                       step={1}
                       value={formData.approvalThreshold}
-                      onChange={(event) => {
+                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
                         const raw = Number(event.target.value);
                         if (Number.isNaN(raw)) return;
                         const next = Math.min(maxApprovalThreshold, Math.max(1, raw));
@@ -807,7 +833,7 @@ const Vaults = () => {
                     max={maxApprovalThreshold}
                     step={1}
                     value={formData.approvalThreshold}
-                    onChange={(event) =>
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                       setFormData({
                         ...formData,
                         approvalThreshold: Number(event.target.value),
@@ -850,7 +876,7 @@ const Vaults = () => {
                     max={180}
                     step={1}
                     value={formData.inactivityDays}
-                    onChange={(event) =>
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                       setFormData({
                         ...formData,
                         inactivityDays: Number(event.target.value),

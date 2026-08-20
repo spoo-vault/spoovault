@@ -8,6 +8,9 @@ import {
   isValidAddress,
   splitKeyAmongGuardians,
   reconstructKey,
+  toVaultGID,
+  parseVaultGID,
+  getVaultGID,
 } from '../utils/helpers';
 
 describe('Helper Utilities', () => {
@@ -67,12 +70,37 @@ describe('Helper Utilities', () => {
     it('should divide key into guardian shares and reconstruct successfully', () => {
       const key = 'abcdef1234567890abcdef1234567890';
       const guardians = ['g1', 'g2', 'g3'];
-      
+
       const parts = splitKeyAmongGuardians(key, guardians);
       expect(parts.length).toBe(3);
-      
+
       const reconstructed = reconstructKey(parts);
       expect(reconstructed).toBe(key);
     });
   });
+
+  describe('VaultGID multi-chain composite identifiers', () => {
+    it('should format composite VaultGID properly', () => {
+      expect(toVaultGID(43113, 1)).toBe('43113:1');
+      expect(toVaultGID('stellar-testnet', 1)).toBe('stellar-testnet:1');
+    });
+
+    it('should parse composite VaultGID accurately', () => {
+      const parsedEvm = parseVaultGID('43113:5');
+      expect(parsedEvm).toEqual({ chainId: '43113', vaultId: 5 });
+
+      const parsedStellar = parseVaultGID('stellar-testnet:12');
+      expect(parsedStellar).toEqual({ chainId: 'stellar-testnet', vaultId: 12 });
+
+      const fallback = parseVaultGID('42');
+      expect(fallback).toEqual({ chainId: '43113', vaultId: 42 });
+    });
+
+    it('should generate standard VaultGID based on active ecosystem', () => {
+      expect(getVaultGID('stellar', null, 1)).toBe('stellar-testnet:1');
+      expect(getVaultGID('avalanche', 43113, 1)).toBe('43113:1');
+      expect(getVaultGID('avalanche', null, 2)).toBe('43113:2');
+    });
+  });
 });
+

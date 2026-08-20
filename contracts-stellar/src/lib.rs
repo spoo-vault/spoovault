@@ -139,7 +139,7 @@ impl SpooVaultStellar {
             let guardian = guardians.get(i).unwrap();
             // Check duplicates
             assert!(!processed.contains(&guardian), "Duplicate guardian found");
-            processed.push(back_address(guardian.clone()));
+            processed.push_back(guardian.clone());
 
             if guardian != creator {
                 ext_guardian_count += 1;
@@ -158,7 +158,7 @@ impl SpooVaultStellar {
         env.storage().instance().set(&DataKey::VaultCount, &next_vault_id);
 
         let mut actual_guardians = Vec::new(&env);
-        actual_guardians.push(creator.clone());
+        actual_guardians.push_back(creator.clone());
 
         let vault = Vault {
             id: next_vault_id,
@@ -195,7 +195,7 @@ impl SpooVaultStellar {
                 .get(&DataKey::Invites(guardian.clone()))
                 .unwrap_or_else(|| Vec::new(&env));
 
-            user_invites.push(GuardianInvite {
+            user_invites.push_back(GuardianInvite {
                 guardian: guardian.clone(),
                 vault_id: next_vault_id,
                 accepted: false,
@@ -248,7 +248,7 @@ impl SpooVaultStellar {
         env.storage().persistent().set(&DataKey::Invites(guardian.clone()), &user_invites);
         env.storage().persistent().set(&DataKey::IsGuardian(vault_id, guardian.clone()), &true);
 
-        vault.guardians.push(guardian);
+        vault.guardians.push_back(guardian);
         env.storage().persistent().set(&DataKey::Vault(vault_id), &vault);
     }
 
@@ -408,7 +408,7 @@ impl SpooVaultStellar {
         assert!(!already_approved, "Already approved");
 
         env.storage().persistent().set(&DataKey::ApprovedReq(request_id, approver.clone()), &true);
-        request.approved_by.push(approver.clone());
+        request.approved_by.push_back(approver.clone());
 
         if let Some(share) = encrypted_share_for_beneficiary {
             env.storage().persistent().set(&DataKey::BShare(request_id, approver), &share);
@@ -495,13 +495,13 @@ impl SpooVaultStellar {
         env.storage().persistent().set(&DataKey::ReleaseState(vault_id), &state);
     }
 
-    // Helper functions
-    fn is_release_condition_satisfied(
+    /// Helper function to check if release condition is satisfied
+    pub fn is_release_condition_satisfied(
         env: &Env,
         vault_id: u64,
         condition: ReleaseCondition,
     ) -> bool {
-        if condition == ReleaseCondition.Anytime {
+        if condition == ReleaseCondition::Anytime {
             return true;
         }
 
@@ -514,17 +514,35 @@ impl SpooVaultStellar {
         let is_dead = env.ledger().timestamp() >= state.last_proof_of_life + state.inactivity_period;
 
         match condition {
-            ReleaseCondition.LiveOnly => !is_dead,
-            ReleaseCondition.EmergencyOnly => state.emergency_mode || is_dead,
-            ReleaseCondition.PostDeathOnly => is_dead,
-            _ => false,
+            ReleaseCondition::LiveOnly => !is_dead,
+            ReleaseCondition::EmergencyOnly => state.emergency_mode || is_dead,
+            ReleaseCondition::PostDeathOnly => is_dead,
+            ReleaseCondition::Anytime => true,
         }
     }
-}
 
-// Help Rust handle clones in array matching
-fn back_address(addr: Address) -> Address {
-    addr
+    pub fn get_vault(env: Env, vault_id: u64) -> Option<Vault> {
+        env.storage().persistent().get(&DataKey::Vault(vault_id))
+    }
+
+    pub fn get_document(env: Env, document_id: u64) -> Option<Document> {
+        env.storage().persistent().get(&DataKey::Doc(document_id))
+    }
+
+    pub fn get_access_request(env: Env, request_id: u64) -> Option<AccessRequest> {
+        env.storage().persistent().get(&DataKey::Request(request_id))
+    }
+
+    pub fn get_invites(env: Env, guardian: Address) -> Vec<GuardianInvite> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Invites(guardian))
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    pub fn get_release_state(env: Env, vault_id: u64) -> Option<VaultReleaseState> {
+        env.storage().persistent().get(&DataKey::ReleaseState(vault_id))
+    }
 }
 
 mod test;
