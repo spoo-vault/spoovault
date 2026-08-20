@@ -37,6 +37,7 @@ import { buttonClasses } from "../utils/buttonClasses";
 import { shortenAddress } from "../utils/helpers";
 import { captureError } from "../services/telemetry.service";
 import { encryptWithPublicKey } from "../utils/crypto";
+import { verifyShare, parseEncryptedMetadataPayload } from "../services/secrets.service";
 import { AuditLogTimeline } from "../components/audit/AuditLogTimeline";
 import { getExplorerTxUrl } from "../utils/explorer";
 import { InheritanceSettings } from "../components/vaults/InheritanceSettings";
@@ -477,6 +478,23 @@ const Dashboard = () => {
 
         if (!decryptedShare) {
           throw new Error("Failed to decrypt share with wallet");
+        }
+
+        // VSS share verification
+        let doc = documents.find((d) => d.id === approvalInfo.documentId);
+        if (!doc) {
+          const docs = await contractService.fetchDocumentsForVaults([approvalInfo.vaultId]);
+          doc = docs.find((d) => d.id === approvalInfo.documentId);
+        }
+
+        if (doc) {
+          const { commitments } = parseEncryptedMetadataPayload(doc.encryptedMetadata);
+          if (commitments && commitments.length > 0) {
+            const isValid = verifyShare(decryptedShare, commitments);
+            if (!isValid) {
+              throw new Error("Verifiable Secret Sharing (VSS) verification failed: invalid share point received");
+            }
+          }
         }
 
         // Fetch beneficiary's public key
