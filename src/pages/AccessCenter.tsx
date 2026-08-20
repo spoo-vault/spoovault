@@ -91,7 +91,7 @@ interface InboxKeyPreviewItem {
 
 const AccessCenter = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { account, isConnected, connect, provider, signer, isFujiNetwork } = useWeb3();
+  const { account, isConnected, connect, provider, signer, isFujiNetwork, ecosystem } = useWeb3();
 
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -111,13 +111,24 @@ const AccessCenter = () => {
   const accessibleOnly = searchParams.get("scope") === "accessible";
 
   useEffect(() => {
-    if (isConnected && provider && signer && isFujiNetwork) {
-      contractService.initialize(provider, signer);
+    setVaults([]);
+    setDocuments([]);
+    setTokens([]);
+    setActiveAccessByDoc({});
+    setLatestRequestByDoc({});
+    setLoading(true);
+  }, [ecosystem]);
+
+  useEffect(() => {
+    if (isConnected && ((provider && signer && isFujiNetwork) || ecosystem === "stellar")) {
+      if (provider && signer) {
+        contractService.initialize(provider, signer);
+      }
       loadData();
     } else {
       setLoading(false);
     }
-  }, [account, isConnected, provider, signer, isFujiNetwork]);
+  }, [account, isConnected, provider, signer, isFujiNetwork, ecosystem]);
 
   const loadData = async () => {
     if (!account) {
