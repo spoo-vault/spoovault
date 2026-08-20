@@ -159,4 +159,12 @@ export const getVaultGID = (
   return toVaultGID(chainId || 43113, vaultId);
 };
 
+/**
+ * Check if IPFS is configured
+ */
+export const isIPFSConfigured = (): boolean => {
+  return ipfsService.isConfigured();
+};
+
+
 
