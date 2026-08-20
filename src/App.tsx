@@ -6,6 +6,7 @@ import { captureError } from "./services/telemetry.service";
 
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
 const Vaults = lazy(() => import("./pages/Vaults"));
 const Documents = lazy(() => import("./pages/Documents"));
 const NFTGallery = lazy(() => import("./pages/NFTGallery"));
@@ -65,6 +66,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route element={<AppLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/analytics" element={<AnalyticsDashboard />} />
               <Route path="/vaults" element={<Vaults />} />
               <Route path="/documents" element={<Documents />} />
               <Route path="/access" element={<AccessCenter />} />
