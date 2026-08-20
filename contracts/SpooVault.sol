@@ -128,6 +128,7 @@ contract SpooVault is ERC721 {
     error CannotRemoveOnlyGuardian();
     error ProposalAlreadyExecuted();
     error ApprovalAlreadyGiven();
+    error CannotSelfApproveAccess();
 
     mapping(uint256 => Vault) public vaults;
     mapping(uint256 => Document) public documents;
@@ -715,7 +716,7 @@ contract SpooVault is ERC721 {
     }
 
     /**
-     * @dev Approve an access request (guardian only).
+     * @dev Approve an access request (accepted guardian only, never the requester).
      */
     function approveAccess(uint256 requestId) external {
         _approveAccess(requestId, "");
@@ -723,6 +724,8 @@ contract SpooVault is ERC721 {
 
     /**
      * @dev Approve an access request and submit the decrypted key share for the beneficiary.
+     * The requester can never approve their own request; quorum therefore counts only
+     * distinct accepted guardians other than the requester.
      */
     function approveAccess(uint256 requestId, string calldata encryptedShareForBeneficiary) external {
         _approveAccess(requestId, encryptedShareForBeneficiary);
@@ -733,6 +736,7 @@ contract SpooVault is ERC721 {
         if (request.requestId == 0) revert RequestNotExist();
         if (request.status != RequestStatus.PENDING) revert RequestNotPending();
         if (request.expiresAt <= block.timestamp) revert RequestExpired();
+        if (request.requester == msg.sender) revert CannotSelfApproveAccess();
 
         uint256 vaultId = documents[request.documentId].vaultId;
         if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
