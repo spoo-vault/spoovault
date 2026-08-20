@@ -1,0 +1,116 @@
+name: E2E Tests (Web3 / Synpress / Playwright)
+
+on:
+  pull_request:
+    branches: [main, master, dev]
+  push:
+    branches: [main, master, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-evm:
+    name: E2E — EVM (Anvil + Synpress/MetaMask)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Install Foundry (anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Compile Hardhat EVM contracts
+        run: npx hardhat compile --config hardhat.config.cjs
+
+      - name: Build MetaMask browser cache (Synpress)
+        run: HEADLESS=true npx synpress e2e/wallet-setup
+
+      - name: Run E2E suite (Anvil + SpooVault + MetaMask)
+        run: |
+          set -euo pipefail
+          nohup anvil \
+            --chain-id 43113 \
+            --mnemonic "test test test test test test test test test test test junk" \
+            --accounts 10 \
+            --balance 10000 \
+            --silent > /tmp/anvil.log 2>&1 &
+          ANVIL_PID=$!
+          sleep 5
+          node e2e/scripts/deploy-anvil.mjs
+          set -a
+          . ./e2e/.env.e2e
+          set +a
+          npm run build
+          HEADLESS=true npx playwright test --reporter=line
+          TEST_EXIT=$?
+          kill "$ANVIL_PID" || true
+          exit "$TEST_EXIT"
+
+      - name: Upload E2E report & artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evm-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-stellar:
+    name: E2E — Stellar (Soroban standalone)
+    runs-on: ubuntu-latest
+    # The Soroban E2E needs a standalone network + the rust/wasm toolchain.
+    # It is run best-effort: a failure here does not block the EVM verification.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install stellar CLI
+        run: |
+          curl -sSL https://stellar.org/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Start Soroban standalone network
+        run: docker run -d --name soroban -p 8000:8000 stellar/quickstart standalone
+
+      - name: Wait for Soroban standalone network
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000 >/dev/null; then echo "standalone network is up"; break; fi
+            sleep 2
+          done
+
+      - name: Install Rust + wasm target
+        run: |
+          curl -sSL https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          rustup target add wasm32-unknown-unknown
+
+      - name: Run Soroban E2E flow
+        env:
+          SOROBAN_RPC_URL: http://localhost:8000
+        run: node e2e/soroban/soroban-flow.test.mjs
