@@ -5,6 +5,19 @@ All notable changes to the SpooVault project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **UTF-8 Multi-byte Character Encoding in Crypto Utilities**: Fixed character corruption and potential `DOMException: Invalid character` errors when encoding/decoding Base64 payloads containing multi-byte UTF-8 characters (emojis, international characters, and symbols) by refactoring to standard `TextEncoder` and `TextDecoder` APIs.
+
+### Added
+- **Extended Crypto Utility Functions**:
+  - `uint8ArrayToString`: Converts byte arrays to UTF-8 strings via `TextDecoder`.
+  - `utf8ToBase64` & `base64ToUtf8`: Direct UTF-8 string <-> Base64 conversion helpers.
+  - `decryptWithPrivateKey`: Decrypts X25519-XSalsa20-Poly1305 encrypted JSON payloads using receiver's private key.
+  - Added robust handling of URL-safe Base64 (`-`, `_`), whitespace, and padding in `base64ToUint8Array`.
+- **Expanded Crypto Test Suite**: Added comprehensive Vitest tests verifying multi-byte UTF-8, emoji, URL-safe Base64, and asymmetric encryption/decryption round trips.
+
 ---
 
 ## [1.1.0] - 2026-08-14

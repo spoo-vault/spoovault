@@ -39,3 +39,7 @@ dev.log
 # Hardhat
 artifacts/
 cache/
+
+# Rust / Soroban
+target/
+contracts-stellar/target/
