@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Live Stellar Soroban Integration**: `createVault`, `addDocument`, `requestAccess`, `approveAccess`, `acceptGuardianInvite`, and `registerPublicKey` now submit real Soroban Testnet transactions via `@stellar/stellar-sdk` and Freighter, with contract reads (vaults, documents, invites, approvals, tokens) fetching live on-chain state and falling back to the localStorage mock layer when no contract is configured. See `docs/history/developer_note_21.md`.
+- **Freighter Rejection Handling**: Signing rejections from Freighter are normalized into a friendly error surfaced as an error toast; non-rejection failures propagate unchanged.
+- **Test Coverage Enforcement**: `@vitest/coverage-v8` with per-file thresholds (lines/branches/functions/statements ≥ 90%) on `src/services/stellar.service.ts`; `npm run test:coverage` script; coverage step added to the CI workflow.
+
+---
+
 ## [1.1.0] - 2026-08-14
 
 ### Added

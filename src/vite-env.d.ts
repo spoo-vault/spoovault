@@ -12,6 +12,7 @@ interface ImportMetaEnv {
   readonly VITE_IPFS_API_URL?: string;
   readonly VITE_LOG_CHUNK_SIZE?: string;
   readonly VITE_CONTRACT_DEPLOY_BLOCK?: string;
+  readonly VITE_STELLAR_CONTRACT_ADDRESS?: string;
 }
 
 interface ImportMeta {

@@ -86,6 +86,18 @@ Thank you for your interest in contributing to SpooVault! This project is a **mu
    ```
 3. Use the network switcher in the header sidebar to toggle between Avalanche (MetaMask) and Stellar (Freighter).
 
+### Running Frontend Tests
+
+- Run the full Vitest suite:
+  ```bash
+  npm test
+  ```
+- Run the suite with coverage thresholds enforced (requires `@vitest/coverage-v8`):
+  ```bash
+  npm run test:coverage
+  ```
+- Changes to `src/services/stellar.service.ts` must keep per-file line and branch coverage at or above 90%. Tests for the service live in `src/__tests__/stellar.service.test.ts` and inject a fake Freighter module via `__setFreighterModuleForTesting` because `vi.mock` cannot intercept the service's lazy `@stellar/freighter-api` dynamic import.
+
 ---
 
 ## Contribution Guidelines
