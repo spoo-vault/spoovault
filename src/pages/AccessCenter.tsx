@@ -44,6 +44,8 @@ import { toast } from "react-hot-toast";
 import { captureError } from "../services/telemetry.service";
 import { keyInboxService } from "../services/keyInbox.service";
 import { keyStoreService } from "../services/keyStore.service";
+import { decryptWithPrivateKey } from "../utils/crypto";
+import { clientKeyringService } from "../services/clientKeyring.service";
 // reconstructSecret is available for on-chain SSS share reconstruction when needed
 // import { reconstructSecret } from "../services/secrets.service";
 
@@ -185,17 +187,19 @@ const AccessCenter = () => {
       }
 
       let decryptedKey = key;
-      if (key.includes("ciphertext") && key.includes("ephemPublicKey")) {
-        if (!window.ethereum) {
-          throw new Error("Web3 provider not found. Please connect your wallet.");
+      const isEncryptedPayload =
+        (key.includes("ciphertext") && (key.includes("ephemPublicKey") || key.includes("version"))) ||
+        key.trim().startsWith("{");
+
+      if (isEncryptedPayload) {
+        if (!account) {
+          throw new Error("Connect your wallet before importing this key package");
         }
-        toast("Decrypting key package in your wallet...");
-        decryptedKey = await window.ethereum.request({
-          method: "eth_decrypt",
-          params: [key, account],
-        });
+        toast("Decrypting key package from secure keyring...");
+        const beneficiaryPrivateKey = await clientKeyringService.getDecryptedPrivateKey(account);
+        decryptedKey = await decryptWithPrivateKey(key, beneficiaryPrivateKey);
         if (!decryptedKey) {
-          throw new Error("Failed to decrypt key package with wallet");
+          throw new Error("Failed to decrypt key package with keyring private key");
         }
       }
 
@@ -294,7 +298,9 @@ const AccessCenter = () => {
           continue;
         }
 
-        const isEncrypted = key.includes("ciphertext") && key.includes("ephemPublicKey");
+        const isEncrypted =
+          (key.includes("ciphertext") && (key.includes("ephemPublicKey") || key.includes("version"))) ||
+          key.trim().startsWith("{");
         if (!isEncrypted && !/^[a-fA-F0-9]{64}$/.test(key)) {
           continue;
         }
@@ -346,14 +352,9 @@ const AccessCenter = () => {
 
         let decryptedKey = key;
         if (isEncrypted) {
-          if (!window.ethereum) {
-            continue;
-          }
           try {
-            decryptedKey = await window.ethereum.request({
-              method: "eth_decrypt",
-              params: [key, account],
-            });
+            const beneficiaryPrivateKey = await clientKeyringService.getDecryptedPrivateKey(account);
+            decryptedKey = await decryptWithPrivateKey(key, beneficiaryPrivateKey);
             if (!decryptedKey || !/^[a-fA-F0-9]{64}$/.test(decryptedKey)) {
               continue;
             }

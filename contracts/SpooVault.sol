@@ -135,7 +135,8 @@ contract SpooVault is ERC721 {
     mapping(uint256 => mapping(address => bool)) public isGuardian;
     mapping(uint256 => mapping(address => bool)) public hasAccess;
     mapping(uint256 => mapping(address => AccessLevel)) public userAccessLevel;
-    mapping(address => GuardianInvite[]) public guardianInvites;
+    mapping(address => mapping(uint256 => GuardianInvite)) public guardianInvites;
+    mapping(address => uint256[]) public userInviteVaultIds;
     mapping(uint256 => mapping(address => bool)) public hasApprovedRequest;
     mapping(uint256 => mapping(address => uint256)) public latestRequestId;
     mapping(uint256 => string) public tokenURIs;
@@ -259,14 +260,16 @@ contract SpooVault is ERC721 {
                 continue;
             }
 
-            guardianInvites[guardian].push(
-                GuardianInvite({
-                    guardian: guardian,
-                    vaultId: vaultId,
-                    accepted: false,
-                    expiresAt: block.timestamp + 7 days
-                })
-            );
+            if (guardianInvites[guardian][vaultId].expiresAt == 0) {
+                userInviteVaultIds[guardian].push(vaultId);
+            }
+            guardianInvites[guardian][vaultId] = GuardianInvite({
+                guardian: guardian,
+                vaultId: vaultId,
+                accepted: false,
+                expiresAt: block.timestamp + 7 days
+            });
+
         }
 
         emit VaultCreated(vaultId, msg.sender, name);
@@ -280,33 +283,17 @@ contract SpooVault is ERC721 {
         if (!vaults[vaultId].isActive) revert VaultNotActive();
         if (isGuardian[vaultId][msg.sender]) revert AlreadyGuardian();
 
-        GuardianInvite[] storage invites = guardianInvites[msg.sender];
-        bool hasInvite = false;
-        bool hasExpiredInvite = false;
+        GuardianInvite storage invite = guardianInvites[msg.sender][vaultId];
 
-        for (uint256 i = 0; i < invites.length; i++) {
-            GuardianInvite storage invite = invites[i];
-            if (invite.vaultId != vaultId || invite.accepted) {
-                continue;
-            }
+        if (invite.guardian == address(0)) revert NoValidInvite();
+        if (invite.accepted) revert NoValidInvite();
+        if (invite.expiresAt <= block.timestamp) revert InviteExpired();
 
-            hasInvite = true;
+        invite.accepted = true;
+        isGuardian[vaultId][msg.sender] = true;
+        vaults[vaultId].guardians.push(msg.sender);
 
-            if (invite.expiresAt <= block.timestamp) {
-                hasExpiredInvite = true;
-                continue;
-            }
-
-            invite.accepted = true;
-            isGuardian[vaultId][msg.sender] = true;
-            vaults[vaultId].guardians.push(msg.sender);
-
-            emit GuardianAdded(vaultId, msg.sender);
-            return;
-        }
-
-        if (hasExpiredInvite) revert InviteExpired();
-        if (!hasInvite) revert NoValidInvite();
+        emit GuardianAdded(vaultId, msg.sender);
     }
 
     /**
@@ -860,11 +847,12 @@ contract SpooVault is ERC721 {
      * @dev Get user's pending invites.
      */
     function getPendingInvites(address user) external view returns (GuardianInvite[] memory) {
-        GuardianInvite[] storage invites = guardianInvites[user];
+        uint256[] storage vaultIds = userInviteVaultIds[user];
         uint256 count = 0;
 
-        for (uint256 i = 0; i < invites.length; i++) {
-            if (!invites[i].accepted && invites[i].expiresAt > block.timestamp) {
+        for (uint256 i = 0; i < vaultIds.length; i++) {
+            GuardianInvite storage invite = guardianInvites[user][vaultIds[i]];
+            if (!invite.accepted && invite.expiresAt > block.timestamp) {
                 count++;
             }
         }
@@ -872,9 +860,10 @@ contract SpooVault is ERC721 {
         GuardianInvite[] memory pending = new GuardianInvite[](count);
         uint256 index = 0;
 
-        for (uint256 i = 0; i < invites.length; i++) {
-            if (!invites[i].accepted && invites[i].expiresAt > block.timestamp) {
-                pending[index] = invites[i];
+        for (uint256 i = 0; i < vaultIds.length; i++) {
+            GuardianInvite storage invite = guardianInvites[user][vaultIds[i]];
+            if (!invite.accepted && invite.expiresAt > block.timestamp) {
+                pending[index] = invite;
                 index++;
             }
         }

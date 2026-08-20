@@ -42,7 +42,7 @@ import {
   VaultReleaseState,
 } from "../services/contract.service";
 import { toast } from "react-hot-toast";
-import { shortenAddress, isValidAddress, formatDate, getVaultGID, buildVaultDocumentCounts, keyRecordByVaultGID } from "../utils/helpers";
+import { shortenAddress, isValidAddress, isValidStellarAddress, formatDate, getVaultGID, buildVaultDocumentCounts, keyRecordByVaultGID } from "../utils/helpers";
 import { buttonClasses } from "../utils/buttonClasses";
 
 interface Vault extends VaultData {
@@ -143,8 +143,8 @@ const Vaults = () => {
       return;
     }
 
-    if (!isValidAddress(formData.newGuardian)) {
-      toast.error("Invalid Ethereum address");
+    if (ecosystem === "stellar" ? !isValidStellarAddress(formData.newGuardian) : !isValidAddress(formData.newGuardian, "avalanche")) {
+      toast.error(ecosystem === "stellar" ? "Invalid Stellar address" : "Invalid Ethereum address");
       return;
     }
 
@@ -715,7 +715,7 @@ const Vaults = () => {
                   <div className="space-y-1">
                     <p className="text-xs text-gray-300 font-medium">Guardian Address</p>
                   <Input
-                    placeholder="Enter guardian's Ethereum address"
+                    placeholder={ecosystem === "stellar" ? "Enter guardian's Stellar address" : "Enter guardian's Ethereum address"}
                     value={formData.newGuardian}
                     onValueChange={(value: string) => setFormData({ ...formData, newGuardian: value })}
                     classNames={modalInputClassNames}

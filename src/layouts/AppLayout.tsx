@@ -19,6 +19,7 @@ import {
   FiUnlock,
   FiBell,
   FiBook,
+  FiActivity,
 } from "react-icons/fi";
 import { useWeb3 } from "../context/Web3Context";
 import { contractService } from "../services/contract.service";
@@ -73,6 +74,7 @@ const AppLayout = () => {
 
   const navItems = [
     { path: "/dashboard", label: "Dashboard", icon: FiHome },
+    { path: "/analytics", label: "Analytics", icon: FiActivity },
     { path: "/vaults", label: "Access Vaults", icon: FiShield },
     { path: "/documents", label: "Documents", icon: FiFile },
     { path: "/access", label: "My Access", icon: FiUnlock },
@@ -83,6 +85,7 @@ const AppLayout = () => {
 
   const mobileNavItems = [
     { path: "/dashboard", label: "Home", icon: FiHome },
+    { path: "/analytics", label: "Stats", icon: FiActivity },
     { path: "/vaults", label: "Vaults", icon: FiShield },
     { path: "/documents", label: "Docs", icon: FiFile },
     { path: "/access", label: "Access", icon: FiUnlock },
@@ -677,7 +680,7 @@ const AppLayout = () => {
 
       <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto max-w-md rounded-2xl border border-gray-800/80 bg-gray-900/92 backdrop-blur-2xl shadow-[0_16px_30px_-22px_rgba(0,0,0,0.95)]">
-          <div className="grid grid-cols-5 gap-1 p-1.5">
+          <div className="grid grid-cols-6 gap-1 p-1.5">
             {mobileNavItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);

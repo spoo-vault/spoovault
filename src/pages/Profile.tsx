@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Card, CardBody, CardHeader, Button, Input, Chip } from "@heroui/react";
-import { FiUser, FiSliders, FiSave, FiUsers, FiClock, FiCheckCircle, FiKey } from "react-icons/fi";
+import { FiUser, FiSliders, FiSave, FiUsers, FiClock, FiCheckCircle, FiKey, FiDownload, FiLock } from "react-icons/fi";
 import { useWeb3 } from "../context/Web3Context";
 import { formatDate, shortenAddress } from "../utils/helpers";
 import { toast } from "react-hot-toast";
 import { buttonClasses } from "../utils/buttonClasses";
 import { contractService, GuardianInviteData } from "../services/contract.service";
+import { clientKeyringService } from "../services/clientKeyring.service";
 
 interface InviteVaultContext {
   name: string;
@@ -22,8 +23,14 @@ const Profile = () => {
   const [loadingInvites, setLoadingInvites] = useState(false);
   const [acceptingVaultId, setAcceptingVaultId] = useState<number | null>(null);
   const [publicKey, setPublicKey] = useState("");
+  const [isRegisteredOnChain, setIsRegisteredOnChain] = useState(false);
+  const [hasLocalKey, setHasLocalKey] = useState(false);
   const [checkingKey, setCheckingKey] = useState(false);
   const [registeringKey, setRegisteringKey] = useState(false);
+  const [pin, setPin] = useState("");
+  const [showPinInput, setShowPinInput] = useState(false);
+  const [backupPassphrase, setBackupPassphrase] = useState("");
+  const [exportingBackup, setExportingBackup] = useState(false);
 
   const profileInputClassNames = {
     inputWrapper: "bg-gray-900/75 border border-gray-700/80 shadow-none data-[hover=true]:border-gray-600",
@@ -52,16 +59,26 @@ const Profile = () => {
   }, [theme]);
 
   const loadPublicKeyStatus = async () => {
-    if (!account || !isFujiNetwork) {
+    if (!account) {
       setPublicKey("");
+      setIsRegisteredOnChain(false);
+      setHasLocalKey(false);
       return;
     }
     setCheckingKey(true);
     try {
-      const pubKey = await contractService.getUserPublicKey(account);
-      setPublicKey(pubKey);
+      const localKey = await clientKeyringService.getStoredPublicKey(account);
+      let onChainKey = "";
+      if (isFujiNetwork) {
+        onChainKey = await contractService.getUserPublicKey(account);
+      }
+      setHasLocalKey(!!localKey);
+      setIsRegisteredOnChain(!!onChainKey && onChainKey.trim().length > 0);
+      setPublicKey(onChainKey || localKey || "");
     } catch {
       setPublicKey("");
+      setIsRegisteredOnChain(false);
+      setHasLocalKey(false);
     } finally {
       setCheckingKey(false);
     }
@@ -75,6 +92,8 @@ const Profile = () => {
     } else {
       setPendingInvites([]);
       setPublicKey("");
+      setIsRegisteredOnChain(false);
+      setHasLocalKey(false);
     }
   }, [account, isConnected, provider, signer, isFujiNetwork]);
 
@@ -159,36 +178,79 @@ const Profile = () => {
     }
   };
 
-  const handleRegisterPublicKey = async () => {
+  const handleGenerateAndRegisterKey = async () => {
     if (!isConnected) {
       toast.error("Please connect your wallet first");
       await connect();
       return;
     }
-    if (!isFujiNetwork) {
-      toast.error("Please switch to Avalanche Fuji network");
+    if (!account) {
+      toast.error("Wallet address not found");
       return;
     }
-    if (!window.ethereum) {
-      toast.error("Web3 provider not found");
-      return;
-    }
+
     setRegisteringKey(true);
     try {
-      const pubKey = await window.ethereum.request({
-        method: "eth_getEncryptionPublicKey",
-        params: [account],
-      });
+      let pubKey = await clientKeyringService.getStoredPublicKey(account);
       if (!pubKey) {
-        throw new Error("Failed to retrieve public key from wallet");
+        toast("Generating client-side Web Crypto ECIES keypair...");
+        const result = await clientKeyringService.generateAndSaveKeyPair(account, pin.trim() || undefined);
+        pubKey = result.publicKey;
       }
-      await contractService.registerPublicKey(pubKey);
-      toast.success("Encryption public key registered on-chain!");
+
+      if (isFujiNetwork) {
+        toast("Registering encryption public key on-chain...");
+        await contractService.registerPublicKey(pubKey);
+        setIsRegisteredOnChain(true);
+        toast.success("Encryption public key registered on-chain!");
+      } else {
+        toast.success("Encryption key generated securely in browser IndexedDB!");
+      }
+
       setPublicKey(pubKey);
+      setHasLocalKey(true);
+      setPin("");
+      setShowPinInput(false);
     } catch (error: any) {
-      toast.error(error.message || "Failed to register public key");
+      toast.error(error.message || "Failed to generate/register encryption key");
     } finally {
       setRegisteringKey(false);
+    }
+  };
+
+  const handleExportBackup = async () => {
+    if (!account || !hasLocalKey) {
+      toast.error("No encryption key found to export");
+      return;
+    }
+    const passphrase = backupPassphrase.trim();
+    if (!passphrase) {
+      toast.error("Enter a backup passphrase to encrypt your key backup");
+      return;
+    }
+
+    setExportingBackup(true);
+    try {
+      const backupJson = await clientKeyringService.exportKeyBackup(
+        account,
+        passphrase,
+        pin.trim() || undefined
+      );
+
+      const blob = new Blob([backupJson], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `spoovault-keyring-backup-${shortenAddress(account, 4)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success("Encrypted keyring backup downloaded successfully");
+      setBackupPassphrase("");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export keyring backup");
+    } finally {
+      setExportingBackup(false);
     }
   };
 
@@ -235,37 +297,127 @@ const Profile = () => {
             </div>
             <div>
               <h2 className="text-lg font-semibold">Encryption Key</h2>
-              <p className="text-sm text-gray-400">On-chain key for secure sharing</p>
+              <p className="text-sm text-gray-400">Web Crypto ECIES for secure sharing</p>
             </div>
           </CardHeader>
           <CardBody className="space-y-4">
             {checkingKey ? (
               <p className="text-xs text-gray-400">Checking key status...</p>
             ) : publicKey ? (
-              <div className="space-y-2">
-                <Chip color="success" variant="flat" size="sm">
-                  REGISTERED
-                </Chip>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  {isRegisteredOnChain ? (
+                    <Chip color="success" variant="flat" size="sm">
+                      REGISTERED ON-CHAIN
+                    </Chip>
+                  ) : (
+                    <Chip color="primary" variant="flat" size="sm">
+                      LOCAL KEY READY
+                    </Chip>
+                  )}
+                  {hasLocalKey && (
+                    <Chip color="default" variant="flat" size="sm">
+                      SECURED IN INDEXEDDB
+                    </Chip>
+                  )}
+                </div>
                 <p className="text-xs text-gray-400 font-mono break-all line-clamp-3">
                   {publicKey}
                 </p>
+
+                {!isRegisteredOnChain && isFujiNetwork && (
+                  <Button
+                    className={buttonClasses.primarySm}
+                    isLoading={registeringKey}
+                    onPress={handleGenerateAndRegisterKey}
+                  >
+                    Register On-Chain
+                  </Button>
+                )}
+
+                {hasLocalKey && (
+                  <div className="pt-2 border-t border-gray-800/80 space-y-2">
+                    <p className="text-xs text-gray-400 font-medium">Keyring Backup</p>
+                    <div className="flex gap-2">
+                      <Input
+                        type="password"
+                        placeholder="Backup passphrase"
+                        size="sm"
+                        value={backupPassphrase}
+                        onValueChange={setBackupPassphrase}
+                        classNames={profileInputClassNames}
+                      />
+                      <Button
+                        size="sm"
+                        className={buttonClasses.ghostSm}
+                        startContent={<FiDownload />}
+                        isLoading={exportingBackup}
+                        onPress={handleExportBackup}
+                      >
+                        Export
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
                 <Chip color="warning" variant="flat" size="sm">
-                  NOT REGISTERED
+                  NOT GENERATED
                 </Chip>
                 <p className="text-xs text-gray-400">
-                  Register your wallet's encryption public key to receive encrypted document keys.
+                  Generate a client-side Web Crypto ECIES (ECDH P-256) keypair stored securely in browser IndexedDB.
                 </p>
-                <Button
-                  className={buttonClasses.primarySm}
-                  isLoading={registeringKey}
-                  isDisabled={checkingKey}
-                  onPress={handleRegisterPublicKey}
-                >
-                  Register Encryption Key
-                </Button>
+
+                {showPinInput ? (
+                  <div className="space-y-2">
+                    <Input
+                      type="password"
+                      placeholder="Optional PIN / Passphrase"
+                      size="sm"
+                      value={pin}
+                      onValueChange={setPin}
+                      classNames={profileInputClassNames}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        className={buttonClasses.primarySm}
+                        isLoading={registeringKey}
+                        isDisabled={checkingKey}
+                        onPress={handleGenerateAndRegisterKey}
+                      >
+                        Generate & Register
+                      </Button>
+                      <Button
+                        size="sm"
+                        className={buttonClasses.ghostSm}
+                        onPress={() => setShowPinInput(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Button
+                      className={buttonClasses.primarySm}
+                      isLoading={registeringKey}
+                      isDisabled={checkingKey}
+                      onPress={handleGenerateAndRegisterKey}
+                    >
+                      Generate & Register Key
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      className="text-xs text-gray-400 p-0 h-auto hover:text-white"
+                      startContent={<FiLock className="text-xs" />}
+                      onPress={() => setShowPinInput(true)}
+                    >
+                      Set custom PIN/passphrase
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </CardBody>

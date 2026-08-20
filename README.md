@@ -80,6 +80,7 @@ npm run dev
 - **Hardhat EVM Contract Tests**: `npm run test:contracts`
 - **Stellar Soroban Tests**: `npm run test:stellar`
 - **TypeScript Verification**: `npx tsc --noEmit`
+- **Production Bundle Check**: `npx vite build` emits named `vendor-react`, `vendor-heroui`, `vendor-ethers`, and lazy `vendor-stellar` chunks so the entry JavaScript bundle stays below the initial-load budget.
 
 ---
 

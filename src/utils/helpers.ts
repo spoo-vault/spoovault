@@ -71,10 +71,23 @@ export const formatDate = (timestamp: number): string => {
 };
 
 /**
+ * Validate Stellar address (StrKey: G = Ed25519 Public Key, C = Contract ID)
+ */
+export const isValidStellarAddress = (address: string): boolean => {
+  return /^G[A-Z2-7]{55}$/.test(address) || /^C[A-Z2-7]{55}$/.test(address);
+};
+
+/**
  * Validate Ethereum address
  */
-export const isValidAddress = (address: string): boolean => {
-  return /^0x[a-fA-F0-9]{40}$/.test(address);
+export const isValidAddress = (address: string, ecosystem?: "avalanche" | "stellar"): boolean => {
+  if (ecosystem === "stellar") {
+    return isValidStellarAddress(address);
+  }
+  if (ecosystem === "avalanche") {
+    return /^0x[a-fA-F0-9]{40}$/.test(address);
+  }
+  return /^0x[a-fA-F0-9]{40}$/.test(address) || isValidStellarAddress(address);
 };
 
 /**
