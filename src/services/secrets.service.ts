@@ -187,7 +187,174 @@ export function reconstructSecret(shareStrings: string[]): string {
   return Array.from(reconstructedBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Passphrase-based key derivation for backup/keyring exports (issue #20)
+ *
+ * Raw user passphrases were previously used directly as AES keys when
+ * exporting/restoring vault backup keys, which is vulnerable to offline
+ * brute-force/dictionary attacks if a backup blob is intercepted. These
+ * functions derive a strong AES-256-GCM key from the passphrase via
+ * PBKDF2-SHA256 (600,000 iterations, per OWASP guidance) instead.
+ */
+
+export const PBKDF2_ITERATIONS = 600_000;
+const SALT_LENGTH_BYTES = 16;
+const IV_LENGTH_BYTES = 12; // standard AES-GCM nonce size
+const PASSPHRASE_PAYLOAD_VERSION = "pbkdf2-sha256-aes256gcm-v1";
+
+export interface PassphraseEncryptedPayload {
+  version: string;
+  iterations: number;
+  salt: string; // base64
+  iv: string; // base64
+  ciphertext: string; // base64
+}
+
+const getWebCrypto = (): Crypto => {
+  const cryptoObj: Crypto | undefined =
+    (typeof window !== "undefined" ? window.crypto : undefined) ??
+    (typeof globalThis !== "undefined" ? globalThis.crypto : undefined);
+  if (!cryptoObj?.subtle) {
+    throw new Error("Web Crypto API (crypto.subtle) is not available in this environment");
+  }
+  return cryptoObj;
+};
+
+const getRandomBytes = (length: number): Uint8Array => {
+  const bytes = new Uint8Array(length);
+  getWebCrypto().getRandomValues(bytes);
+  return bytes;
+};
+
+const utf8ToBytes = (str: string): Uint8Array => new TextEncoder().encode(str);
+const bytesToUtf8 = (bytes: ArrayBuffer): string => new TextDecoder().decode(bytes);
+
+const base64ToBytes = (base64: string): Uint8Array => {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+};
+
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
+/**
+ * Derive an AES-256-GCM CryptoKey from a user passphrase using PBKDF2
+ * (SHA-256, 600,000 iterations by default). A random, unique salt must be
+ * supplied per encryption so the same passphrase never derives the same
+ * key twice. The derived key is non-extractable (raw bits never leave
+ * the Web Crypto API).
+ */
+export async function deriveKeyFromPassphrase(
+  passphrase: string,
+  salt: Uint8Array,
+  iterations: number = PBKDF2_ITERATIONS
+): Promise<CryptoKey> {
+  if (!passphrase) {
+    throw new Error("Passphrase must not be empty");
+  }
+  const subtle = getWebCrypto().subtle;
+  const keyMaterial = await subtle.importKey(
+    "raw",
+    utf8ToBytes(passphrase) as BufferSource,
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+
+  return subtle.deriveKey(
+    { name: "PBKDF2", salt: salt as BufferSource, iterations, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+/**
+ * Encrypt a backup/keyring payload (e.g. a hex vault key, or a reconstructed
+ * guardian secret) with a user-supplied passphrase. Returns a self-describing
+ * JSON payload carrying the salt, IV, and iteration count needed to re-derive
+ * the same key on decrypt -- never the raw passphrase or derived key.
+ */
+export async function encryptWithPassphrase(
+  plaintext: string,
+  passphrase: string,
+  iterations: number = PBKDF2_ITERATIONS
+): Promise<string> {
+  const salt = getRandomBytes(SALT_LENGTH_BYTES);
+  const iv = getRandomBytes(IV_LENGTH_BYTES);
+  const key = await deriveKeyFromPassphrase(passphrase, salt, iterations);
+
+  const ciphertextBuffer = await getWebCrypto().subtle.encrypt(
+    { name: "AES-GCM", iv: iv as BufferSource },
+    key,
+    utf8ToBytes(plaintext) as BufferSource
+  );
+
+  const payload: PassphraseEncryptedPayload = {
+    version: PASSPHRASE_PAYLOAD_VERSION,
+    iterations,
+    salt: bytesToBase64(salt),
+    iv: bytesToBase64(iv),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertextBuffer)),
+  };
+
+  return JSON.stringify(payload);
+}
+
+/**
+ * Decrypt a payload produced by encryptWithPassphrase. Re-derives the key
+ * from the supplied passphrase using the embedded salt/iteration count. An
+ * incorrect passphrase fails the AES-GCM authentication tag check (throws)
+ * rather than silently producing garbage plaintext.
+ */
+export async function decryptWithPassphrase(
+  payloadJson: string,
+  passphrase: string
+): Promise<string> {
+  let payload: PassphraseEncryptedPayload;
+  try {
+    payload = JSON.parse(payloadJson);
+  } catch {
+    throw new Error("Invalid encrypted backup payload");
+  }
+
+  if (payload.version !== PASSPHRASE_PAYLOAD_VERSION) {
+    throw new Error(`Unsupported backup payload version: ${payload.version}`);
+  }
+
+  const salt = base64ToBytes(payload.salt);
+  const iv = base64ToBytes(payload.iv);
+  const ciphertext = base64ToBytes(payload.ciphertext);
+  const key = await deriveKeyFromPassphrase(passphrase, salt, payload.iterations);
+
+  let plaintextBuffer: ArrayBuffer;
+  try {
+    plaintextBuffer = await getWebCrypto().subtle.decrypt(
+      { name: "AES-GCM", iv: iv as BufferSource },
+      key,
+      ciphertext as BufferSource
+    );
+  } catch {
+    throw new Error("Failed to decrypt backup: incorrect passphrase or corrupted data");
+  }
+
+  return bytesToUtf8(plaintextBuffer);
+}
+
 export const secretsService = {
   splitSecret,
   reconstructSecret,
+  deriveKeyFromPassphrase,
+  encryptWithPassphrase,
+  decryptWithPassphrase,
 };
