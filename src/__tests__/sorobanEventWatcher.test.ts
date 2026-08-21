@@ -4,17 +4,33 @@ import { sorobanEventWatcher } from "../services/sorobanEventWatcher.service";
 describe("SorobanEventWatcher", () => {
   const rpcUrl = "https://mock.soroban.rpc";
   const contractId = "C123456789";
+  const flushPoll = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
 
   beforeEach(() => {
     vi.useFakeTimers();
     global.fetch = vi.fn();
-    // Spy on window.dispatchEvent
+    vi.stubGlobal("window", {
+      clearTimeout,
+      setTimeout,
+      dispatchEvent: vi.fn(() => true),
+    });
+    vi.stubGlobal("CustomEvent", class CustomEvent {
+      detail: unknown;
+
+      constructor(_type: string, init: { detail: unknown }) {
+        this.detail = init.detail;
+      }
+    });
     vi.spyOn(window, "dispatchEvent").mockImplementation(() => true);
   });
 
   afterEach(() => {
     sorobanEventWatcher.stop();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
     // Reset private state via fresh instance if needed, but since it's a singleton, 
     // stopping it and clearing listeners is usually enough for tests.
@@ -38,29 +54,26 @@ describe("SorobanEventWatcher", () => {
         result: { sequence: 1000 }
       })
     });
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ result: { events: [] } })
+    });
 
     sorobanEventWatcher.start(rpcUrl, contractId);
-    
-    // Fast forward to trigger the initial fetch LatestLedger
-    await vi.runOnlyPendingTimersAsync();
+    await flushPoll();
+    sorobanEventWatcher.stop();
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
     const fetchCall = (global.fetch as any).mock.calls[0];
     expect(fetchCall[0]).toBe(rpcUrl);
     expect(JSON.parse(fetchCall[1].body).method).toBe("getLatestLedger");
   });
 
   it("should fetch events and dispatch to listeners when events are present", async () => {
-    // Mock getLatestLedger
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => ({ result: { sequence: 1000 } })
     });
-
-    sorobanEventWatcher.start(rpcUrl, contractId);
-    await vi.runOnlyPendingTimersAsync();
-
-    // Now mock the getEvents response for the next poll
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -82,8 +95,10 @@ describe("SorobanEventWatcher", () => {
     const mockVaultCallback = vi.fn();
     sorobanEventWatcher.on("VaultCreated", mockVaultCallback);
 
-    // Fast forward to next poll
-    await vi.advanceTimersByTimeAsync(5000);
+    sorobanEventWatcher.start(rpcUrl, contractId);
+    await flushPoll();
+    sorobanEventWatcher.stop();
+    await vi.waitFor(() => expect(mockCallback).toHaveBeenCalledTimes(1));
 
     expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(JSON.parse((global.fetch as any).mock.calls[1][1].body).method).toBe("getEvents");
@@ -105,24 +120,18 @@ describe("SorobanEventWatcher", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     sorobanEventWatcher.start(rpcUrl, contractId);
+  await flushPoll();
+    sorobanEventWatcher.stop();
+
     // getLatestLedger fails and returns 0.
-    await vi.runOnlyPendingTimersAsync();
 
     expect(consoleSpy).not.toHaveBeenCalled(); // getLatestLedger swallows error and returns 0
 
-    // advance to next poll (which won't happen because startLedger === 0 returns early)
-    await vi.advanceTimersByTimeAsync(5000);
-    
-    // Now simulate getLatestLedger succeeding, but getEvents failing
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ result: { sequence: 1000 } })
-    });
-    // @ts-ignore
-    sorobanEventWatcher.lastCursor = undefined;
-    // trigger a manual poll just to test the error block inside fetchEvents
+    // Trigger a manual poll with a cursor so getEvents fails directly.
     // @ts-ignore
     sorobanEventWatcher.lastCursor = "prev-cursor";
+    // @ts-ignore
+    sorobanEventWatcher.isRunning = true;
     
     (global.fetch as any).mockResolvedValueOnce({
       ok: false,
