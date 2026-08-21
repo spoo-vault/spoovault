@@ -1,0 +1,24 @@
+{
+  "fuzzing": {
+    "workers": 2,
+    "timeout": 600,
+    "testLimit": 100000,
+    "callSequenceLength": 64,
+    "targetContracts": ["SpooVaultFuzz"]
+  },
+  "testing": {
+    "stopOnFailedTest": true,
+    "propertyTesting": {
+      "enabled": true,
+      "testPrefixes": ["invariant_"]
+    }
+  },
+  "compilation": {
+    "platform": "crytic-compile",
+    "platformConfig": {
+      "target": "fuzz/harness/SpooVaultFuzz.sol",
+      "solcVersion": "0.8.24",
+      "args": ["--solc-remaps", "@openzeppelin/=node_modules/@openzeppelin/"]
+    }
+  }
+}

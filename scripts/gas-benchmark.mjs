@@ -293,7 +293,10 @@ function main() {
     console.log(`BASELINE: refreshed ${BASELINE_PATH} with ${entries.length} entries.`);
   }
 
-  if (summary.hasRegression && ALLOW_FAIL) {
+  // A "regression" detected while (re)establishing the main-branch baseline is
+  // not a failure: it is the new baseline being recorded. Failing here would
+  // skip the "Refresh Baseline on main" commit step and leave the baseline stale.
+  if (summary.hasRegression && ALLOW_FAIL && !UPDATE_BASELINE) {
     console.error(`FAIL: gas regression(s) above +${REGRESSION_THRESHOLD_PCT}% detected.`);
     process.exit(1);
   }
