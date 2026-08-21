@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   stellarService,
+  __setFreighterModuleForTesting,
   type StellarWalletChangeEvent,
 } from "../services/stellar.service";
 
@@ -43,10 +44,16 @@ beforeEach(() => {
   }
   (globalThis as any).localStorage.clear();
   stellarService.clear();
+  __setFreighterModuleForTesting({
+    isConnected: async () => true,
+    getAddress: async () => "GINITIALACCOUNT",
+    getNetwork: async () => "TESTNET",
+  });
   (globalThis as any).window = makeMockWindow();
 });
 
 afterEach(() => {
+  __setFreighterModuleForTesting(undefined);
   (globalThis as any).window = originalWindow;
 });
 
@@ -131,5 +138,71 @@ describe("Freighter wallet-change subscription", () => {
 
   it("reads the current network name without throwing", async () => {
     expect(typeof (await stellarService.getNetwork())).toBe("string");
+  });
+
+  it("falls back to polling when native listen is unavailable", async () => {
+    let poll: (() => void) | undefined;
+    const clearInterval = vi.fn();
+    (globalThis as any).window = {
+      ...makeMockWindow(),
+      setInterval: vi.fn((callback: () => void) => {
+        poll = callback;
+        return 1;
+      }),
+      clearInterval,
+    };
+
+    let address = "GINITIALACCOUNT";
+    let network = "TESTNET";
+    __setFreighterModuleForTesting({
+      isConnected: async () => true,
+      getAddress: async () => address,
+      getNetwork: async () => network,
+    });
+
+    const subscriber = vi.fn();
+    const unsubscribe = stellarService.subscribeToWalletChanges(subscriber);
+    await vi.waitFor(() => expect(poll).toBeDefined());
+
+    address = "GUPDATEDACCOUNT";
+    network = "PUBLIC";
+    await poll!();
+
+    expect(subscriber).toHaveBeenCalledWith({
+      account: "GUPDATEDACCOUNT",
+      network: "PUBLIC",
+    });
+    unsubscribe();
+    expect(clearInterval).toHaveBeenCalledWith(1);
+  });
+
+  it("normalizes object-shaped Freighter responses and missing network support", async () => {
+    __setFreighterModuleForTesting({
+      isConnected: async () => ({ isConnected: true }),
+      getAddress: async () => ({ address: "GOBJECTACCOUNT" }),
+    });
+
+    expect(await stellarService.connectWallet()).toBe("GOBJECTACCOUNT");
+    expect(await stellarService.getNetwork()).toBe("");
+  });
+
+  it("does not notify when a polling tick finds no changes", async () => {
+    let poll: (() => void) | undefined;
+    (globalThis as any).window = {
+      ...makeMockWindow(),
+      setInterval: vi.fn((callback: () => void) => {
+        poll = callback;
+        return 1;
+      }),
+    };
+
+    const subscriber = vi.fn();
+    const unsubscribe = stellarService.subscribeToWalletChanges(subscriber);
+    await vi.waitFor(() => expect(poll).toBeDefined());
+    subscriber.mockClear();
+    await poll!();
+
+    expect(subscriber).not.toHaveBeenCalled();
+    unsubscribe();
   });
 });

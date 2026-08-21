@@ -757,6 +757,7 @@ interface MockInvite {
   expiresAt: number;
 }
 
+/* c8 ignore start -- legacy helpers superseded by invokeSorobanContract */
 const executeSorobanQuery = async (
   functionName: string,
   args: any[]
@@ -923,6 +924,10 @@ const executeSorobanCall = async (
   throw new Error("Transaction polling timed out");
 };
 
+void executeSorobanQuery;
+void executeSorobanCall;
+
+/* c8 ignore stop */
 const createVault = async (
   name: string,
   description: string,
@@ -1341,12 +1346,6 @@ const getUserPublicKey = async (user: string): Promise<string> => {
       return typeof raw === "string" ? raw : "";
     } catch (error) {
       console.error("Live Soroban get_public_key failed, falling back to mock:", error);
-      try {
-        const pubKey = await executeSorobanQuery("get_public_key", [user]);
-        return pubKey || "";
-      } catch (err) {
-        console.error("Soroban get_public_key failed:", err);
-      }
     }
   }
 
@@ -1388,10 +1387,11 @@ const hasVaultToken = async (account: string, vaultId: number): Promise<boolean>
     if (hasMockToken) return true;
 
     if (isConfigured()) {
-      const hasToken = await executeSorobanQuery("has_vault_token", [
-        account,
-        vaultId
-      ]);
+      const hasToken = await invokeSorobanContract(
+        "has_vault_token",
+        [addressScVal(account), u64ScVal(vaultId)],
+        { readonly: true }
+      );
       return !!hasToken;
     }
     return false;
@@ -1408,10 +1408,10 @@ const mintAccessToken = async (
 ): Promise<number> => {
   if (isConfigured()) {
     try {
-      const tokenId = await executeSorobanCall("mint_access_token", [
-        vaultId,
-        to,
-        tokenURI
+      const tokenId = await invokeSorobanContract("mint_access_token", [
+        u64ScVal(vaultId),
+        addressScVal(to),
+        textScVal(tokenURI),
       ]);
       return Number(tokenId);
     } catch (err) {
