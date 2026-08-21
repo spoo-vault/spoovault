@@ -53,6 +53,16 @@ jobs:
           UPDATE_BASELINE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: node scripts/gas-benchmark.mjs
 
+      # The job summary is visible on EVERY pull request (fork PRs included),
+      # unlike PR comments which require write access to the base repository.
+      - name: Publish Gas Comparison to Job Summary
+        if: always()
+        run: |
+          if [ -f gas-comparison.md ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            cat gas-comparison.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload Gas Artifacts
         if: always()
         uses: actions/upload-artifact@v4
