@@ -15,48 +15,65 @@ export type SorobanEventHandler = (event: SorobanEvent) => void;
 class SorobanEventWatcher {
   private isRunning = false;
   private intervalId: number | null = null;
-  private rpcUrl = "";
-  private contractId = "";
+  private rpcUrl: string = "";
+  private contractId: string = "";
   private lastCursor: string | undefined = undefined;
   private listeners: Record<string, SorobanEventHandler[]> = {};
-
+  
+  // Standard polling interval: 5 seconds (Stellar ledger time)
   private readonly POLLING_INTERVAL_MS = 5000;
 
-  public start(rpcUrl: string, contractId: string): void {
+  constructor() {}
+
+  /**
+   * Start watching for events from a specific contract
+   */
+  public start(rpcUrl: string, contractId: string) {
     if (this.isRunning) {
       if (this.rpcUrl === rpcUrl && this.contractId === contractId) {
-        return;
+        return; // Already running for this contract
       }
-      this.stop();
+      this.stop(); // Stop previous if contract changed
     }
 
     this.rpcUrl = rpcUrl;
     this.contractId = contractId;
     this.isRunning = true;
-    void this.poll();
+    
+    // Start polling loop
+    this.poll();
   }
 
-  public stop(): void {
+  /**
+   * Stop watching for events
+   */
+  public stop() {
     this.isRunning = false;
-    if (this.intervalId !== null) {
+    if (this.intervalId) {
       window.clearTimeout(this.intervalId);
       this.intervalId = null;
     }
   }
 
-  public on(topicName: string, handler: SorobanEventHandler): void {
+  /**
+   * Subscribe to a specific event topic (e.g. "VaultCreated")
+   */
+  public on(topicName: string, handler: SorobanEventHandler) {
     if (!this.listeners[topicName]) {
       this.listeners[topicName] = [];
     }
     this.listeners[topicName].push(handler);
   }
 
-  public off(topicName: string, handler: SorobanEventHandler): void {
+  /**
+   * Unsubscribe from a specific event topic
+   */
+  public off(topicName: string, handler: SorobanEventHandler) {
     if (!this.listeners[topicName]) return;
-    this.listeners[topicName] = this.listeners[topicName].filter((item) => item !== handler);
+    this.listeners[topicName] = this.listeners[topicName].filter(h => h !== handler);
   }
 
-  private async poll(): Promise<void> {
+  private async poll() {
     if (!this.isRunning) return;
 
     try {
@@ -65,31 +82,39 @@ class SorobanEventWatcher {
       console.error("SorobanEventWatcher polling error:", error);
     }
 
+    // Schedule next poll if still running
     if (this.isRunning) {
-      this.intervalId = window.setTimeout(() => void this.poll(), this.POLLING_INTERVAL_MS);
+      this.intervalId = window.setTimeout(() => this.poll(), this.POLLING_INTERVAL_MS);
     }
   }
 
-  private async fetchEvents(): Promise<void> {
+  private async fetchEvents() {
     if (!this.rpcUrl || !this.contractId) return;
 
+    // Build JSON-RPC payload
+    // Fetch all contract events and filter them locally for simplicity.
     const payload = {
       jsonrpc: "2.0",
       id: 1,
       method: "getEvents",
       params: {
         startLedger: this.lastCursor ? undefined : await this.getLatestLedger(),
-        filters: [{ type: "contract", contractIds: [this.contractId] }],
-        pagination: this.lastCursor ? { cursor: this.lastCursor, limit: 100 } : { limit: 100 },
-      },
+        filters: [
+          {
+            type: "contract",
+            contractIds: [this.contractId]
+          }
+        ],
+        pagination: this.lastCursor ? { cursor: this.lastCursor, limit: 100 } : { limit: 100 }
+      }
     };
 
-    if (payload.params.startLedger === 0) return;
+    if (payload.params.startLedger === 0) return; 
 
     const response = await fetch(this.rpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -102,43 +127,53 @@ class SorobanEventWatcher {
     }
 
     const events: SorobanEvent[] = data.result?.events || [];
+    
     for (const event of events) {
+      // Update cursor
       this.lastCursor = event.pagingToken;
+      
       this.dispatchEvent("SorobanEvent", event);
+      
+      // Dispatch generic refresh events for standard topics
       this.dispatchEvent("VaultCreated", event);
       this.dispatchEvent("DocumentAdded", event);
     }
   }
-
+  
   private async getLatestLedger(): Promise<number> {
     try {
       const response = await fetch(this.rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getLatestLedger" }),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getLatestLedger"
+        })
       });
       const data = await response.json();
       return data.result?.sequence || 0;
-    } catch {
+    } catch (e) {
       return 0;
     }
   }
 
-  private dispatchEvent(topicName: string, event: SorobanEvent): void {
+  private dispatchEvent(topicName: string, event: SorobanEvent) {
     const handlers = this.listeners[topicName] || [];
-    handlers.forEach((handler) => {
+    handlers.forEach(handler => {
       try {
         handler(event);
-      } catch (error) {
-        console.error(`Error in event handler for ${topicName}:`, error);
+      } catch (e) {
+        console.error(`Error in event handler for ${topicName}:`, e);
       }
     });
 
+    // Also dispatch to window for global listeners
     try {
       const customEvent = new CustomEvent(`spoovault:stellar:${topicName}`, { detail: event });
       window.dispatchEvent(customEvent);
-    } catch {
-      // Ignore environments without a DOM.
+    } catch (e) {
+      // Ignore
     }
   }
 }
