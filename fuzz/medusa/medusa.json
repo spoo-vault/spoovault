@@ -18,7 +18,10 @@
     "platformConfig": {
       "target": "fuzz/harness/SpooVaultFuzz.sol",
       "solcVersion": "0.8.24",
-      "args": ["--solc-remaps", "@openzeppelin/=node_modules/@openzeppelin/"]
+      "args": [
+        "--solc-remaps", "@openzeppelin/=node_modules/@openzeppelin/",
+        "--solc-args", "--evm-version cancun"
+      ]
     }
   }
 }

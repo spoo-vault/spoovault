@@ -14,3 +14,6 @@ stopOnFail: true
 # Resolve @openzeppelin imports (from the mounted node_modules) when crytic-compile
 # invokes solc directly on the harness file.
 cryticArgs: ["--solc-remaps", "@openzeppelin/=node_modules/@openzeppelin/"]
+# OpenZeppelin 5.x uses the MCOPY opcode, which requires the Cancun EVM target
+# (matching hardhat.config.cjs). Without it, solc reports "Function mcopy not found".
+solcArgs: "--evm-version cancun"
