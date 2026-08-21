@@ -35,8 +35,8 @@ import {
 import { buttonClasses } from "../utils/buttonClasses";
 import {
   decryptData,
+  fetchFromIPFS,
   formatDate,
-  getIPFSURL,
   isValidAddress,
   shortenAddress,
 } from "../utils/helpers";
@@ -568,10 +568,7 @@ const AccessCenter = () => {
       throw new Error("Encryption key not found. Import the key package first.");
     }
 
-    const response = await fetch(getIPFSURL(doc.ipfsHash));
-    if (!response.ok) {
-      throw new Error("Failed to download encrypted file");
-    }
+    const response = await fetchFromIPFS(doc.ipfsHash);
 
     const encryptedText = await response.text();
     const decryptedWordArray = CryptoJS.AES.decrypt(encryptedText, key);

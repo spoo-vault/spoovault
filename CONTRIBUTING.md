@@ -12,7 +12,7 @@ Thank you for your interest in contributing to SpooVault! This project is a **mu
   - `src/context/Web3Context.tsx`: Manages multi-chain connections (Metamask for Avalanche, Freighter for Stellar).
   - `src/services/contract.service.ts`: Client service wrapper routing calls to either network.
   - `src/services/stellar.service.ts`: Stellar/Freighter wallet integration service.
-  - `src/services/ipfs.service.ts` & `src/services/keyInbox.service.ts`: IPFS storage services (supports proxy configuration).
+  - `src/services/ipfs.service.ts`, `src/services/ipfsGateway.ts` & `src/services/keyInbox.service.ts`: IPFS storage. Uploads use Pinata/proxy; downloads race Pinata, Infura, Cloudflare, and ipfs.io with a per-gateway circuit breaker.
 
 ---
 
@@ -57,7 +57,11 @@ Thank you for your interest in contributing to SpooVault! This project is a **mu
   npm run deploy:contract
   ```
 
-### 2. Stellar (Rust + Soroban)
+### 2. Security Analysis (Slither & Mythril)
+
+CI runs [Slither](https://github.com/crytic/slither) and [Mythril](https://github.com/Consensys/mythril) against the Solidity contracts on every pull request. See the "Automated Security Analysis" section of [SECURITY.md](./SECURITY.md) for the exact commands, the current findings policy, and how to reproduce a scan locally before pushing.
+
+### 3. Stellar (Rust + Soroban)
 
 - Navigate to the contract folder:
   ```bash
@@ -80,10 +84,11 @@ Thank you for your interest in contributing to SpooVault! This project is a **mu
    ```bash
    npm run dev
    ```
-2. Start the local Pinata proxy (optional, for testing IPFS uploads without exposing keys):
+2. Start the local Pinata proxy (optional, for testing IPFS uploads without exposing Pinata keys):
    ```bash
-   npm run proxy:pinata
+   SPOOVUALT_PROXY_SECRET=dev-hmac-secret PINATA_JWT=your_jwt npm run proxy:pinata
    ```
+   Set the same value in `VITE_SPOOVUALT_PROXY_SECRET`. Unsigned or cross-origin pin requests are rejected with 403.
 3. Use the network switcher in the header sidebar to toggle between Avalanche (MetaMask) and Stellar (Freighter).
 
 ### Running Frontend Tests

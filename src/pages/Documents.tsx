@@ -4,12 +4,6 @@ import {
   CardBody,
   Input,
   Button,
-  Table,
-  TableHeader,
-  TableColumn,
-  TableBody,
-  TableRow,
-  TableCell,
   Chip,
   Modal,
   ModalContent,
@@ -24,14 +18,8 @@ import {
   FiChevronDown,
   FiUpload,
   FiFile,
-  FiDownload,
-  FiEye,
-  FiCopy,
   FiShield,
-  FiCalendar,
-  FiUser,
   FiKey,
-  FiSend,
   FiAlertCircle,
   FiLoader,
   FiFileText,
@@ -47,12 +35,11 @@ import {
 import {
   decryptData,
   encryptData,
+  fetchFromIPFS,
   generateEncryptionKey,
-  getIPFSURL,
   isIPFSConfigured,
   shortenAddress,
   uploadToIPFS,
-  formatDate,
   formatFileSize,
   isValidAddress,
 } from "../utils/helpers";
@@ -63,6 +50,7 @@ import { keyInboxService } from "../services/keyInbox.service";
 import { keyStoreService } from "../services/keyStore.service";
 import { splitSecretVSS, parseEncryptedMetadataPayload } from "../services/secrets.service";
 import { encryptWithPublicKey } from "../utils/crypto";
+import { VirtualizedDocumentsList } from "../components/documents/VirtualizedDocumentsList";
 
 type WordArray = { words: number[]; sigBytes: number };
 type ImportedKeyPayload = {
@@ -748,10 +736,7 @@ const Documents = () => {
       throw new Error("Encryption key not found for this document");
     }
 
-    const response = await fetch(getIPFSURL(doc.ipfsHash));
-    if (!response.ok) {
-      throw new Error("Failed to download encrypted file");
-    }
+    const response = await fetchFromIPFS(doc.ipfsHash);
 
     const encryptedText = await response.text();
     const decryptedWordArray = CryptoJS.AES.decrypt(encryptedText, key);
@@ -823,6 +808,15 @@ const Documents = () => {
       toast.error(error.message || "Failed to request access");
     } finally {
       setRequestingDocId(null);
+    }
+  };
+
+  const handleCopyIpfsHash = async (ipfsHash: string) => {
+    try {
+      await navigator.clipboard.writeText(ipfsHash);
+      toast.success("IPFS hash copied");
+    } catch {
+      toast.error("Failed to copy IPFS hash");
     }
   };
 
@@ -983,159 +977,18 @@ const Documents = () => {
 
       <Card className="border border-gray-800 bg-gray-900/30 backdrop-blur-sm">
         <CardBody className="p-0">
-          <div className="overflow-x-auto">
-            <div className="min-w-[58rem]">
-              <Table aria-label="Documents table" removeWrapper>
-                <TableHeader>
-                  <TableColumn>FILE</TableColumn>
-                  <TableColumn>VAULT</TableColumn>
-                  <TableColumn>STATUS</TableColumn>
-                  <TableColumn>ACCESS</TableColumn>
-                  <TableColumn>RELEASE</TableColumn>
-                  <TableColumn>ACTIONS</TableColumn>
-                </TableHeader>
-                <TableBody
-                  emptyContent={loading ? "Loading files..." : "No files found"}
-                >
-                  {filteredDocuments.map((item) => (
-                    <TableRow key={item.doc.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center">
-                            <FiFile className="text-gray-400" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{item.name}</p>
-                            <div className="flex items-center gap-2 text-xs text-gray-400">
-                              <FiUser />
-                              <span>{shortenAddress(item.doc.uploadedBy)}</span>
-                              <FiCalendar />
-                              <span>{formatDate(item.doc.uploadedAt)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <FiShield className="text-gray-400" />
-                          <span>{item.vaultName}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {item.canDecrypt ? (
-                          <Chip color="success" variant="flat" size="sm">
-                            Decryptable
-                          </Chip>
-                        ) : item.isRequestPending ? (
-                          <Chip color="warning" variant="flat" size="sm">
-                            Request Pending
-                          </Chip>
-                        ) : item.hasChainAccess ? (
-                          <Chip color="warning" variant="flat" size="sm">
-                            Key Missing
-                          </Chip>
-                        ) : (
-                          <Chip color="danger" variant="flat" size="sm">
-                            Locked
-                          </Chip>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          color={
-                            item.doc.requiredAccess === 2
-                              ? "danger"
-                              : item.doc.requiredAccess === 1
-                              ? "warning"
-                              : "success"
-                          }
-                          variant="flat"
-                          size="sm"
-                        >
-                          {accessLabel(item.doc.requiredAccess)}
-                        </Chip>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          color={
-                            item.releaseCondition === 3
-                              ? "danger"
-                              : item.releaseCondition === 2
-                              ? "warning"
-                              : item.releaseCondition === 1
-                              ? "primary"
-                              : "success"
-                          }
-                          variant="flat"
-                          size="sm"
-                        >
-                          {releaseConditionLabel(item.releaseCondition)}
-                        </Chip>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Button
-                            isIconOnly
-                            variant="light"
-                            size="sm"
-                            isDisabled={!item.canDecrypt}
-                            onPress={() => handleView(item.doc)}
-                          >
-                            <FiEye />
-                          </Button>
-                          <Button
-                            isIconOnly
-                            variant="light"
-                            size="sm"
-                            isDisabled={!item.canDecrypt}
-                            onPress={() => handleDownload(item.doc)}
-                          >
-                            <FiDownload />
-                          </Button>
-                          {!item.hasChainAccess && (
-                            <Button
-                              size="sm"
-                              className={buttonClasses.outlineSm}
-                              isDisabled={item.isRequestPending || requestingDocId === item.doc.id}
-                              isLoading={requestingDocId === item.doc.id}
-                              onPress={() => handleRequestAccess(item.doc.id)}
-                            >
-                              {item.isRequestPending ? "Pending" : "Request Access"}
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            className={buttonClasses.ghostSm}
-                            startContent={<FiSend />}
-                            isDisabled={!item.hasLocalKey}
-                            onPress={() => openShareModalForDocument(item.doc.id)}
-                          >
-                            Share Key
-                          </Button>
-                          <Button
-                            isIconOnly
-                            variant="light"
-                            size="sm"
-                            aria-label="Copy IPFS hash"
-                            onPress={async () => {
-                              try {
-                                await navigator.clipboard.writeText(item.doc.ipfsHash);
-                                toast.success("IPFS hash copied");
-                              } catch {
-                                toast.error("Failed to copy IPFS hash");
-                              }
-                            }}
-                          >
-                            <FiCopy />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
+          <VirtualizedDocumentsList
+            items={filteredDocuments}
+            loading={loading}
+            requestingDocId={requestingDocId}
+            accessLabel={accessLabel}
+            releaseConditionLabel={releaseConditionLabel}
+            onView={handleView}
+            onDownload={handleDownload}
+            onRequestAccess={handleRequestAccess}
+            onShareKey={openShareModalForDocument}
+            onCopyIpfsHash={handleCopyIpfsHash}
+          />
         </CardBody>
       </Card>
 

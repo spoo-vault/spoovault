@@ -15,12 +15,13 @@ This file addresses the STRIDE matrix requirement with 15+ attack vectors.
 | 8 | **Information Disclosure** | IPFS Metadata leakage | Metadata anonymization before pinning to IPFS. |
 | 9 | **Information Disclosure** | Side-channel attacks on ECIES | Implementation of constant-time cryptographic primitives. |
 | 10 | **Denial of Service** | Relayer endpoint flooding | Rate limiting and CAPTCHA integration on frontend API. |
-| 11 | **Denial of Service** | IPFS pinning service failure | Redundant pinning across multiple providers (Pinata, Infura, local). |
-| 12 | **Denial of Service** | Gas price spikes blocking recovery | Relayer gas-tank logic with dynamic fee estimation. |
-| 13 | **Elevation of Privilege** | Admin key compromise (EVM) | Transition to decentralized governance (DAO) or 48-hour Timelock. |
-| 14 | **Elevation of Privilege** | Unauthorized Relayer access | Role-Based Access Control (RBAC) within the Relayer network. |
-| 15 | **Cryptographic** | Weak Entropy for VSS | Using `window.crypto.getRandomValues()` for cryptographically secure randomness. |
-| 16 | **Cryptographic** | Insufficient Threshold ($t < n/2$) | Enforcing a minimum threshold of 2/3 for all vault configurations. |
+| 11 | **Denial of Service** | IPFS pinning service or public gateway failure (HTTP 429 / timeout) | Redundant pinning; document downloads race Pinata, Infura, Cloudflare, and ipfs.io with a per-gateway circuit breaker. |
+| 12 | **Information Disclosure** | Unauthenticated Pinata proxy (`Access-Control-Allow-Origin: *`) leaking JWT-backed pin API | CORS allowlist plus `X-SpooVault-Signature` HMAC; unsigned requests return 403 Forbidden. |
+| 13 | **Denial of Service** | Gas price spikes blocking recovery | Relayer gas-tank logic with dynamic fee estimation. |
+| 14 | **Elevation of Privilege** | Admin key compromise (EVM) | Transition to decentralized governance (DAO) or 48-hour Timelock. |
+| 15 | **Elevation of Privilege** | Unauthorized Relayer access | Role-Based Access Control (RBAC) within the Relayer network. |
+| 16 | **Cryptographic** | Weak Entropy for VSS | Using `window.crypto.getRandomValues()` for cryptographically secure randomness. |
+| 17 | **Cryptographic** | Insufficient Threshold ($t < n/2$) | Enforcing a minimum threshold of 2/3 for all vault configurations. |
 
 ## Formal Security Guarantees
 - **Non-Custodial**: Neither Spoo-Vault nor the Relayer ever possesses a full recovery key.

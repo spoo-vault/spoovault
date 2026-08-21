@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { HeroUIProvider } from "@heroui/react";
 import { Toaster } from "react-hot-toast";
 import { captureError } from "./services/telemetry.service";
+import { SessionLockGate } from "./components/SessionLockGate";
 
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -87,6 +88,7 @@ function App() {
             },
           }}
         />
+        <SessionLockGate />
       </Router>
     </HeroUIProvider>
   );

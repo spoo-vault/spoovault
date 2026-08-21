@@ -5,22 +5,34 @@
  * while keeping the API credentials server-side.
  *
  * Usage (local dev):
- *   PINATA_JWT=your_jwt node scripts/pinata-proxy.mjs
+ *   PINATA_JWT=your_jwt SPOOVUALT_PROXY_SECRET=your_hmac_secret node scripts/pinata-proxy.mjs
  *   or
- *   PINATA_API_KEY=x PINATA_API_SECRET=y node scripts/pinata-proxy.mjs
+ *   PINATA_API_KEY=x PINATA_API_SECRET=y SPOOVUALT_PROXY_SECRET=your_hmac_secret node scripts/pinata-proxy.mjs
  *
  * Endpoints:
  *   POST /api/ipfs/pin-file   - Pin a file to IPFS (multipart/form-data with "file" field)
  *   POST /api/ipfs/pin-json   - Pin a JSON object to IPFS (application/json body)
  *   GET  /api/ipfs/pin-list   - List pinned files
  *
+ * Auth:
+ *   Pin/list routes require `X-SpooVault-Signature: t=<unix>,v1=<hmac-sha256-hex>`.
+ *   CORS is restricted to SPOOVUALT_ALLOWED_ORIGINS (defaults to local Vite URLs).
+ *   Unauthorized callers receive 403 Forbidden.
+ *
  * For production:
  *   Deploy this file to a Cloud Run, Render, Railway, or similar service.
- *   Then set VITE_IPFS_PROXY_URL=https://your-proxy.example.com in frontend .env
+ *   Keep PINATA_JWT on the server only. Give the app VITE_SPOOVUALT_PROXY_SECRET
+ *   (HMAC) plus VITE_IPFS_PROXY_URL=https://your-proxy.example.com.
  *
  * Note: For Firebase Functions deployment, see:
  *   functions/index.js (created separately)
  */
+
+import {
+  authorizeIncomingRequest,
+  isOriginAllowed,
+  parseAllowedOrigins,
+} from "./lib/ipfsProxyGuard.mjs";
 
 // Check for required dependencies
 let express, multer, fetch, cors;
@@ -55,12 +67,25 @@ try {
 const PINATA_JWT = process.env.PINATA_JWT || process.env.VITE_PINATA_JWT || "";
 const PINATA_API_KEY = process.env.PINATA_API_KEY || process.env.VITE_PINATA_API_KEY || "";
 const PINATA_API_SECRET = process.env.PINATA_API_SECRET || process.env.VITE_PINATA_API_SECRET || "";
+const PROXY_SECRET =
+  process.env.SPOOVUALT_PROXY_SECRET || process.env.VITE_SPOOVUALT_PROXY_SECRET || "";
+const ALLOWED_ORIGINS = parseAllowedOrigins(
+  process.env.SPOOVUALT_ALLOWED_ORIGINS || process.env.CORS_ALLOWED_ORIGINS
+);
 const PORT = Number(process.env.PORT) || 3001;
 
 if (!PINATA_JWT && !(PINATA_API_KEY && PINATA_API_SECRET)) {
   console.error(
     "❌ Pinata credentials not found.\n" +
     "   Set PINATA_JWT (recommended) or PINATA_API_KEY + PINATA_API_SECRET environment variables.\n"
+  );
+  process.exit(1);
+}
+
+if (!PROXY_SECRET) {
+  console.error(
+    "❌ SPOOVUALT_PROXY_SECRET is required so the proxy can reject unsigned pin requests.\n" +
+    "   Set SPOOVUALT_PROXY_SECRET (and VITE_SPOOVUALT_PROXY_SECRET for the frontend).\n"
   );
   process.exit(1);
 }
@@ -80,8 +105,46 @@ const buildPinataHeaders = (includeContentType = false) => {
 };
 
 const app = express();
-app.use(cors({ origin: "*" }));
-app.use(express.json({ limit: "50mb" }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      callback(null, isOriginAllowed(origin, ALLOWED_ORIGINS));
+    },
+    allowedHeaders: ["Content-Type", "X-SpooVault-Signature"],
+    methods: ["GET", "POST", "OPTIONS"],
+    maxAge: 600,
+  })
+);
+app.use(
+  express.json({
+    limit: "50mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf.toString("utf8");
+    },
+  })
+);
+
+app.use("/api/ipfs", async (req, res, next) => {
+  const result = await authorizeIncomingRequest(
+    {
+      method: req.method,
+      originalUrl: req.originalUrl,
+      origin: req.headers.origin,
+      signatureHeader: req.headers["x-spoovault-signature"],
+      contentType: req.headers["content-type"],
+      rawBody: req.rawBody,
+    },
+    { secret: PROXY_SECRET, allowedOrigins: ALLOWED_ORIGINS }
+  );
+  if (!result.ok) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  return next();
+});
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
@@ -194,6 +257,8 @@ app.get("/health", (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n✅ Pinata proxy running at http://localhost:${PORT}`);
+  console.log("   CORS origins:", ALLOWED_ORIGINS.join(", "));
+  console.log("   Auth: X-SpooVault-Signature required on /api/ipfs/*");
   console.log("   Endpoints:");
   console.log("   POST /api/ipfs/pin-file");
   console.log("   POST /api/ipfs/pin-json");

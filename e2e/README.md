@@ -20,6 +20,7 @@ e2e/
     01-connect-wallet.spec.ts    # connect MetaMask -> dApp reflects account
     02-create-vault.spec.ts      # create vault via UI + confirm on-chain tx
     03-guardian-access.spec.ts   # multi-guardian accept/request/approve (contract E2E)
+    04-emergency-mode.spec.ts    # emergency mode trigger + post-death release (contract E2E)
   scripts/deploy-anvil.mjs       # deploy SpooVault to Anvil, write e2e/.env.e2e
   soroban/soroban-flow.test.mjs  # Soroban standalone contract E2E (node:test)
 playwright.config.ts             # Playwright/Synpress config (videos + traces)

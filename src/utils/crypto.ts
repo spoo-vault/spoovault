@@ -1,4 +1,14 @@
 import nacl from "tweetnacl";
+import {
+  concatBytes,
+  generateMlKem768KeyPairBase64,
+  mlKem768Decapsulate,
+  mlKem768Encapsulate,
+  ML_KEM_768_CIPHERTEXT_BYTES,
+  ML_KEM_768_PUBLIC_KEY_BYTES,
+  ML_KEM_768_SECRET_KEY_BYTES,
+  ML_KEM_768_SHARED_SECRET_BYTES,
+} from "./pqcCrypto";
 
 /**
  * Base64 to Uint8Array
@@ -69,10 +79,35 @@ export interface EncryptedPayload {
   ephemPublicKey: string;
   ciphertext: string;
   mac?: string;
+  /** ML-KEM-768 encapsulation ciphertext (hybrid payloads). */
+  pqcCiphertext?: string;
+  /** Recipient ML-KEM-768 public key used for encapsulation (hybrid payloads). */
+  pqcPublicKey?: string;
 }
 
 export const ECIES_VERSION = "ecies-p256-aes256gcm-v1";
 export const LEGACY_X25519_VERSION = "x25519-xsalsa20-poly1305";
+/** Hybrid classical ECDH P-256 + ML-KEM-768 dual encapsulation. */
+export const HYBRID_PQC_VERSION = "hybrid-mlkem768-p256-aes256gcm-v1";
+/** Hybrid classical X25519 + ML-KEM-768 dual encapsulation. */
+export const HYBRID_PQC_X25519_VERSION = "hybrid-mlkem768-x25519-aes256gcm-v1";
+
+export interface HybridPublicKeys {
+  /** Classical ECDH public key (P-256 SPKI or X25519 raw), Base64. */
+  classicalPublicKey: string;
+  /** ML-KEM-768 public key, Base64. */
+  pqcPublicKey: string;
+}
+
+export interface HybridPrivateKeys {
+  /** Classical ECDH private key (P-256 PKCS#8 or X25519 raw), Base64. */
+  classicalPrivateKey: string;
+  /** ML-KEM-768 secret key, Base64. */
+  pqcPrivateKey: string;
+}
+
+const HYBRID_HKDF_INFO = stringToUint8Array("spoovault-hybrid-kem-v1");
+const HYBRID_HKDF_SALT = stringToUint8Array("spoovault-hybrid-salt-v1");
 
 const getWebCrypto = (): Crypto => {
   const cryptoObj =
@@ -317,3 +352,229 @@ export async function decryptWithPrivateKey(
 
   throw new Error(`Unsupported encryption version: ${payload.version}`);
 }
+
+/**
+ * Derive AES-256-GCM key via HKDF-SHA-256 over concatenated KEM shared secrets:
+ *   K = HKDF(K_ECDH || K_ML-KEM)
+ */
+async function deriveHybridAesKey(
+  classicalSharedSecret: Uint8Array,
+  mlKemSharedSecret: Uint8Array,
+  usages: KeyUsage[]
+): Promise<CryptoKey> {
+  const subtle = getWebCrypto().subtle;
+  const ikm = concatBytes(classicalSharedSecret, mlKemSharedSecret);
+  const keyMaterial = await subtle.importKey(
+    "raw",
+    toArrayBuffer(ikm),
+    "HKDF",
+    false,
+    ["deriveKey"]
+  );
+  return subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: toArrayBuffer(HYBRID_HKDF_SALT),
+      info: toArrayBuffer(HYBRID_HKDF_INFO),
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    usages
+  );
+}
+
+async function deriveEcdhP256SharedBits(
+  privateKey: CryptoKey,
+  publicKey: CryptoKey
+): Promise<Uint8Array> {
+  const subtle = getWebCrypto().subtle;
+  const bits = await subtle.deriveBits(
+    { name: "ECDH", public: publicKey },
+    privateKey,
+    256
+  );
+  return new Uint8Array(bits);
+}
+
+/**
+ * Hybrid dual-encapsulation encrypt (ECDH P-256 + ML-KEM-768 → AES-256-GCM).
+ * Remains secure if either classical ECDH or ML-KEM is compromised (but not both).
+ */
+export async function encryptHybridWithPublicKeys(
+  message: string,
+  keys: HybridPublicKeys
+): Promise<string> {
+  const subtle = getWebCrypto().subtle;
+
+  const ephemKeyPair = await generateECIESKeyPair();
+  const receiverClassical = await importECIESPublicKey(keys.classicalPublicKey);
+  const kEcdh = await deriveEcdhP256SharedBits(
+    ephemKeyPair.privateKey,
+    receiverClassical
+  );
+
+  const { ciphertext: pqcCt, sharedSecret: kMlKem } = await mlKem768Encapsulate(
+    keys.pqcPublicKey
+  );
+
+  const aesKey = await deriveHybridAesKey(kEcdh, kMlKem, ["encrypt"]);
+
+  const iv = new Uint8Array(12);
+  getWebCrypto().getRandomValues(iv);
+  const messageBytes = stringToUint8Array(message);
+  const ciphertextBuffer = await subtle.encrypt(
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
+    aesKey,
+    toArrayBuffer(messageBytes)
+  );
+
+  const payload: EncryptedPayload = {
+    version: HYBRID_PQC_VERSION,
+    iv: uint8ArrayToBase64(iv),
+    ephemPublicKey: await exportECIESPublicKey(ephemKeyPair.publicKey),
+    ciphertext: uint8ArrayToBase64(new Uint8Array(ciphertextBuffer)),
+    pqcCiphertext: uint8ArrayToBase64(pqcCt),
+    pqcPublicKey: keys.pqcPublicKey,
+  };
+
+  return JSON.stringify(payload);
+}
+
+/**
+ * Hybrid dual-encapsulation decrypt for P-256 + ML-KEM-768 payloads.
+ * Both classical and PQC private keys are required.
+ */
+export async function decryptHybridWithPrivateKeys(
+  encryptedPayloadJson: string | EncryptedPayload,
+  keys: HybridPrivateKeys
+): Promise<string> {
+  const payload: EncryptedPayload =
+    typeof encryptedPayloadJson === "string"
+      ? JSON.parse(encryptedPayloadJson)
+      : encryptedPayloadJson;
+
+  if (payload.version === HYBRID_PQC_X25519_VERSION) {
+    return decryptHybridX25519(payload, keys);
+  }
+
+  if (payload.version !== HYBRID_PQC_VERSION) {
+    // Fall back to classical decrypt for backwards compatibility
+    return decryptWithPrivateKey(encryptedPayloadJson, keys.classicalPrivateKey);
+  }
+
+  if (!payload.pqcCiphertext || !payload.pqcPublicKey) {
+    throw new Error("Hybrid payload missing pqcCiphertext or pqcPublicKey");
+  }
+
+  const subtle = getWebCrypto().subtle;
+  const receiverPrivateKey = await importECIESPrivateKey(keys.classicalPrivateKey);
+  const ephemPublicKey = await importECIESPublicKey(payload.ephemPublicKey);
+  const kEcdh = await deriveEcdhP256SharedBits(receiverPrivateKey, ephemPublicKey);
+  const kMlKem = await mlKem768Decapsulate(payload.pqcCiphertext, keys.pqcPrivateKey);
+
+  const aesKey = await deriveHybridAesKey(kEcdh, kMlKem, ["decrypt"]);
+  const ivStr = payload.iv || payload.nonce;
+  if (!ivStr) throw new Error("Missing IV in hybrid encrypted payload");
+
+  try {
+    const decrypted = await subtle.decrypt(
+      { name: "AES-GCM", iv: toArrayBuffer(base64ToUint8Array(ivStr)) },
+      aesKey,
+      toArrayBuffer(base64ToUint8Array(payload.ciphertext))
+    );
+    return uint8ArrayToString(new Uint8Array(decrypted));
+  } catch {
+    throw new Error("Failed to decrypt hybrid ciphertext with provided keys");
+  }
+}
+
+/**
+ * Hybrid encrypt using X25519 (TweetNaCl) + ML-KEM-768.
+ */
+export async function encryptHybridX25519WithPublicKeys(
+  message: string,
+  keys: HybridPublicKeys
+): Promise<string> {
+  const ephem = nacl.box.keyPair();
+  const receiverPk = base64ToUint8Array(keys.classicalPublicKey);
+  if (receiverPk.length !== nacl.box.publicKeyLength) {
+    throw new Error("Invalid X25519 public key length");
+  }
+
+  const kEcdh = nacl.scalarMult(ephem.secretKey, receiverPk);
+  const { ciphertext: pqcCt, sharedSecret: kMlKem } = await mlKem768Encapsulate(
+    keys.pqcPublicKey
+  );
+  const aesKey = await deriveHybridAesKey(kEcdh, kMlKem, ["encrypt"]);
+
+  const iv = new Uint8Array(12);
+  getWebCrypto().getRandomValues(iv);
+  const ciphertextBuffer = await getWebCrypto().subtle.encrypt(
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
+    aesKey,
+    toArrayBuffer(stringToUint8Array(message))
+  );
+
+  const payload: EncryptedPayload = {
+    version: HYBRID_PQC_X25519_VERSION,
+    iv: uint8ArrayToBase64(iv),
+    ephemPublicKey: uint8ArrayToBase64(ephem.publicKey),
+    ciphertext: uint8ArrayToBase64(new Uint8Array(ciphertextBuffer)),
+    pqcCiphertext: uint8ArrayToBase64(pqcCt),
+    pqcPublicKey: keys.pqcPublicKey,
+  };
+  return JSON.stringify(payload);
+}
+
+async function decryptHybridX25519(
+  payload: EncryptedPayload,
+  keys: HybridPrivateKeys
+): Promise<string> {
+  if (!payload.pqcCiphertext || !payload.pqcPublicKey) {
+    throw new Error("Hybrid payload missing pqcCiphertext or pqcPublicKey");
+  }
+
+  const sk = base64ToUint8Array(keys.classicalPrivateKey);
+  const ephemPk = base64ToUint8Array(payload.ephemPublicKey);
+  if (sk.length !== nacl.box.secretKeyLength) {
+    throw new Error("Invalid X25519 secret key length");
+  }
+
+  const kEcdh = nacl.scalarMult(sk, ephemPk);
+  const kMlKem = await mlKem768Decapsulate(payload.pqcCiphertext, keys.pqcPrivateKey);
+  const aesKey = await deriveHybridAesKey(kEcdh, kMlKem, ["decrypt"]);
+
+  const ivStr = payload.iv || payload.nonce;
+  if (!ivStr) throw new Error("Missing IV in hybrid encrypted payload");
+
+  try {
+    const decrypted = await getWebCrypto().subtle.decrypt(
+      { name: "AES-GCM", iv: toArrayBuffer(base64ToUint8Array(ivStr)) },
+      aesKey,
+      toArrayBuffer(base64ToUint8Array(payload.ciphertext))
+    );
+    return uint8ArrayToString(new Uint8Array(decrypted));
+  } catch {
+    throw new Error("Failed to decrypt hybrid ciphertext with provided keys");
+  }
+}
+
+/** Generate a combined classical P-256 + ML-KEM-768 key set. */
+export async function generateHybridKeyPairBase64(): Promise<{
+  classical: { publicKey: string; privateKey: string };
+  pqc: { publicKey: string; secretKey: string };
+}> {
+  const classical = await generateECIESKeyPairBase64();
+  const pqc = await generateMlKem768KeyPairBase64();
+  return { classical, pqc };
+}
+
+export {
+  generateMlKem768KeyPairBase64,
+  ML_KEM_768_CIPHERTEXT_BYTES,
+  ML_KEM_768_PUBLIC_KEY_BYTES,
+  ML_KEM_768_SECRET_KEY_BYTES,
+  ML_KEM_768_SHARED_SECRET_BYTES,
+};

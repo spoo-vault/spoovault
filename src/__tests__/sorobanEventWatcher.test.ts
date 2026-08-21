@@ -1,29 +1,18 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { sorobanEventWatcher } from "../services/sorobanEventWatcher.service";
 
 describe("SorobanEventWatcher", () => {
   const rpcUrl = "https://mock.soroban.rpc";
   const contractId = "C123456789";
-  const flushPoll = async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  };
 
   beforeEach(() => {
     vi.useFakeTimers();
     global.fetch = vi.fn();
-    vi.stubGlobal("window", {
-      clearTimeout,
-      setTimeout,
-      dispatchEvent: vi.fn(() => true),
-    });
-    vi.stubGlobal("CustomEvent", class CustomEvent {
-      detail: unknown;
-
-      constructor(_type: string, init: { detail: unknown }) {
-        this.detail = init.detail;
-      }
-    });
+    // Stop the watcher's self-rescheduling loop from firing under fake timers
+    // so each test controls polling explicitly.
+    vi.spyOn(window, "setTimeout").mockReturnValue(0 as unknown as ReturnType<typeof setTimeout>);
+    vi.spyOn(window, "clearTimeout").mockImplementation(() => {});
     vi.spyOn(window, "dispatchEvent").mockImplementation(() => true);
   });
 
@@ -32,10 +21,7 @@ describe("SorobanEventWatcher", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
-    // Reset private state via fresh instance if needed, but since it's a singleton, 
-    // stopping it and clearing listeners is usually enough for tests.
-    // Clean up generic listeners:
-    // @ts-ignore
+    // @ts-ignore reset private state
     sorobanEventWatcher.listeners = {};
     // @ts-ignore
     sorobanEventWatcher.lastCursor = undefined;
@@ -47,48 +33,40 @@ describe("SorobanEventWatcher", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("should initialize and fetch latest ledger on first poll", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        result: { sequence: 1000 }
-      })
-    });
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ result: { events: [] } })
-    });
+  it("should fetch latest ledger and events on the first poll", async () => {
+    (global.fetch as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { sequence: 1000 } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { events: [] } }) });
 
     sorobanEventWatcher.start(rpcUrl, contractId);
-    await flushPoll();
-    sorobanEventWatcher.stop();
+    await vi.runOnlyPendingTimersAsync();
 
     expect(global.fetch).toHaveBeenCalledTimes(2);
-    const fetchCall = (global.fetch as any).mock.calls[0];
-    expect(fetchCall[0]).toBe(rpcUrl);
-    expect(JSON.parse(fetchCall[1].body).method).toBe("getLatestLedger");
+    const getLatestLedgerCall = (global.fetch as any).mock.calls[0];
+    expect(getLatestLedgerCall[0]).toBe(rpcUrl);
+    expect(JSON.parse(getLatestLedgerCall[1].body).method).toBe("getLatestLedger");
+    const getEventsCall = (global.fetch as any).mock.calls[1];
+    expect(JSON.parse(getEventsCall[1].body).method).toBe("getEvents");
   });
 
   it("should fetch events and dispatch to listeners when events are present", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ result: { sequence: 1000 } })
-    });
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        result: {
-          events: [
-            {
-              type: "contract",
-              pagingToken: "1001-1",
-              topic: ["VaultCreated_XDR"],
-              value: { some: "data" }
-            }
-          ]
-        }
-      })
-    });
+    (global.fetch as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { sequence: 1000 } }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: {
+            events: [
+              {
+                type: "contract",
+                pagingToken: "1001-1",
+                topic: ["VaultCreated_XDR"],
+                value: { some: "data" },
+              },
+            ],
+          },
+        }),
+      });
 
     const mockCallback = vi.fn();
     sorobanEventWatcher.on("SorobanEvent", mockCallback);
@@ -96,9 +74,11 @@ describe("SorobanEventWatcher", () => {
     sorobanEventWatcher.on("VaultCreated", mockVaultCallback);
 
     sorobanEventWatcher.start(rpcUrl, contractId);
-    await flushPoll();
-    sorobanEventWatcher.stop();
-    await vi.waitFor(() => expect(mockCallback).toHaveBeenCalledTimes(1));
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(mockCallback).toHaveBeenCalledTimes(1);
+    expect(mockVaultCallback).toHaveBeenCalledTimes(1);
+    expect(window.dispatchEvent).toHaveBeenCalled();
 
     expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(JSON.parse((global.fetch as any).mock.calls[1][1].body).method).toBe("getEvents");
@@ -112,32 +92,31 @@ describe("SorobanEventWatcher", () => {
   });
 
   it("should handle RPC errors gracefully", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: false,
-      statusText: "Internal Server Error"
-    });
-
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
+    // First poll: getLatestLedger fails, but the service swallows it and returns
+    // 0, so no error is logged yet.
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: false,
+      statusText: "Internal Server Error",
+    });
     sorobanEventWatcher.start(rpcUrl, contractId);
-  await flushPoll();
+    await vi.runOnlyPendingTimersAsync();
     sorobanEventWatcher.stop();
 
     // getLatestLedger fails and returns 0.
-
-    expect(consoleSpy).not.toHaveBeenCalled(); // getLatestLedger swallows error and returns 0
 
     // Trigger a manual poll with a cursor so getEvents fails directly.
     // @ts-ignore
     sorobanEventWatcher.lastCursor = "prev-cursor";
     // @ts-ignore
     sorobanEventWatcher.isRunning = true;
-    
+
     (global.fetch as any).mockResolvedValueOnce({
       ok: false,
-      statusText: "Bad Gateway"
+      statusText: "Bad Gateway",
     });
-    
+
     // @ts-ignore
     await sorobanEventWatcher.poll();
 

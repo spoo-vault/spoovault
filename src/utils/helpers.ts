@@ -91,10 +91,21 @@ export const isValidAddress = (address: string, ecosystem?: "avalanche" | "stell
 };
 
 /**
- * Get IPFS gateway URL
+ * Get a deterministic IPFS gateway URL (primary gateway, for display/copy).
  */
 export const getIPFSURL = (hash: string): string => {
   return ipfsService.getURL(hash);
+};
+
+/**
+ * Download IPFS content with multi-gateway race fetch and circuit breaker.
+ * Failover is automatic on HTTP 429, timeouts, and other gateway errors.
+ */
+export const fetchFromIPFS = (
+  hash: string,
+  init?: RequestInit
+): Promise<Response> => {
+  return ipfsService.fetchFile(hash, init);
 };
 
 /**

@@ -18,14 +18,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # The default `npm install` that slither-action would otherwise run itself
+      # fails on this repo's HeroUI/Tailwind peer-dependency conflict, so
+      # dependencies are installed explicitly here and the action is told
+      # (ignore-compile below) not to repeat this step.
+      - name: Install Node Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Compile Hardhat EVM Contracts
+        run: npx hardhat compile --config hardhat.config.cjs
+
+      # contracts/SpooVault.sol and contracts/SpooVaultConsumer.sol have no High
+      # findings today; Medium/Low findings on the existing contracts are still
+      # uploaded to the Security tab via SARIF for review but do not block the
+      # PR, since fixing them is a smart-contract change outside the scope of
+      # this CI-integration fix. Escalate to fail-on: medium once triaged.
       - name: Run Slither
         uses: crytic/slither-action@v0.4.0
         id: slither
-        continue-on-error: true # We want to upload SARIF even if it finds issues
         with:
+          target: '.'
+          ignore-compile: true
+          slither-version: '0.10.4'
+          slither-args: --filter-paths "node_modules|contracts-stellar"
           sarif: results.sarif
-          fail-on: medium # Fails CI on High/Medium findings
+          fail-on: high
 
+      # Upload the SARIF report regardless of whether the Slither step above
+      # passed or failed, so findings stay visible in the Security tab even on
+      # a failing run — without masking that failure from the job's own status
+      # (the previous continue-on-error: true on the Slither step did that).
       - name: Upload Slither results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         if: ${{ always() && hashFiles('results.sarif') != '' }}
@@ -33,10 +61,44 @@ jobs:
           sarif_file: results.sarif
           category: slither
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Mythril
+        run: |
+          python3 -m venv .mythril-venv
+          source .mythril-venv/bin/activate
+          pip install --upgrade pip "setuptools==59.6.0" wheel
+          pip install mythril==0.24.8
+
+      # Mythril resolves imports through solc's --base-path/--include-path machinery, which
+      # records node_modules packages under their bare import name (e.g. "@openzeppelin/...")
+      # rather than their real path, then reads that name back off disk. The symlink below
+      # makes that name resolvable directly from the repo root. The Hardhat solc download is
+      # reused so Mythril doesn't need its own network fetch of the compiler.
+      - name: Prepare Mythril environment
+        run: |
+          ln -sfn node_modules/@openzeppelin @openzeppelin
+          SOLC_BIN=$(find "$HOME/.cache/hardhat-nodejs/compilers-v2" -name "solc-*-v0.8.24*" | head -n1)
+          mkdir -p "$HOME/.solcx"
+          cp "$SOLC_BIN" "$HOME/.solcx/solc-v0.8.24"
+          chmod +x "$HOME/.solcx/solc-v0.8.24"
+
+      # Mythril's default policy fails the build on any finding of any severity; there are
+      # currently none for these contracts. Keep the compiler version and evmVersion/optimizer
+      # settings below in sync with hardhat.config.cjs. contracts/ISpooVault.sol is a pure
+      # interface with no bytecode, so it's skipped (nothing to symbolically execute).
       - name: Run Mythril
         run: |
-          docker run --rm -v $(pwd):/tmp mythril/myth analyze /tmp/contracts/SpooVault.sol --execution-timeout 60
-        # Replace path with your actual primary contract path if different
+          source .mythril-venv/bin/activate
+          myth analyze contracts/SpooVault.sol contracts/SpooVaultConsumer.sol \
+            --solv 0.8.24 \
+            --solc-args "--allow-paths . --base-path ." \
+            --solc-json .github/mythril-solc-settings.json \
+            --execution-timeout 300 \
+            -o text
 
   rust-stellar-security:
     name: Soroban Analysis (Audit, Clippy, Geiger)

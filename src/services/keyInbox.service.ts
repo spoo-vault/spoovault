@@ -1,4 +1,6 @@
 import axios from "axios";
+import CryptoJS from "crypto-js";
+import { signProxyRequest } from "../utils/ipfsProxySignature";
 
 const PINATA_API_URL =
   import.meta.env.VITE_IPFS_API_URL || "https://api.pinata.cloud";
@@ -35,9 +37,21 @@ interface PinRow {
 
 const IPFS_PROXY_URL =
   (import.meta.env.VITE_IPFS_PROXY_URL as string | undefined)?.trim() || "";
+const PROXY_SECRET =
+  (import.meta.env.VITE_SPOOVUALT_PROXY_SECRET as string | undefined)?.trim() || "";
 
 const isConfigured = (): boolean => {
-  return !!IPFS_PROXY_URL || !!PINATA_JWT || (!!PINATA_API_KEY && !!PINATA_API_SECRET);
+  if (IPFS_PROXY_URL) {
+    return !!PROXY_SECRET;
+  }
+  return !!PINATA_JWT || (!!PINATA_API_KEY && !!PINATA_API_SECRET);
+};
+
+const getProxySecret = (): string => {
+  if (!PROXY_SECRET) {
+    throw new Error("IPFS proxy signing secret is not configured");
+  }
+  return PROXY_SECRET;
 };
 
 const buildAuthHeaders = (): Record<string, string> => {
@@ -55,9 +69,14 @@ const buildAuthHeaders = (): Record<string, string> => {
 
 const normalizeAddress = (value: string): string => value.trim().toLowerCase();
 
+const hashAddress = (value: string): string =>
+  CryptoJS.SHA256(normalizeAddress(value)).toString();
+
 const getGatewayUrl = (hash: string): string => `${IPFS_GATEWAY}${hash}`;
 
-const sendKeyEnvelope = async (payload: KeyEnvelopePayload): Promise<string> => {
+const sendKeyEnvelope = async (
+  payload: KeyEnvelopePayload,
+): Promise<string> => {
   if (!isConfigured()) {
     throw new Error("IPFS is not configured");
   }
@@ -65,6 +84,9 @@ const sendKeyEnvelope = async (payload: KeyEnvelopePayload): Promise<string> => 
   const beneficiary = normalizeAddress(payload.beneficiary);
   const contract = normalizeAddress(payload.contract);
   const issuedBy = normalizeAddress(payload.issuedBy);
+  const beneficiaryHash = hashAddress(payload.beneficiary);
+  const contractHash = hashAddress(payload.contract);
+  const issuedByHash = hashAddress(payload.issuedBy);
 
   const content: KeyEnvelopePayload = {
     ...payload,
@@ -75,29 +97,35 @@ const sendKeyEnvelope = async (payload: KeyEnvelopePayload): Promise<string> => 
 
   let response;
   if (IPFS_PROXY_URL) {
-    response = await axios.post(
-      `${IPFS_PROXY_URL}/api/ipfs/pin-json`,
-      {
-        pinataContent: content,
-        pinataMetadata: {
-          name: ENVELOPE_NAME,
-          keyvalues: {
-            type: "beneficiary_key_envelope",
-            beneficiary,
-            contract,
-            chainId: String(content.chainId),
-            documentId: String(content.documentId),
-            vaultId: String(content.vaultId),
-            issuedBy,
-            issuedAt: content.issuedAt,
-          },
+    const body = JSON.stringify({
+      pinataContent: content,
+      pinataMetadata: {
+        name: ENVELOPE_NAME,
+        keyvalues: {
+          type: "beneficiary_key_envelope",
+          beneficiary: beneficiaryHash,
+          contract: contractHash,
+          chainId: String(content.chainId),
+          documentId: String(content.documentId),
+          vaultId: String(content.vaultId),
+          issuedBy: issuedByHash,
+          issuedAt: content.issuedAt,
         },
       },
-      {
-        headers: { "Content-Type": "application/json" },
-        timeout: 30000,
-      }
-    );
+    });
+    const auth = await signProxyRequest({
+      secret: getProxySecret(),
+      method: "POST",
+      path: "/api/ipfs/pin-json",
+      body,
+    });
+    response = await axios.post(`${IPFS_PROXY_URL}/api/ipfs/pin-json`, body, {
+      headers: {
+        "Content-Type": "application/json",
+        ...auth.headers,
+      },
+      timeout: 30000,
+    });
   } else {
     response = await axios.post(
       `${PINATA_API_URL}/pinning/pinJSONToIPFS`,
@@ -107,12 +135,12 @@ const sendKeyEnvelope = async (payload: KeyEnvelopePayload): Promise<string> => 
           name: ENVELOPE_NAME,
           keyvalues: {
             type: "beneficiary_key_envelope",
-            beneficiary,
-            contract,
+            beneficiary: beneficiaryHash,
+            contract: contractHash,
             chainId: String(content.chainId),
             documentId: String(content.documentId),
             vaultId: String(content.vaultId),
-            issuedBy,
+            issuedBy: issuedByHash,
             issuedAt: content.issuedAt,
           },
         },
@@ -123,7 +151,7 @@ const sendKeyEnvelope = async (payload: KeyEnvelopePayload): Promise<string> => 
           ...buildAuthHeaders(),
         },
         timeout: 30000,
-      }
+      },
     );
   }
 
@@ -136,13 +164,13 @@ const sendKeyEnvelope = async (payload: KeyEnvelopePayload): Promise<string> => 
 
 const listEnvelopeHashesForBeneficiary = async (
   beneficiaryAddress: string,
-  options?: { limit?: number }
+  options?: { limit?: number },
 ): Promise<string[]> => {
   if (!isConfigured()) {
     throw new Error("IPFS is not configured");
   }
 
-  const target = normalizeAddress(beneficiaryAddress);
+  const target = hashAddress(beneficiaryAddress);
   const maxMatches = Math.max(1, Math.min(options?.limit ?? 30, 100));
   const pageLimit = 100;
   const maxPages = 6;
@@ -151,12 +179,19 @@ const listEnvelopeHashesForBeneficiary = async (
   for (let page = 0; page < maxPages && matches.length < maxMatches; page++) {
     let response;
     if (IPFS_PROXY_URL) {
-      response = await axios.get(`${IPFS_PROXY_URL}/api/ipfs/pin-list`, {
-        params: {
-          status: "pinned",
-          pageLimit,
-          pageOffset: page * pageLimit,
-        },
+      const query = new URLSearchParams({
+        status: "pinned",
+        pageLimit: String(pageLimit),
+        pageOffset: String(page * pageLimit),
+      });
+      const path = `/api/ipfs/pin-list?${query.toString()}`;
+      const auth = await signProxyRequest({
+        secret: getProxySecret(),
+        method: "GET",
+        path,
+      });
+      response = await axios.get(`${IPFS_PROXY_URL}${path}`, {
+        headers: auth.headers,
         timeout: 30000,
       });
     } else {
@@ -183,7 +218,9 @@ const listEnvelopeHashesForBeneficiary = async (
       const metadataName = String(row.metadata?.name || "");
       const keyvalues = row.metadata?.keyvalues || {};
       const rowType = String(keyvalues.type || "");
-      const rowBeneficiary = normalizeAddress(String(keyvalues.beneficiary || ""));
+      const rowBeneficiary = normalizeAddress(
+        String(keyvalues.beneficiary || ""),
+      );
       if (!hash) {
         continue;
       }
@@ -206,7 +243,9 @@ const listEnvelopeHashesForBeneficiary = async (
   return matches;
 };
 
-const fetchEnvelopeByHash = async (hash: string): Promise<KeyEnvelopePayload | null> => {
+const fetchEnvelopeByHash = async (
+  hash: string,
+): Promise<KeyEnvelopePayload | null> => {
   try {
     const response = await axios.get(getGatewayUrl(hash), { timeout: 30000 });
     if (!response?.data || typeof response.data !== "object") {
@@ -220,23 +259,32 @@ const fetchEnvelopeByHash = async (hash: string): Promise<KeyEnvelopePayload | n
 
 const fetchBeneficiaryInbox = async (
   beneficiaryAddress: string,
-  options?: { limit?: number }
+  options?: { limit?: number },
 ): Promise<KeyEnvelopePayload[]> => {
-  const hashes = await listEnvelopeHashesForBeneficiary(beneficiaryAddress, options);
+  const hashes = await listEnvelopeHashesForBeneficiary(
+    beneficiaryAddress,
+    options,
+  );
   if (hashes.length === 0) {
     return [];
   }
 
-  const envelopes = await Promise.all(hashes.map((hash) => fetchEnvelopeByHash(hash)));
+  const envelopes = await Promise.all(
+    hashes.map((hash) => fetchEnvelopeByHash(hash)),
+  );
   const normalizedRecipient = normalizeAddress(beneficiaryAddress);
 
   return envelopes
     .filter((item): item is KeyEnvelopePayload => item !== null)
-    .filter((item) => normalizeAddress(item.beneficiary) === normalizedRecipient)
+    .filter(
+      (item) => normalizeAddress(item.beneficiary) === normalizedRecipient,
+    )
     .sort((a, b) => {
       const aTime = Date.parse(a.issuedAt || "");
       const bTime = Date.parse(b.issuedAt || "");
-      return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+      return (
+        (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime)
+      );
     });
 };
 
@@ -244,5 +292,5 @@ export const keyInboxService = {
   isConfigured,
   sendKeyEnvelope,
   fetchBeneficiaryInbox,
+  hashAddress,
 };
-

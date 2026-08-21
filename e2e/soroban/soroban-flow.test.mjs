@@ -18,7 +18,7 @@
  *   - Three funded identities supplied via env, or auto-generated + funded from
  *     the standalone network's friendbot.
  */
-import { test, beforeAll } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -35,7 +35,10 @@ const NETWORK = "spoovault-e2e";
 
 function runStellar(args, opts = {}) {
   try {
-    return execFileSync("stellar", args, { encoding: "utf8" }).trim();
+    return execFileSync("stellar", args, {
+      encoding: "utf8",
+      cwd: opts.cwd,
+    }).trim();
   } catch (err) {
     if (opts.allowFail) return "";
     throw new Error(
@@ -54,8 +57,6 @@ function ensureNetwork() {
       RPC_URL,
       "--network-passphrase",
       NETWORK_PASSPHRASE,
-      "--friendbot-url",
-      `${RPC_URL}/friendbot`,
     ],
     { allowFail: true },
   );
@@ -66,7 +67,7 @@ let guardian;
 let beneficiary;
 let contractId;
 
-beforeAll(async () => {
+before(async () => {
   ensureNetwork();
 
   // Identities: use provided funded secrets, else generate + fund from faucet.
@@ -77,7 +78,7 @@ beforeAll(async () => {
       allowFail: true,
     });
     runStellar(["keys", "fund", name, "--network", NETWORK], { allowFail: true });
-    return runStellar(["keys", "show", name, "--network", NETWORK]);
+    return runStellar(["keys", "secret", name]);
   };
 
   creator = makeKey("creator");
@@ -85,7 +86,7 @@ beforeAll(async () => {
   beneficiary = makeKey("beneficiary");
 
   // Build the wasm (expects rust + wasm32 target, available in soroban-preview).
-  runStellar(["contract", "build"]);
+  runStellar(["contract", "build"], { cwd: STELLAR_CRATE });
   const wasm = resolve(
     STELLAR_CRATE,
     "target/wasm32-unknown-unknown/release/spoovault_stellar.wasm",

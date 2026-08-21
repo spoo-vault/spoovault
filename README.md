@@ -64,6 +64,10 @@ VITE_AVALANCHE_RPC=https://api.avax-test.network/ext/bc/C/rpc
 VITE_CHAIN_ID=43113
 VITE_CHAIN_NAME=Avalanche Fuji Testnet
 VITE_IPFS_GATEWAY=https://gateway.pinata.cloud/ipfs/
+# VITE_IPFS_PROXY_URL=http://localhost:3001
+# VITE_SPOOVUALT_PROXY_SECRET=
+# Optional: extra download gateways (Pinata, Infura, Cloudflare, ipfs.io are already pooled)
+# VITE_IPFS_FALLBACK_GATEWAYS=
 ```
 
 ### 4. Run Development Server

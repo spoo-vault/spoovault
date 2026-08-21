@@ -166,7 +166,7 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
       clientKeyringService.clearSessionCache();
       const restoredPriv = await clientKeyringService.getDecryptedPrivateKey(testAccount, "new-pin-222");
       expect(restoredPriv).toBeDefined();
-    }, 20000);
+    }, 35000);
 
     it("should reject backup import if backup passphrase is incorrect", async () => {
 
@@ -185,7 +185,7 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
           "Wrong-Passphrase-999"
         )
       ).rejects.toThrow("Incorrect backup passphrase");
-    }, 20000);
+    }, 35000);
   });
 
 

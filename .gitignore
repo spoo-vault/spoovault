@@ -58,3 +58,7 @@ test-results/
 blob-report/
 .playwright/
 
+# Claude Code
+.claude
+CLAUDE.md
+

@@ -101,6 +101,9 @@ describe("SpooVault EVM Contract Unit Tests", function () {
         .to.emit(spooVault, "GuardianAdded")
         .withArgs(1, guardian1.address);
 
+      const pendingAfter = await spooVault.getPendingInvites(guardian1.address);
+      expect(pendingAfter.length).to.equal(0);
+
       const isGuardian = await spooVault.isGuardian(1, guardian1.address);
       expect(isGuardian).to.be.true;
     });

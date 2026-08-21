@@ -1,6 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, Env, String, Vec,
+    auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
+    contract, contractimpl, contracttype, Address, Env, IntoVal, String, Symbol, Val, Vec,
 };
 
 /// Ledger constants for TTL extension thresholds and bump amounts (~5s per ledger)
@@ -112,6 +113,8 @@ pub enum DataKey {
     BShare(u64, Address),
     DocReleaseCond(u64),
     ReleaseState(u64),
+    // Optional external registry contract notified on document access grants
+    AccessRegistry(u64),
     // Cross-Chain Identity Lookup Map
     EvmToStellar(String),
     StellarToEvm(Address),
@@ -250,7 +253,14 @@ impl SpooVaultStellar {
         None
     }
 
-    /// Create a new Vault
+    /// Create a new Vault.
+    ///
+    /// `creator` and each entry in `guardians` are plain `Address` values, so
+    /// they may be either a raw Stellar keypair (G-account) or a deployed
+    /// contract address (a multisig / custom account-abstraction signer, or
+    /// any other contract implementing `soroban_sdk::auth::CustomAccountInterface`).
+    /// `require_auth` resolves against whichever kind of address is supplied,
+    /// so no special-casing is needed here for contract-account guardians.
     pub fn create_vault(
         env: Env,
         creator: Address,
@@ -597,6 +607,17 @@ impl SpooVaultStellar {
             env.storage().persistent().set(&lvl_key, &doc.required_access);
             Self::bump_persistent(&env, &acc_key);
             Self::bump_persistent(&env, &lvl_key);
+
+            let registry_key = DataKey::AccessRegistry(doc.vault_id);
+            if let Some(registry) = env.storage().persistent().get::<_, Address>(&registry_key) {
+                Self::bump_persistent(&env, &registry_key);
+                Self::notify_access_registry(
+                    &env,
+                    &registry,
+                    request.document_id,
+                    &request.requester,
+                );
+            }
         }
 
         env.storage().persistent().set(&req_key, &request);
@@ -693,6 +714,28 @@ impl SpooVaultStellar {
         Self::bump_persistent(&env, &rel_key);
     }
 
+    /// Configure an optional external registry contract to be notified whenever
+    /// a document access request on this vault is fully approved. The registry
+    /// may be any Soroban contract (e.g. an audit log or a custom account's
+    /// policy contract) - `Address` does not distinguish between a raw Stellar
+    /// keypair account and a deployed contract address, so both are accepted.
+    pub fn set_access_registry(env: Env, owner: Address, vault_id: u64, registry: Address) {
+        owner.require_auth();
+        Self::bump_instance(&env);
+
+        let vault_key = DataKey::Vault(vault_id);
+        let vault: Vault = env
+            .storage()
+            .persistent()
+            .get(&vault_key)
+            .expect("Vault not found");
+        assert!(vault.creator == owner, "Only creator can set access registry");
+
+        let registry_key = DataKey::AccessRegistry(vault_id);
+        env.storage().persistent().set(&registry_key, &registry);
+        Self::bump_persistent(&env, &registry_key);
+    }
+
     /// Helper function to check if release condition is satisfied
     pub fn is_release_condition_satisfied(
         env: &Env,
@@ -775,6 +818,37 @@ impl SpooVaultStellar {
         state
     }
 
+    /// Perform a deep, contract-authorized cross-contract call notifying an
+    /// external registry that document access was granted.
+    ///
+    /// The vault contract itself - rather than the approving guardian - is the
+    /// one invoking the registry, so the guardian's signature (verified above
+    /// via `require_auth`) does not cover this sub-invocation. We use
+    /// `env.authorize_as_current_contract` to have this contract authorize the
+    /// call to `record_grant` "as itself" for exactly this invocation, which
+    /// is required for the sub-invocation to pass the registry's own
+    /// `require_auth` / custom-account `__check_auth` checks regardless of
+    /// whether the registry is a plain account or a custom account
+    /// abstraction (multisig / policy) contract.
+    fn notify_access_registry(env: &Env, registry: &Address, document_id: u64, requester: &Address) {
+        let fn_name = Symbol::new(env, "record_grant");
+        let args: Vec<Val> = (document_id, requester.clone()).into_val(env);
+
+        env.authorize_as_current_contract(soroban_sdk::vec![
+            env,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: registry.clone(),
+                    fn_name: fn_name.clone(),
+                    args: args.clone(),
+                },
+                sub_invocations: Vec::new(env),
+            }),
+        ]);
+
+        let _: Val = env.invoke_contract(registry, &fn_name, args);
+    }
+
     // Helper functions for TTL management
     fn bump_instance(env: &Env) {
         env.storage()
@@ -789,4 +863,5 @@ impl SpooVaultStellar {
     }
 }
 
+#[cfg(test)]
 mod test;

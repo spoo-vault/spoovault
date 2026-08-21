@@ -1,4 +1,5 @@
 import {
+  base64ToUint8Array,
   generateECIESKeyPairBase64,
   importECIESPublicKey,
   importECIESPrivateKey,
@@ -449,5 +450,29 @@ export const clientKeyringService = {
    */
   async listAccounts(): Promise<string[]> {
     return idbGetAllKeys();
+  },
+
+  /**
+   * Return the accounts that currently have a decrypted private key held in
+   * the in-memory session cache.
+   */
+  getUnlockedAccounts(): string[] {
+    return Array.from(sessionKeyCache.keys());
+  },
+
+  /**
+   * Return the raw bytes of a currently-cached decrypted private key (Base64
+   * decoded), or null when the account is not unlocked. Used by the session
+   * lock manager to zero key material from memory on lock.
+   */
+  getCachedPrivateKeyBytes(account: string): Uint8Array | null {
+    if (!account) return null;
+    const cached = sessionKeyCache.get(account.toLowerCase());
+    if (!cached) return null;
+    try {
+      return base64ToUint8Array(cached);
+    } catch {
+      return null;
+    }
   },
 };

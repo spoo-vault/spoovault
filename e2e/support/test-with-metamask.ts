@@ -2,6 +2,7 @@ import { testWithSynpress } from "@synthetixio/synpress";
 import { MetaMask, metaMaskFixtures } from "@synthetixio/synpress/playwright";
 import type { MetaMask as MetaMaskType } from "@synthetixio/synpress/playwright";
 import basicSetup from "../wallet-setup/spoovault.setup";
+import { WALLET_PASSWORD } from "../wallets";
 
 /**
  * Shared Synpress + MetaMask test instance. Every E2E spec imports `test` and
@@ -21,7 +22,7 @@ export const testWithMetaMask = test.extend<{ metamask: MetaMaskType }>({
     const metamask = new MetaMask(
       context,
       metamaskPage,
-      basicSetup.walletPassword,
+      WALLET_PASSWORD,
       extensionId,
     );
     await use(metamask);

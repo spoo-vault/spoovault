@@ -2,7 +2,11 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/__tests__/**/*.test.ts'],
+    include: [
+      'src/__tests__/**/*.test.ts',
+      'src/__tests__/VirtualizedDocumentsList.test.tsx',
+      'src/__tests__/VirtualizedNftGrid.test.tsx',
+    ],
     globals: true,
     pool: 'forks',
     forks: {

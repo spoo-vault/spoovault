@@ -40,7 +40,7 @@ jobs:
         run: npx hardhat compile --config hardhat.config.cjs
 
       - name: Build MetaMask browser cache (Synpress)
-        run: HEADLESS=true npx synpress e2e/wallet-setup
+        run: HEADLESS=true npx @synthetixio/synpress@4.1.2 e2e/wallet-setup
 
       - name: Run E2E suite (Anvil + SpooVault + MetaMask)
         run: |
@@ -87,16 +87,16 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install Rust and wasm target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install Stellar CLI system dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev
-
-      - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+      - name: Install stellar CLI (pinned v22.8.2)
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y libdbus-1-3 libudev1
+          STELLAR_VERSION=22.8.2
+          curl -fsSL -o stellar-cli.tar.gz "https://github.com/stellar/stellar-cli/releases/download/v${STELLAR_VERSION}/stellar-cli-${STELLAR_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          tar xzf stellar-cli.tar.gz
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 stellar "$HOME/.local/bin/stellar"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          stellar --version
 
       - name: Start Soroban standalone network
         run: docker run -d --name soroban -p 8000:8000 stellar/quickstart standalone

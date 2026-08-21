@@ -237,6 +237,7 @@ VITE_AVALANCHE_RPC=https://api.avax-test.network/ext/bc/C/rpc
 VITE_CHAIN_ID=43113
 VITE_CHAIN_NAME=Avalanche Fuji Testnet
 VITE_IPFS_GATEWAY=https://gateway.pinata.cloud/ipfs/
+# Downloads also race Infura, Cloudflare IPFS, and ipfs.io if Pinata returns 429 or times out
 VITE_CONTRACT_DEPLOY_BLOCK=51988771
 VITE_TX_WAIT_TIMEOUT_MS=180000`}</pre>
                 </div>
