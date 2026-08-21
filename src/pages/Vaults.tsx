@@ -80,6 +80,13 @@ const Vaults = () => {
   }, [searchParams, onOpen]);
 
   useEffect(() => {
+    setVaults([]);
+    setReleaseStatesByVault({});
+    setLoading(true);
+  }, [ecosystem]);
+
+
+  useEffect(() => {
     if (isConnected && ((provider && signer && isFujiNetwork) || ecosystem === "stellar")) {
       if (provider && signer) {
         contractService.initialize(provider, signer);

@@ -14,6 +14,7 @@ concurrency:
 jobs:
   e2e-evm:
     name: E2E - EVM (Anvil + Synpress/MetaMask)
+    name: E2E — EVM (Anvil + Synpress/MetaMask)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -77,6 +78,10 @@ jobs:
   e2e-stellar:
     name: E2E - Stellar (Soroban standalone)
     runs-on: ubuntu-latest
+    name: E2E — Stellar (Soroban standalone)
+    runs-on: ubuntu-latest
+    # The Soroban E2E needs a standalone network + the rust/wasm toolchain.
+    # It is run best-effort: a failure here does not block the EVM verification.
     continue-on-error: true
     steps:
       - name: Checkout
@@ -94,6 +99,10 @@ jobs:
 
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli
+      - name: Install stellar CLI
+        run: |
+          npm install -g @stellar/stellar-cli
+          echo "$(npm config get prefix)/bin" >> "$GITHUB_PATH"
 
       - name: Start Soroban standalone network
         run: docker run -d --name soroban -p 8000:8000 stellar/quickstart standalone
@@ -104,6 +113,12 @@ jobs:
             if curl -s http://localhost:8000 >/dev/null; then echo "standalone network is up"; break; fi
             sleep 2
           done
+
+      - name: Install Rust + wasm target
+        run: |
+          curl -sSL https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          rustup target add wasm32-unknown-unknown
 
       - name: Run Soroban E2E flow
         env:

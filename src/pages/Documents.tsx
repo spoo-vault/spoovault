@@ -107,7 +107,7 @@ const Documents = () => {
   } = useDisclosure();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "accessible" | "encrypted">("all");
-  const { account, isConnected, connect, provider, signer, isFujiNetwork } = useWeb3();
+  const { account, isConnected, connect, provider, signer, isFujiNetwork, ecosystem } = useWeb3();
 
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [vaults, setVaults] = useState<VaultData[]>([]);
@@ -141,8 +141,20 @@ const Documents = () => {
     "h-11 w-full rounded-full border border-gray-700/80 bg-gray-900/75 px-4 pr-10 text-sm text-gray-100 outline-none transition-colors hover:border-gray-600 focus:border-brand-700/70";
 
   useEffect(() => {
-    if (isConnected && provider && signer && isFujiNetwork) {
-      contractService.initialize(provider, signer);
+    setUploadableVaults([]);
+    setActiveAccessByDoc({});
+    setLatestRequestByDoc({});
+    setReleaseConditionByDoc({});
+    setDocuments([]);
+    setVaults([]);
+    setLoading(true);
+  }, [ecosystem]);
+
+  useEffect(() => {
+    if (isConnected && ((provider && signer && isFujiNetwork) || ecosystem === "stellar")) {
+      if (provider && signer) {
+        contractService.initialize(provider, signer);
+      }
       loadData();
     } else {
       setUploadableVaults([]);
@@ -151,7 +163,7 @@ const Documents = () => {
       setReleaseConditionByDoc({});
       setLoading(false);
     }
-  }, [account, isConnected, provider, signer, isFujiNetwork]);
+  }, [account, isConnected, provider, signer, isFujiNetwork, ecosystem]);
 
   const loadData = async () => {
     if (!account) {
