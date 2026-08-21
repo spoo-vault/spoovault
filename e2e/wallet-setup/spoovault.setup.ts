@@ -16,6 +16,8 @@ export default defineWalletSetup(WALLET_PASSWORD, async (context, walletPage) =>
   const SEED_PHRASE = TEST_MNEMONIC;
 
   await metamask.importWallet(SEED_PHRASE);
+  await walletPage.reload();
+  await walletPage.waitForLoadState("domcontentloaded");
 
   // Register the local Anvil network inside MetaMask so the dApp connects to the
   // same chain-id (43113) the app expects for "Avalanche Fuji".
