@@ -62,6 +62,7 @@
     "autoprefixer": "^10.4.14",
     "hardhat": "^2.22.0",
     "hardhat-gas-reporter": "^2.3.0",
+    "happy-dom": "^13.0.0",
     "postcss": "^8.4.31",
     "solidity-coverage": "^0.8.17",
     "tailwindcss": "^3.3.0",

@@ -42,6 +42,7 @@ contract SpooVaultFuzz {
 
         // Mint an access NFT to the fuzzer actor so it can request access.
         uint256 tid = vault.mintAccessToken(vaultId, msg.sender, "fuzz-token");
+        trackedSupply += 1;
         mintedTokens.push(tid);
 
         // Seed one document so request/approve flows have something to act on.

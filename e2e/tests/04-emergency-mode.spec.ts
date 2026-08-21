@@ -14,7 +14,7 @@ const repoRoot = resolve(__dirname, "..", "..");
 const ABI = [
   "function createVault(string name, string description, address[] guardians, uint256 approvalThreshold) external returns (uint256)",
   "function acceptGuardianInvite(uint256 vaultId) external",
-  "function addDocumentWithReleaseCondition(uint256 vaultId, string encryptedMetadata, string ipfsHash, uint8 requiredAccess, uint8 releaseCondition) external returns (uint256)",
+  "function addDocumentWithReleaseCondition(uint256 vaultId, string encryptedMetadata, string ipfsHash, uint8 requiredAccess, uint8 releaseCondition, address[] guardiansList, string[] shares) external returns (uint256)",
   "function mintAccessToken(uint256 vaultId, address to, string tokenURIValue) external returns (uint256)",
   "function requestAccess(uint256 documentId) external returns (uint256)",
   "function approveAccess(uint256 requestId) external",
@@ -71,6 +71,16 @@ async function extractEventId(
   return undefined;
 }
 
+async function expectRevert(promise: Promise<unknown>): Promise<void> {
+  let reverted = false;
+  try {
+    await promise;
+  } catch {
+    reverted = true;
+  }
+  expect(reverted).toBe(true);
+}
+
 async function increaseTime(provider: JsonRpcProvider, seconds: number) {
   await provider.send("evm_increaseTime", [seconds]);
   await provider.send("evm_mine", []);
@@ -98,50 +108,52 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
     const createReceipt = await createTx.wait();
     const vaultId = await extractEventId(createReceipt, contract, "VaultCreated");
     expect(vaultId).toBeDefined();
-    expect(vaultId).toBeGreaterThan(0);
+    expect(vaultId!).toBeGreaterThan(BigInt(0));
 
     // 2) Guardian accepts the invitation.
-    await (await guardianContract.acceptGuardianInvite(vaultId)).wait();
-    expect(await contract.isGuardian(vaultId, guardian.address)).toBe(true);
+    await (await guardianContract.acceptGuardianInvite(vaultId!)).wait();
+    expect(await contract.isGuardian(vaultId!, guardian.address)).toBe(true);
 
     // 3) Guardian mints an access token for the beneficiary (required to request documents).
     await (
-      await guardianContract.mintAccessToken(vaultId, beneficiary.address, "e2e-emergency-uri")
+      await guardianContract.mintAccessToken(vaultId!, beneficiary.address, "e2e-emergency-uri")
     ).wait();
 
     // 4) Guardian adds a document gated behind EMERGENCY_ONLY release condition.
     const docTx = await guardianContract.addDocumentWithReleaseCondition(
-      vaultId,
+      vaultId!,
       "encrypted-meta",
       "ipfs://e2e-emergency-document",
       0,
       ReleaseCondition.EMERGENCY_ONLY,
+      [],
+      [],
     );
     const docReceipt = await docTx.wait();
     const documentId = await extractEventId(docReceipt, contract, "DocumentAdded");
     expect(documentId).toBeDefined();
-    expect(documentId).toBeGreaterThan(0);
+    expect(documentId!).toBeGreaterThan(BigInt(0));
 
     // 5) Beneficiary cannot request access while emergency mode is OFF (ReleaseConditionLocked).
-    await expect(beneficiaryContract.requestAccess(documentId)).rejects.toThrow();
+    await expectRevert(beneficiaryContract.requestAccess(documentId!));
 
     // 6) Creator triggers emergency mode.
-    const emergTx = await contract.setEmergencyMode(vaultId, true);
-    const emergReceipt = await emergTx.wait();
-    const state = await contract.getVaultReleaseState(vaultId);
+    const emergTx = await contract.setEmergencyMode(vaultId!, true);
+    await emergTx.wait();
+    const state = await contract.getVaultReleaseState(vaultId!);
     expect(state.emergencyMode).toBe(true);
 
     // 7) Beneficiary can now request access and the guardian approves.
-    const reqTx = await beneficiaryContract.requestAccess(documentId);
+    const reqTx = await beneficiaryContract.requestAccess(documentId!);
     const reqReceipt = await reqTx.wait();
     const requestId = await extractEventId(reqReceipt, contract, "AccessRequested");
     expect(requestId).toBeDefined();
-    expect(requestId).toBeGreaterThan(0);
+    expect(requestId!).toBeGreaterThan(BigInt(0));
 
-    await (await guardianContract.approveAccess(requestId)).wait();
+    await (await guardianContract.approveAccess(requestId!)).wait();
 
     // 8) Beneficiary now has active access.
-    expect(await contract.hasActiveAccess(documentId, beneficiary.address)).toBe(true);
+    expect(await contract.hasActiveAccess(documentId!, beneficiary.address)).toBe(true);
   });
 
   test("post-death release unlocks POST_DEATH_ONLY documents after inactivity period", async () => {
@@ -167,50 +179,52 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
     expect(vaultId).toBeDefined();
 
     // 2) Configure a 1-day inactivity period (minimum allowed by the contract).
-    await (await contract.configureVaultRelease(vaultId, DAY)).wait();
-    const stateBefore = await contract.getVaultReleaseState(vaultId);
+    await (await contract.configureVaultRelease(vaultId!, DAY)).wait();
+    const stateBefore = await contract.getVaultReleaseState(vaultId!);
     expect(stateBefore.inactivityPeriod).toBe(BigInt(DAY));
     expect(stateBefore.postDeathUnlocked).toBe(false);
 
     // 3) Guardian accepts invite, mints token, and adds a POST_DEATH_ONLY document.
-    await (await guardianContract.acceptGuardianInvite(vaultId)).wait();
-    expect(await contract.isGuardian(vaultId, guardian.address)).toBe(true);
+    await (await guardianContract.acceptGuardianInvite(vaultId!)).wait();
+    expect(await contract.isGuardian(vaultId!, guardian.address)).toBe(true);
 
     await (
-      await guardianContract.mintAccessToken(vaultId, beneficiary.address, "e2e-postdeath-uri")
+      await guardianContract.mintAccessToken(vaultId!, beneficiary.address, "e2e-postdeath-uri")
     ).wait();
 
     const docTx = await guardianContract.addDocumentWithReleaseCondition(
-      vaultId,
+      vaultId!,
       "encrypted-meta",
       "ipfs://e2e-postdeath-document",
       0,
       ReleaseCondition.POST_DEATH_ONLY,
+      [],
+      [],
     );
     const docReceipt = await docTx.wait();
     const documentId = await extractEventId(docReceipt, contract, "DocumentAdded");
     expect(documentId).toBeDefined();
 
     // 4) Beneficiary cannot request access while not post-death.
-    await expect(beneficiaryContract.requestAccess(documentId)).rejects.toThrow();
+    await expectRevert(beneficiaryContract.requestAccess(documentId!));
 
     // 5) Simulate time passing beyond the inactivity window.
     await increaseTime(provider, DAY * 2);
 
     // 6) Post-death is now unlocked.
-    const stateAfter = await contract.getVaultReleaseState(vaultId);
+    const stateAfter = await contract.getVaultReleaseState(vaultId!);
     expect(stateAfter.postDeathUnlocked).toBe(true);
 
     // 7) Beneficiary requests access; guardian approves.
-    const reqTx = await beneficiaryContract.requestAccess(documentId);
+    const reqTx = await beneficiaryContract.requestAccess(documentId!);
     const reqReceipt = await reqTx.wait();
     const requestId = await extractEventId(reqReceipt, contract, "AccessRequested");
     expect(requestId).toBeDefined();
 
-    await (await guardianContract.approveAccess(requestId)).wait();
+    await (await guardianContract.approveAccess(requestId!)).wait();
 
     // 8) Beneficiary has active access.
-    expect(await contract.hasActiveAccess(documentId, beneficiary.address)).toBe(true);
+    expect(await contract.hasActiveAccess(documentId!, beneficiary.address)).toBe(true);
   });
 
   test("creator can record proof of life to keep vault in live mode", async () => {
@@ -234,12 +248,12 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
     expect(vaultId).toBeDefined();
 
     // 2) Creator records proof of life.
-    const tx = await contract.proveLife(vaultId);
+    const tx = await contract.proveLife(vaultId!);
     await tx.wait();
 
     // 3) State should reflect an updated lastProofOfLife.
-    const state = await contract.getVaultReleaseState(vaultId);
-    expect(state.lastProofOfLife).toBeGreaterThan(0);
+    const state = await contract.getVaultReleaseState(vaultId!);
+    expect(state.lastProofOfLife).toBeGreaterThan(BigInt(0));
     expect(state.emergencyMode).toBe(false);
   });
 });

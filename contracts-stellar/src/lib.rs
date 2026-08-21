@@ -1,4 +1,6 @@
 #![no_std]
+#![allow(unexpected_cfgs)]
+#![allow(clippy::too_many_arguments)]
 use soroban_sdk::{
     contract, contractimpl, contracttype, Address, Env, String, Vec,
 };
@@ -649,7 +651,7 @@ impl SpooVaultStellar {
         assert!(vault.creator == owner, "Only creator can configure release");
         assert!(vault.is_active, "Vault not active");
         assert!(
-            inactivity_period >= 24 * 60 * 60 && inactivity_period <= 365 * 24 * 60 * 60,
+            (24 * 60 * 60..=365 * 24 * 60 * 60).contains(&inactivity_period),
             "Inactivity period must be between 1 and 365 days"
         );
 
@@ -789,4 +791,5 @@ impl SpooVaultStellar {
     }
 }
 
+#[cfg(test)]
 mod test;

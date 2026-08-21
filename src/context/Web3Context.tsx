@@ -6,6 +6,7 @@ import {
   stellarService,
   type StellarWalletChangeEvent,
 } from "../services/stellar.service";
+import { sorobanEventWatcher } from "../services/sorobanEventWatcher.service";
 
 const CONTRACT_ABI = [
   "function createVault(string name, string description, address[] guardians, uint256 approvalThreshold) external returns (uint256)",

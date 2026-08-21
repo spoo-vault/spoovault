@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import * as Web3Context from '../context/Web3Context';
-import * as reactRouterDom from 'react-router-dom';
 
 // Mock dependencies before importing the components
 vi.mock('react', async () => {
