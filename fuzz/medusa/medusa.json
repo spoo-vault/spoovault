@@ -20,7 +20,7 @@
       "solcVersion": "0.8.24",
       "args": [
         "--solc-remaps", "@openzeppelin/=node_modules/@openzeppelin/",
-        "--solc-args", "--evm-version cancun"
+        "--solc-args=--evm-version cancun --optimize --optimize-runs 200 --via-ir"
       ]
     }
   }

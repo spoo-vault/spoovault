@@ -16,4 +16,6 @@ stopOnFail: true
 cryticArgs: ["--solc-remaps", "@openzeppelin/=node_modules/@openzeppelin/"]
 # OpenZeppelin 5.x uses the MCOPY opcode, which requires the Cancun EVM target
 # (matching hardhat.config.cjs). Without it, solc reports "Function mcopy not found".
-solcArgs: "--evm-version cancun"
+# viaIR + optimizer are required so the large SpooVault bytecode fits within the
+# EIP-170 code-size limit (otherwise deployment fails with MaxCodeSizeExceeded).
+solcArgs: "--evm-version cancun --optimize --optimize-runs 200 --via-ir"
