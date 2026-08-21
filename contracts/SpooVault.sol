@@ -134,6 +134,8 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     error ProposalAlreadyExecuted();
     error ApprovalAlreadyGiven();
     error CannotSelfApproveAccess();
+    error ZeroAddressBeneficiary();
+    error BeneficiaryAlreadySet();
 
     mapping(uint256 => Vault) public vaults;
     mapping(uint256 => Document) public documents;
@@ -162,6 +164,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     mapping(uint256 => mapping(address => uint256)) private _vaultAccessVersion;
     mapping(uint256 => mapping(address => uint256)) private _documentAccessVersion;
     mapping(uint256 => VaultReleaseState) private _vaultReleaseStates;
+    mapping(uint256 => address) private _vaultBeneficiary;
 
     // Guardian rotation and threshold adjustment governance
     mapping(uint256 => mapping(address => GuardianRemovalProposal)) public guardianRemovalProposals;
@@ -182,6 +185,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     event VaultReleaseConfigured(uint256 indexed vaultId, uint256 inactivityPeriod);
     event ProofOfLifeRecorded(uint256 indexed vaultId, address indexed owner, uint256 timestamp);
     event EmergencyModeUpdated(uint256 indexed vaultId, bool enabled);
+    event BeneficiarySet(uint256 indexed vaultId, address indexed beneficiary);
     event DocumentReleaseConditionSet(uint256 indexed documentId, ReleaseCondition condition);
     event PublicKeyRegistered(address indexed user, string publicKey);
     event GuardianSharesSaved(uint256 indexed documentId);
@@ -440,6 +444,26 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
 
         _vaultReleaseStates[vaultId].emergencyMode = enabled;
         emit EmergencyModeUpdated(vaultId, enabled);
+    }
+
+    /**
+     * @dev Owner-supplied beneficiary wallet address used to route emergency/post-death
+     * notifications. Settable once per vault; there is no update path by design.
+     */
+    function setBeneficiary(uint256 vaultId, address beneficiary) external nonReentrant {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (vaults[vaultId].creator != msg.sender) revert OnlyVaultCreator();
+        if (!vaults[vaultId].isActive) revert VaultNotActive();
+        if (beneficiary == address(0)) revert ZeroAddressBeneficiary();
+        if (_vaultBeneficiary[vaultId] != address(0)) revert BeneficiaryAlreadySet();
+
+        _vaultBeneficiary[vaultId] = beneficiary;
+        emit BeneficiarySet(vaultId, beneficiary);
+    }
+
+    /// @notice Returns the beneficiary wallet address configured for `vaultId`, or the zero address if unset.
+    function getBeneficiary(uint256 vaultId) external view returns (address) {
+        return _vaultBeneficiary[vaultId];
     }
 
     /**

@@ -97,3 +97,14 @@ Both pages now delegate their list rendering to a dedicated, presentational comp
 Both components use `useVirtualizer`'s `measureElement` for dynamic per-row sizing (rather than a single fixed row height), since row/card content height varies with wrapped text and action-button counts. Only rows within the viewport plus a small overscan are ever mounted to the DOM, regardless of total list length.
 
 `@tanstack/react-virtual` was already present in `package-lock.json` as a transitive dependency of `@heroui/react`'s internal `Table`/`Listbox` virtualization (HeroUI's own `<Table isVirtualized>` uses it internally) — it is now also a direct dependency, pinned to the same locked version, since both pages call it directly.
+
+---
+
+## 7. Emergency-Mode Beneficiary Notifications (Push Protocol / EPNS)
+
+Beneficiaries are notified via a push notification when a vault's Emergency Mode is toggled (Avalanche path only; Stellar emergency-mode support is not wired into the frontend today).
+
+- Each vault stores a single beneficiary wallet address (`SpooVault.sol`'s `_vaultBeneficiary` mapping, set once via `setBeneficiary` at vault-creation time and never editable afterward). There is no on-chain concept of "beneficiary" prior to this — `creator` and `guardians[]` were the only stored roles.
+- After a successful `setEmergencyMode` transaction, `Vaults.tsx` resolves the vault's beneficiary with `contractService.getBeneficiary` and calls `pushNotificationService.notifyEmergencyModeChange`, which is a soft-fail: a notification error is logged but never blocks or rolls back the on-chain toggle.
+- Sending the actual notification requires signing with a Push Protocol channel (or delegate) private key. That key must never reach the browser bundle, so notifications route through a new serverless proxy, `scripts/push-notification-proxy.mjs`, mirroring the existing `scripts/pinata-proxy.mjs` pattern: same HMAC request signing (`scripts/lib/ipfsProxyGuard.mjs`, `VITE_SPOOVUALT_PROXY_SECRET`), same CORS/origin allowlist, private key held only in the proxy's `PUSH_CHANNEL_PRIVATE_KEY` env var.
+- This requires a Push Protocol channel to already be provisioned (one-time on-chain setup: 50 $PUSH + gas — see [Push's channel creation guide](https://comms.push.org/docs/notifications/tutorials/create-your-channel/)) before notifications can actually be sent. Without `VITE_PUSH_NOTIFICATION_PROXY_URL` configured, `pushNotificationService` is a no-op.

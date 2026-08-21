@@ -85,4 +85,42 @@ describe("SpooVault EVM Contract Unit Tests", function () {
         .withArgs(1, true);
     });
   });
+
+  describe("Beneficiary Registry", function () {
+    beforeEach(async function () {
+      await spooVault.connect(owner).createVault("Beneficiary Vault", "Desc", [guardian1.address], 1);
+    });
+
+    it("should allow the vault creator to set a beneficiary", async function () {
+      await expect(spooVault.connect(owner).setBeneficiary(1, beneficiary.address))
+        .to.emit(spooVault, "BeneficiarySet")
+        .withArgs(1, beneficiary.address);
+
+      expect(await spooVault.getBeneficiary(1)).to.equal(beneficiary.address);
+    });
+
+    it("should default to the zero address when no beneficiary is set", async function () {
+      expect(await spooVault.getBeneficiary(1)).to.equal(ethers.ZeroAddress);
+    });
+
+    it("should revert when setting a zero-address beneficiary", async function () {
+      await expect(
+        spooVault.connect(owner).setBeneficiary(1, ethers.ZeroAddress)
+      ).to.be.revertedWithCustomError(spooVault, "ZeroAddressBeneficiary");
+    });
+
+    it("should revert when a non-creator tries to set the beneficiary", async function () {
+      await expect(
+        spooVault.connect(guardian1).setBeneficiary(1, beneficiary.address)
+      ).to.be.revertedWithCustomError(spooVault, "OnlyVaultCreator");
+    });
+
+    it("should revert when the beneficiary is already set", async function () {
+      await spooVault.connect(owner).setBeneficiary(1, beneficiary.address);
+
+      await expect(
+        spooVault.connect(owner).setBeneficiary(1, guardian2.address)
+      ).to.be.revertedWithCustomError(spooVault, "BeneficiaryAlreadySet");
+    });
+  });
 });

@@ -83,6 +83,8 @@ const CONTRACT_ABI = [
   "function configureVaultRelease(uint256 vaultId, uint256 inactivityPeriod) external",
   "function proveLife(uint256 vaultId) external",
   "function setEmergencyMode(uint256 vaultId, bool enabled) external",
+  "function setBeneficiary(uint256 vaultId, address beneficiary) external",
+  "function getBeneficiary(uint256 vaultId) external view returns (address)",
   "function getVaultReleaseState(uint256 vaultId) external view returns (bool emergencyMode, uint256 inactivityPeriod, uint256 lastProofOfLife, bool postDeathUnlocked)",
   "function documentReleaseCondition(uint256 documentId) external view returns (uint8)",
   "function requestAccess(uint256 documentId) external returns (uint256)",
@@ -120,6 +122,7 @@ const CONTRACT_ABI = [
   "event PublicKeyRegistered(address indexed user, string publicKey)",
   "event GuardianSharesSaved(uint256 indexed documentId)",
   "event ShareSubmittedForBeneficiary(uint256 indexed requestId, address indexed guardian, string encryptedShare)",
+  "event BeneficiarySet(uint256 indexed vaultId, address indexed beneficiary)",
 ];
 
 let provider: ethers.Provider | null = null;
@@ -1279,6 +1282,30 @@ const setEmergencyMode = async (vaultId: number, enabled: boolean): Promise<void
   await waitForReceipt(tx);
 };
 
+const setBeneficiary = async (vaultId: number, beneficiary: string): Promise<void> => {
+  const contract = ensureWriteContract();
+  if (!contractHasFunction(contract, "setBeneficiary(uint256,address)")) {
+    throw new Error("Current contract does not support beneficiary notifications.");
+  }
+  const tx = await contract.setBeneficiary(vaultId, beneficiary);
+  await waitForReceipt(tx);
+};
+
+const getBeneficiary = async (vaultId: number): Promise<string> => {
+  await ensureContractDeployed();
+  const contract = ensureReadContract();
+
+  if (!contractHasFunction(contract, "getBeneficiary(uint256)")) {
+    return ethers.ZeroAddress;
+  }
+
+  try {
+    return await contract.getBeneficiary(vaultId);
+  } catch {
+    return ethers.ZeroAddress;
+  }
+};
+
 const fetchPendingInvites = async (user: string): Promise<GuardianInviteData[]> => {
   if (!user) {
     return [];
@@ -1888,6 +1915,8 @@ export const contractService = {
   configureVaultRelease,
   recordProofOfLife,
   setEmergencyMode,
+  setBeneficiary,
+  getBeneficiary,
   fetchPendingApprovalsForGuardian: proxiedFetchPendingApprovalsForGuardian,
   getRecentActivity,
   registerPublicKey: proxiedRegisterPublicKey,
