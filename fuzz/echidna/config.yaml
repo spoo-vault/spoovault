@@ -11,3 +11,6 @@ format: text
 maxFuzzSpaceSize: 100000
 # Stop early if a property is violated.
 stopOnFail: true
+# Resolve @openzeppelin imports (from the mounted node_modules) when crytic-compile
+# invokes solc directly on the harness file.
+cryticArgs: ["--solc-remaps", "@openzeppelin/=node_modules/@openzeppelin/"]
