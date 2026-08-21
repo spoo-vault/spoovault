@@ -17,6 +17,9 @@ contract SpooVault is ERC721, ISpooVault {
     uint256 private _documentIdCounter;
     uint256 private _requestIdCounter;
 
+    address public erc6551Registry;
+    address public tbaImplementation;
+
     enum RequestStatus {
         PENDING,
         APPROVED,
@@ -215,6 +218,32 @@ contract SpooVault is ERC721, ISpooVault {
     }
 
     constructor() ERC721("SpooVault Access Token", "SPVT") {}
+
+    /**
+     * @dev Initialize ERC-6551 Token Bound Account support.
+     * Can only be called once to set the registry and implementation addresses.
+     */
+    function initializeERC6551(address registry, address implementation) external {
+        if (erc6551Registry != address(0)) revert("ERC6551 already initialized");
+        erc6551Registry = registry;
+        tbaImplementation = implementation;
+    }
+
+    /**
+     * @dev Computes the deterministic Token Bound Account address for a given vault NFT.
+     */
+    function computeVaultAccount(uint256 tokenId) external view returns (address) {
+        if (erc6551Registry == address(0) || tbaImplementation == address(0)) {
+            revert("ERC6551 not initialized");
+        }
+        return IERC6551Registry(erc6551Registry).account(
+            tbaImplementation,
+            bytes32(0),
+            block.chainid,
+            address(this),
+            tokenId
+        );
+    }
 
     /**
      * @dev Create a new vault with guardian invites.
