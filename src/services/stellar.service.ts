@@ -55,18 +55,25 @@ const normalizeNetworkValue = (value: unknown): string => {
 interface SignTransactionOptions {
   networkPassphrase?: string;
   accountToSign?: string;
+  network?: string;
 }
 
-type FreighterShim = {
+export type FreighterShim = {
   isConnected: () => Promise<boolean>;
   getAddress: () => Promise<string>;
-  signTransaction: (transactionXdr: string, opts?: SignTransactionOptions) => Promise<string>;
-  getNetwork?: () => Promise<string>;
+  signTransaction?: (transactionXdr: string, opts?: SignTransactionOptions) => Promise<string>;
+  signAuthEntry?: (
+    preimageXdr: string,
+    opts?: Record<string, unknown>
+  ) => Promise<{ signedAuthEntry: string; error?: string }>;
+  getNetwork?: () => Promise<unknown>;
   getNetworkDetails?: () => Promise<{ networkPassphrase?: string }>;
+  listen?: (callback: (event: StellarWalletChangeEvent) => void) => unknown;
 };
 
 let _freighter: FreighterShim | null = null;
 let _freighterModuleOverride: unknown = undefined;
+let _stellarSdk: unknown = null;
 
 // Test seam: lets Vitest inject a fake @stellar/freighter-api module (or a
 // rejected promise) without a browser extension being installed. Undefined in
@@ -75,23 +82,13 @@ let _freighterModuleOverride: unknown = undefined;
 export const __setFreighterModuleForTesting = (moduleOrRejection: unknown): void => {
   _freighterModuleOverride = moduleOrRejection;
   _freighter = null;
-export type FreighterShim = {
-  isConnected: () => Promise<boolean>;
-  getAddress: () => Promise<string>;
-  signTransaction?: (xdr: string, opts?: any) => Promise<string>;
-  signAuthEntry?: (preimageXdr: string, opts?: any) => Promise<{ signedAuthEntry: string; error?: string }>;
-  getNetwork?: () => Promise<unknown>;
-  listen?: (callback: (event: StellarWalletChangeEvent) => void) => unknown;
 };
 
-let _freighter: any = null;
-let _stellarSdk: any = null;
-
-export const setMockFreighter = (mock: any) => {
+export const setMockFreighter = (mock: FreighterShim | null) => {
   _freighter = mock;
 };
 
-export const setMockStellarSdk = (mock: any) => {
+export const setMockStellarSdk = (mock: unknown) => {
   _stellarSdk = mock;
 };
 
@@ -105,27 +102,10 @@ const loadFreighter = async (): Promise<FreighterShim> => {
     // CJS interop: the module functions may live on `mod.default`
     const api = mod?.default ?? mod;
 
-    const resolveAddress = async (): Promise<string> => {
-      if (typeof api.getAddress === "function") return (await api.getAddress()) || "";
-      if (typeof api.getPublicKey === "function") return (await api.getPublicKey()) || "";
-      if (typeof api.getUserInfo === "function") {
-        const info = await api.getUserInfo();
-        return info?.publicKey || "";
-      }
-      return "";
-    };
-
-    _freighter = {
-      isConnected: api.isConnected,
-      getAddress: resolveAddress,
-      signTransaction: api.signTransaction,
-      getNetwork: api.getNetwork,
-      getNetworkDetails: api.getNetworkDetails,
-    const mod = await import("@stellar/freighter-api") as any;
     _freighter = {
       isConnected: async () => {
         try {
-          const result = await mod.isConnected();
+          const result = await api.isConnected();
           return typeof result === "boolean" ? result : Boolean(result?.isConnected);
         } catch {
           return false;
@@ -133,14 +113,14 @@ const loadFreighter = async (): Promise<FreighterShim> => {
       },
       getAddress: async () => {
         try {
-          if (typeof mod.getAddress === "function") {
-            return normalizeAddressValue(await mod.getAddress());
+          if (typeof api.getAddress === "function") {
+            return normalizeAddressValue(await api.getAddress());
           }
-          if (typeof mod.getPublicKey === "function") {
-            return normalizeAddressValue(await mod.getPublicKey());
+          if (typeof api.getPublicKey === "function") {
+            return normalizeAddressValue(await api.getPublicKey());
           }
-          if (typeof mod.getUserInfo === "function") {
-            const info = await mod.getUserInfo();
+          if (typeof api.getUserInfo === "function") {
+            const info = await api.getUserInfo();
             return normalizeAddressValue(
               info && typeof (info as { publicKey?: unknown }).publicKey === "string"
                 ? (info as { publicKey: string }).publicKey
@@ -152,10 +132,11 @@ const loadFreighter = async (): Promise<FreighterShim> => {
           return "";
         }
       },
-      signTransaction: mod.signTransaction,
-      signAuthEntry: mod.signAuthEntry,
-      getNetwork: typeof mod?.getNetwork === "function" ? mod.getNetwork : undefined,
-      listen: typeof mod?.listen === "function" ? mod.listen : undefined,
+      signTransaction: api.signTransaction,
+      signAuthEntry: api.signAuthEntry,
+      getNetwork: typeof api?.getNetwork === "function" ? api.getNetwork : undefined,
+      getNetworkDetails: api.getNetworkDetails,
+      listen: typeof api?.listen === "function" ? api.listen : undefined,
     };
   } catch {
 
@@ -167,7 +148,6 @@ const loadFreighter = async (): Promise<FreighterShim> => {
         throw new Error("Freighter wallet is not installed or enabled");
       },
       getNetwork: async () => "TESTNET",
-      signTransaction: async () => "",
       signAuthEntry: async () => ({ signedAuthEntry: "" }),
     };
   }
@@ -397,6 +377,9 @@ export const invokeSorobanContract = async (
   const assembled = rpc.assembleTransaction(transaction, simulation).build();
 
   const freighter = await loadFreighter();
+  if (typeof freighter.signTransaction !== "function") {
+    throw new Error("Freighter wallet does not support signTransaction");
+  }
   let signedXdr: string;
   try {
     signedXdr = await freighter.signTransaction(assembled.toXDR(), { networkPassphrase: passphrase });
@@ -958,19 +941,6 @@ const createVault = async (
       addLiveVaultId(activeAccount, vaultId);
     }
     return vaultId;
-    try {
-      const vaultId = await executeSorobanCall("create_vault", [
-        activeAccount,
-        name,
-        description,
-        guardians,
-        approvalThreshold,
-      ]);
-      return Number(vaultId);
-    } catch (err) {
-      console.error("Soroban create_vault failed:", err);
-      throw err;
-    }
   }
 
   // Fallback to Mock Database for instantaneous UI execution and debugging
@@ -1107,23 +1077,6 @@ const addDocument = async (
       addLiveDocId(vaultId, documentId);
     }
     return documentId;
-  if (isConfigured()) {
-    try {
-      const docId = await executeSorobanCall("add_document", [
-        activeAccount,
-        vaultId,
-        encryptedMetadata,
-        ipfsHash,
-        requiredAccess,
-        releaseCondition,
-        guardiansList,
-        shares
-      ]);
-      return Number(docId);
-    } catch (err) {
-      console.error("Soroban add_document failed:", err);
-      throw err;
-    }
   }
 
   const docs = getMockStorage<MockDocument[]>("documents", []);
@@ -1195,16 +1148,6 @@ const requestAccess = async (documentId: number): Promise<number> => {
       u64ScVal(documentId),
     ]);
     return Number(result ?? 0);
-    try {
-      const requestId = await executeSorobanCall("request_access", [
-        activeAccount,
-        documentId
-      ]);
-      return Number(requestId);
-    } catch (err) {
-      console.error("Soroban request_access failed:", err);
-      throw err;
-    }
   }
 
   const requests = getMockStorage<MockRequest[]>("requests", []);
@@ -1236,17 +1179,6 @@ const approveAccess = async (requestId: number, encryptedShareForBeneficiary?: s
       optionTextScVal(encryptedShareForBeneficiary),
     ]);
     return;
-    try {
-      await executeSorobanCall("approve_access", [
-        activeAccount,
-        requestId,
-        encryptedShareForBeneficiary || null
-      ]);
-      return;
-    } catch (err) {
-      console.error("Soroban approve_access failed:", err);
-      throw err;
-    }
   }
 
   const requests = getMockStorage<MockRequest[]>("requests", []);
@@ -1358,16 +1290,6 @@ const acceptGuardianInvite = async (vaultId: number): Promise<void> => {
       u64ScVal(vaultId),
     ]);
     return;
-    try {
-      await executeSorobanCall("accept_guardian_invite", [
-        activeAccount,
-        vaultId
-      ]);
-      return;
-    } catch (err) {
-      console.error("Soroban accept_guardian_invite failed:", err);
-      throw err;
-    }
   }
 
   const invites = getMockStorage<MockInvite[]>("invites", []);
@@ -1399,16 +1321,6 @@ const registerPublicKey = async (publicKey: string): Promise<void> => {
       textScVal(publicKey),
     ]);
     return;
-    try {
-      await executeSorobanCall("register_public_key", [
-        activeAccount,
-        publicKey
-      ]);
-      return;
-    } catch (err) {
-      console.error("Soroban register_public_key failed:", err);
-      throw err;
-    }
   }
 
   const pubKeys = getMockStorage<Record<string, string>>("public_keys", {});
@@ -1425,12 +1337,12 @@ const getUserPublicKey = async (user: string): Promise<string> => {
       return typeof raw === "string" ? raw : "";
     } catch (error) {
       console.error("Live Soroban get_public_key failed, falling back to mock:", error);
-      const pubKey = await executeSorobanQuery("get_public_key", [
-        user
-      ]);
-      return pubKey || "";
-    } catch (err) {
-      console.error("Soroban get_public_key failed:", err);
+      try {
+        const pubKey = await executeSorobanQuery("get_public_key", [user]);
+        return pubKey || "";
+      } catch (err) {
+        console.error("Soroban get_public_key failed:", err);
+      }
     }
   }
 

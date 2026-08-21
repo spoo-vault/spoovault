@@ -1411,9 +1411,6 @@ describe("stellarService Soroban live integration", () => {
     });
   });
 });
-import { describe, it, expect } from 'vitest';
-import { stellarService } from '../services/stellar.service';
-
 describe('stellarService - Cross-Chain Identity Resolution', () => {
   it('should register and resolve EVM address to Stellar address and public key', async () => {
     const stellarAddress = 'GBZXN7PIRZGNMHGA72STUFTOAITGM522NM3TVYLZMJOXOALPUYSTZFEF';
