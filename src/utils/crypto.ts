@@ -69,6 +69,13 @@ export interface EncryptedPayload {
   ephemPublicKey: string;
   ciphertext: string;
   mac?: string;
+  /**
+   * Post-quantum hybrid extension (see utils/pqcCrypto.ts):
+   * ML-KEM-768 encapsulation key that was targeted during encryption.
+   */
+  pqcPublicKey?: string;
+  /** ML-KEM-768 ciphertext produced by the encapsulation step. */
+  pqcCiphertext?: string;
 }
 
 export const ECIES_VERSION = "ecies-p256-aes256gcm-v1";
