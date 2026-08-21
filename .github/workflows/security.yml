@@ -27,7 +27,8 @@ jobs:
           fail-on: medium # Fails CI on High/Medium findings
 
       - name: Upload Slither results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
+        if: ${{ always() && hashFiles('results.sarif') != '' }}
         with:
           sarif_file: results.sarif
           category: slither
@@ -67,8 +68,8 @@ jobs:
         run: cargo geiger --output-format sarif > geiger-results.sarif || true
 
       - name: Upload Geiger SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: ${{ always() && hashFiles('contracts-stellar/geiger-results.sarif') != '' }}
         with:
           sarif_file: ./contracts-stellar/geiger-results.sarif
           category: cargo-geiger

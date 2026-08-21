@@ -16,8 +16,9 @@ export default defineWalletSetup(WALLET_PASSWORD, async (context, walletPage) =>
   const SEED_PHRASE = TEST_MNEMONIC;
 
   await metamask.importWallet(SEED_PHRASE);
-  await walletPage.reload();
+  await walletPage.goto(`chrome-extension://${extensionId}/home.html`);
   await walletPage.waitForLoadState("domcontentloaded");
+  await walletPage.waitForSelector('[data-testid="network-display"]', { timeout: 60000 });
 
   // Register the local Anvil network inside MetaMask so the dApp connects to the
   // same chain-id (43113) the app expects for "Avalanche Fuji".

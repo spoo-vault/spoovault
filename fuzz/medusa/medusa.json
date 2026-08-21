@@ -1,0 +1,24 @@
+{
+  "fuzzing": {
+    "workers": 2,
+    "timeout": 600,
+    "testLimit": 100000,
+    "callSequenceLength": 64,
+    "stopOnNoTests": true,
+    "targetContracts": ["SpooVaultFuzz"],
+    "corpusDirectory": "fuzz/medusa/corpus"
+  },
+  "testing": {
+    "stopOnFailedTest": true,
+    "propertyTesting": {
+      "enabled": true,
+      "testPrefixes": ["echidna_", "property_"]
+    }
+  },
+  "compilation": {
+    "platform": "crytic-compile",
+    "platformConfig": {
+      "target": "."
+    }
+  }
+}
