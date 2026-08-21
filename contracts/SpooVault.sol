@@ -2,12 +2,16 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "./ISpooVault.sol";
 
 /**
  * @title SpooVault
- * @dev NFT-powered multi-signature encrypted document vault
+ * @dev NFT-powered multi-signature encrypted document vault.
+ *      Implements {ISpooVault} so third-party DApps can discover and query
+ *      document access delegations through a standardized, ERC-165 discoverable
+ *      interface.
  */
-contract SpooVault is ERC721 {
+contract SpooVault is ERC721, ISpooVault {
     uint256 private _tokenIdCounter;
     uint256 private _vaultIdCounter;
     uint256 private _documentIdCounter;
@@ -128,6 +132,7 @@ contract SpooVault is ERC721 {
     error CannotRemoveOnlyGuardian();
     error ProposalAlreadyExecuted();
     error ApprovalAlreadyGiven();
+    error CannotSelfApproveAccess();
 
     mapping(uint256 => Vault) public vaults;
     mapping(uint256 => Document) public documents;
@@ -186,15 +191,25 @@ contract SpooVault is ERC721 {
     event ThresholdUpdateApproved(uint256 indexed vaultId, uint256 newThreshold, address indexed approver);
     event VaultReconfigurationExecuted(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold);
 
+    /// @notice Registers the caller's ECIES/X25519 encryption public key.
+    /// @param publicKey The public key string to store for `msg.sender`.
     function registerPublicKey(string calldata publicKey) external {
         userPublicKeys[msg.sender] = publicKey;
         emit PublicKeyRegistered(msg.sender, publicKey);
     }
 
+    /// @notice Returns the encrypted guardian share stored for a document/guardian pair.
+    /// @param documentId The identifier of the document.
+    /// @param guardian The guardian address whose share is requested.
+    /// @return The encrypted share string.
     function getEncryptedGuardianShare(uint256 documentId, address guardian) external view returns (string memory) {
         return encryptedGuardianShares[documentId][guardian];
     }
 
+    /// @notice Returns the encrypted beneficiary key share submitted by a guardian for an access request.
+    /// @param requestId The identifier of the access request.
+    /// @param guardian The guardian address whose share is requested.
+    /// @return The encrypted share string.
     function getBeneficiaryKeyShare(uint256 requestId, address guardian) external view returns (string memory) {
         return beneficiaryKeyShares[requestId][guardian];
     }
@@ -715,7 +730,7 @@ contract SpooVault is ERC721 {
     }
 
     /**
-     * @dev Approve an access request (guardian only).
+     * @dev Approve an access request (accepted guardian only, never the requester).
      */
     function approveAccess(uint256 requestId) external {
         _approveAccess(requestId, "");
@@ -723,6 +738,8 @@ contract SpooVault is ERC721 {
 
     /**
      * @dev Approve an access request and submit the decrypted key share for the beneficiary.
+     * The requester can never approve their own request; quorum therefore counts only
+     * distinct accepted guardians other than the requester.
      */
     function approveAccess(uint256 requestId, string calldata encryptedShareForBeneficiary) external {
         _approveAccess(requestId, encryptedShareForBeneficiary);
@@ -733,6 +750,7 @@ contract SpooVault is ERC721 {
         if (request.requestId == 0) revert RequestNotExist();
         if (request.status != RequestStatus.PENDING) revert RequestNotPending();
         if (request.expiresAt <= block.timestamp) revert RequestExpired();
+        if (request.requester == msg.sender) revert CannotSelfApproveAccess();
 
         uint256 vaultId = documents[request.documentId].vaultId;
         if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
@@ -893,6 +911,47 @@ contract SpooVault is ERC721 {
             return false;
         }
         return _hasActiveAccess(documentId, user);
+    }
+
+    /**
+     * @dev Standardized, non-reverting access check for cross-contract callers.
+     *      Encodes the access state of `user` for `documentId` as a status code so
+     *      third-party DApps can branch without catching reverts.
+     * @return code 0 = document does not exist, 1 = access denied, 2 = access granted.
+     */
+    function checkAccess(uint256 documentId, address user) external view returns (uint8) {
+        if (documents[documentId].id == 0) {
+            return 0; // DOCUMENT_NOT_FOUND
+        }
+        if (_hasActiveAccess(documentId, user)) {
+            return 2; // ACCESS_GRANTED
+        }
+        return 1; // ACCESS_DENIED
+    }
+
+    /**
+     * @dev Returns the creator/owner address of `vaultId`.
+     */
+    function getVaultCreator(uint256 vaultId) external view returns (address) {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        return vaults[vaultId].creator;
+    }
+
+    /**
+     * @dev Returns the guardian approval threshold for `vaultId`.
+     */
+    function getApprovalThreshold(uint256 vaultId) external view returns (uint256) {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        return vaults[vaultId].approvalThreshold;
+    }
+
+    /**
+     * @dev ERC-165 interface detection.
+     *      Returns true for the {ISpooVault} interface id in addition to the
+     *      standard ERC-165 and ERC-721 identifiers provided by {ERC721}.
+     */
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ISpooVault) returns (bool) {
+        return interfaceId == type(ISpooVault).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /**

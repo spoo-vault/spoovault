@@ -4,43 +4,71 @@
  * parallel callers (e.g. Promise.all over many document IDs) issues only
  * one underlying call instead of one per caller.
  */
-export class TtlCache<T> {
-  private readonly store = new Map<string, { value: T; expiresAt: number }>();
-  private readonly pending = new Map<string, Promise<T>>();
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
 
-  constructor(private readonly ttlMs: number) {}
+export class TTLCache<T = any> {
+  private cache = new Map<string, CacheEntry<T>>();
+  private pending = new Map<string, Promise<T>>();
+  private ttlMs: number;
 
-  async getOrFetch(key: string, fetcher: () => Promise<T>): Promise<T> {
-    const cached = this.store.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.value;
+  constructor(ttlMsOrSeconds: number = 10) {
+    // If <= 1000, treat as seconds; otherwise assume milliseconds
+    this.ttlMs = ttlMsOrSeconds <= 1000 ? ttlMsOrSeconds * 1000 : ttlMsOrSeconds;
+  }
+
+  async fetch<R = T>(key: string, fetchFn: () => Promise<R>): Promise<R> {
+    const now = Date.now();
+    const entry = this.cache.get(key);
+
+    if (entry && now - entry.timestamp < this.ttlMs) {
+      return entry.data as unknown as R;
     }
 
     const inFlight = this.pending.get(key);
     if (inFlight) {
-      return inFlight;
+      return inFlight as unknown as Promise<R>;
     }
 
-    const promise = fetcher()
-      .then((value) => {
-        this.store.set(key, { value, expiresAt: Date.now() + this.ttlMs });
-        return value;
+    const promise = fetchFn()
+      .then((data) => {
+        this.cache.set(key, { data: data as unknown as T, timestamp: Date.now() });
+        return data;
       })
       .finally(() => {
         this.pending.delete(key);
       });
 
-    this.pending.set(key, promise);
+    this.pending.set(key, promise as unknown as Promise<T>);
     return promise;
   }
 
-  invalidate(key: string): void {
-    this.store.delete(key);
-    this.pending.delete(key);
+  async getOrFetch<R = T>(key: string, fetcher: () => Promise<R>): Promise<R> {
+    return this.fetch(key, fetcher);
   }
 
-  clear(): void {
-    this.store.clear();
-    this.pending.clear();
+  clear(key?: string): void {
+    if (key) {
+      this.cache.delete(key);
+      this.pending.delete(key);
+    } else {
+      this.cache.clear();
+      this.pending.clear();
+    }
+  }
+
+  invalidate(key: string): void {
+    this.clear(key);
+  }
+
+  hasValidKey(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return false;
+    return Date.now() - entry.timestamp < this.ttlMs;
   }
 }
+
+export { TTLCache as TtlCache };
+export const readViewCache = new TTLCache(10);
