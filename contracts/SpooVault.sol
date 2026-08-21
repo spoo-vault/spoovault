@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./ISpooVault.sol";
+import "./interfaces/IVRFCoordinatorV2Plus.sol";
 
 /**
  * @title SpooVault
@@ -102,6 +103,13 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
         uint256 expiresAt;
     }
 
+    error OnlyVrfCoordinator();
+    error VrfNotConfigured();
+    error VrfRequestAlreadyPending();
+    error VrfUnknownRequestId();
+    error VrfAlreadyFulfilled();
+    error InvalidJitterWindow();
+
     error AtLeastOneGuardian();
     error InvalidApprovalThreshold();
     error VaultNotActive();
@@ -163,11 +171,51 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     mapping(uint256 => mapping(address => uint256)) private _documentAccessVersion;
     mapping(uint256 => VaultReleaseState) private _vaultReleaseStates;
 
+    // ------------------------------------------------------------------
+    // VRF-backed emergency unlock delay (issue #93).
+    //
+    // When VRF is configured, enabling emergency mode requests verifiable
+    // randomness from a Chainlink VRF v2.5 coordinator. The fulfillment
+    // derives an unpredictable jitter offset that is added to the base
+    // unlock delay, so neither miners, guardians nor the vault owner can
+    // predict or manipulate the exact block at which emergency documents
+    // become releasable (anti front-running / sandwich protection).
+    // ------------------------------------------------------------------
+    uint256 public constant EMERGENCY_UNLOCK_BASE_DELAY = 10 minutes;
+    uint256 public constant DEFAULT_EMERGENCY_JITTER_WINDOW = 1 hours;
+    uint256 public constant MIN_JITTER_WINDOW = 5 minutes;
+    uint256 public constant MAX_JITTER_WINDOW = 7 days;
+
+    struct VrfConfig {
+        address coordinator; // address(0) => VRF gating disabled (legacy behavior)
+        bytes32 keyHash;
+        uint256 subscriptionId;
+        uint32 callbackGasLimit;
+        uint16 minimumRequestConfirmations;
+    }
+
+    VrfConfig private _vrfConfig;
+    address private immutable _vrfDeployer;
+
+    // vaultId => scheduled emergency unlock timestamp (0 = not scheduled)
+    mapping(uint256 => uint256) public emergencyUnlockAt;
+    // vaultId => latest VRF request id
+    mapping(uint256 => uint256) public vrfRequestIdByVault;
+    // requestId => vaultId (reverse lookup for fulfillment)
+    mapping(uint256 => uint256) private _vaultIdByRequestId;
+    // vaultId => jitter window applied to the VRF offset
+    mapping(uint256 => uint256) public emergencyJitterWindow;
+
     // Guardian rotation and threshold adjustment governance
     mapping(uint256 => mapping(address => GuardianRemovalProposal)) public guardianRemovalProposals;
     mapping(uint256 => mapping(uint256 => ThresholdUpdateProposal)) public thresholdUpdateProposals;
     mapping(uint256 => mapping(address => mapping(address => bool))) public hasApprovedRemoval;
     mapping(uint256 => mapping(uint256 => mapping(address => bool))) public hasApprovedThreshold;
+
+    event EmergencyUnlockDelayRequested(uint256 indexed vaultId, uint256 indexed requestId);
+    event EmergencyUnlockScheduled(uint256 indexed vaultId, uint256 indexed unlockAt, uint256 jitterSeconds);
+    event VrfConfigured(address indexed coordinator, bytes32 keyHash, uint256 subscriptionId);
+    event EmergencyJitterWindowSet(uint256 indexed vaultId, uint256 jitterWindow);
 
     event VaultCreated(uint256 indexed vaultId, address indexed creator, string name);
     event GuardianAdded(uint256 indexed vaultId, address indexed guardian);
@@ -215,7 +263,9 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
         return beneficiaryKeyShares[requestId][guardian];
     }
 
-    constructor() ERC721("SpooVault Access Token", "SPVT") {}
+    constructor() ERC721("SpooVault Access Token", "SPVT") {
+        _vrfDeployer = msg.sender;
+    }
 
     /**
      * @dev Create a new vault with guardian invites.
@@ -432,6 +482,9 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
 
     /**
      * @dev Owner can toggle emergency mode for rapid release workflows.
+     * When VRF is configured, enabling emergency mode additionally requests
+     * verifiable randomness; EMERGENCY_ONLY documents stay locked until the
+     * VRF-derived unlock time is reached (see {rawFulfillRandomWords}).
      */
     function setEmergencyMode(uint256 vaultId, bool enabled) external nonReentrant {
         if (vaults[vaultId].id == 0) revert VaultNotExist();
@@ -439,7 +492,139 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
         if (!vaults[vaultId].isActive) revert VaultNotActive();
 
         _vaultReleaseStates[vaultId].emergencyMode = enabled;
+
+        if (_vrfConfig.coordinator != address(0)) {
+            if (enabled) {
+                if (vrfRequestIdByVault[vaultId] != 0 && !vrfRequestFulfilled(vaultId)) {
+                    revert VrfRequestAlreadyPending();
+                }
+                // Fresh episode: clear any previous schedule before re-rolling.
+                emergencyUnlockAt[vaultId] = 0;
+
+                uint256 requestId = IVRFCoordinatorV2Plus(_vrfConfig.coordinator).requestRandomWords(
+                    _vrfConfig.keyHash,
+                    _vrfConfig.subscriptionId,
+                    _vrfConfig.minimumRequestConfirmations,
+                    _vrfConfig.callbackGasLimit,
+                    1,
+                    ""
+                );
+                vrfRequestIdByVault[vaultId] = requestId;
+                _vaultIdByRequestId[requestId] = vaultId;
+                emit EmergencyUnlockDelayRequested(vaultId, requestId);
+            } else {
+                // Disabling emergency mode resets the schedule entirely.
+                delete vrfRequestIdByVault[vaultId];
+                emergencyUnlockAt[vaultId] = 0;
+            }
+        }
+
         emit EmergencyModeUpdated(vaultId, enabled);
+    }
+
+    /**
+     * @dev Deployer configures the Chainlink VRF v2.5 coordinator. Passing
+     * the zero address disables VRF gating and restores legacy behavior
+     * (emergency access immediately available once mode is enabled).
+     */
+    function configureVrf(
+        address coordinator,
+        bytes32 keyHash,
+        uint256 subscriptionId,
+        uint32 callbackGasLimit,
+        uint16 minimumRequestConfirmations
+    ) external {
+        if (msg.sender != _vrfDeployer) revert OnlyVrfCoordinator();
+        _vrfConfig = VrfConfig({
+            coordinator: coordinator,
+            keyHash: keyHash,
+            subscriptionId: subscriptionId,
+            callbackGasLimit: callbackGasLimit,
+            minimumRequestConfirmations: minimumRequestConfirmations
+        });
+        emit VrfConfigured(coordinator, keyHash, subscriptionId);
+    }
+
+    /**
+     * @dev Vault creator tunes the jitter window Delta_T used to scale the
+     * VRF offset: T_random = VRF() mod Delta_T.
+     */
+    function setEmergencyJitterWindow(uint256 vaultId, uint256 jitterWindow) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (vaults[vaultId].creator != msg.sender) revert OnlyVaultCreator();
+        if (jitterWindow < MIN_JITTER_WINDOW || jitterWindow > MAX_JITTER_WINDOW) {
+            revert InvalidJitterWindow();
+        }
+
+        emergencyJitterWindow[vaultId] = jitterWindow;
+        emit EmergencyJitterWindowSet(vaultId, jitterWindow);
+    }
+
+    /**
+     * @dev Entry point called by the VRF coordinator with verified randomness.
+     * Only the configured coordinator may call this; the request id must
+     * match the latest one issued for the vault and can only be fulfilled
+     * once, so neither miners nor guardians can influence or replay the
+     * resulting unlock schedule.
+     */
+    function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
+        if (_vrfConfig.coordinator == address(0) || msg.sender != _vrfConfig.coordinator) {
+            revert OnlyVrfCoordinator();
+        }
+        if (randomWords.length == 0) revert VrfUnknownRequestId();
+
+        uint256 vaultId = _vaultIdByRequestId[requestId];
+        if (vaultId == 0) revert VrfUnknownRequestId();
+        if (emergencyUnlockAt[vaultId] != 0) revert VrfAlreadyFulfilled();
+
+        uint256 window = emergencyJitterWindow[vaultId] != 0
+            ? emergencyJitterWindow[vaultId]
+            : DEFAULT_EMERGENCY_JITTER_WINDOW;
+        uint256 jitter = randomWords[0] % window;
+        uint256 unlockAt = block.timestamp + EMERGENCY_UNLOCK_BASE_DELAY + jitter;
+
+        emergencyUnlockAt[vaultId] = unlockAt;
+        emit EmergencyUnlockScheduled(vaultId, unlockAt, jitter);
+    }
+
+    /**
+     * @dev Returns whether the latest VRF request for a vault has been
+     * fulfilled (a schedule exists).
+     */
+    function vrfRequestFulfilled(uint256 vaultId) public view returns (bool) {
+        return emergencyUnlockAt[vaultId] != 0;
+    }
+
+    /**
+     * @dev Returns the current VRF configuration.
+     */
+    function getVrfConfig() external view returns (
+        address coordinator,
+        bytes32 keyHash,
+        uint256 subscriptionId,
+        uint32 callbackGasLimit,
+        uint16 minimumRequestConfirmations
+    ) {
+        VrfConfig memory cfg = _vrfConfig;
+        return (
+            cfg.coordinator,
+            cfg.keyHash,
+            cfg.subscriptionId,
+            cfg.callbackGasLimit,
+            cfg.minimumRequestConfirmations
+        );
+    }
+
+    /**
+     * @dev Returns the scheduled emergency unlock summary for a vault.
+     */
+    function getEmergencyUnlockSchedule(uint256 vaultId) external view returns (
+        bool requested,
+        bool fulfilled,
+        uint256 unlockAt
+    ) {
+        uint256 requestId = vrfRequestIdByVault[vaultId];
+        return (requestId != 0, emergencyUnlockAt[vaultId] != 0, emergencyUnlockAt[vaultId]);
     }
 
     /**
@@ -1051,7 +1236,23 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
         }
 
         if (condition == ReleaseCondition.EMERGENCY_ONLY) {
-            return _vaultReleaseStates[vaultId].emergencyMode || postDeathUnlocked;
+            if (postDeathUnlocked) {
+                // The post-death track is independent of emergency jitter.
+                return true;
+            }
+            if (!_vaultReleaseStates[vaultId].emergencyMode) {
+                return false;
+            }
+
+            uint256 scheduledAt = emergencyUnlockAt[vaultId];
+            if (vrfRequestIdByVault[vaultId] != 0) {
+                // VRF-gated vault: releasable only at the verifiably
+                // scheduled time (pending requests stay locked).
+                return block.timestamp >= scheduledAt && scheduledAt != 0;
+            }
+
+            // Legacy behavior for deployments without VRF configured.
+            return true;
         }
 
         if (condition == ReleaseCondition.POST_DEATH_ONLY) {

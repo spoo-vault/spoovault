@@ -172,6 +172,10 @@ export const getContractId = (): string => {
   return cid || contractId || "";
 };
 
+const getRpcUrl = (): string => {
+  return sorobanRpcUrl;
+};
+
 const isConfigured = (): boolean => {
   return !!getContractId();
 };
@@ -1125,6 +1129,8 @@ export const stellarService = {
   resolveStellarToEvm,
   resolveEvmToPublicKey,
   isConfigured,
+  getContractId,
+  getRpcUrl,
   setMockStellarSdk,
   setMockFreighter,
 };
