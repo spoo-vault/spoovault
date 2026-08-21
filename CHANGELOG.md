@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **EIP-712 / Soroban Auth Relayer for Automated Proof-of-Life Heartbeats (Issue #32)**:
+  - `SpooVault.sol`: `authorizeKeeperBySig`, `revokeKeeper`, and `proveLifeByKeeper` let a vault owner delegate proof-of-life heartbeats to a Web3 Keeper (Chainlink Automation / Gelato) via a one-time EIP-712 typed signature, so the keeper can relay heartbeats on its own signed transactions until the delegation expires without needing a fresh owner signature each time.
+  - `contracts-stellar/src/lib.rs`: `authorize_keeper`, `revoke_keeper`, and `prove_life_by_keeper` mirror the same delegation model using Soroban's native `require_auth`, which already decouples the authorizing owner from the fee-paying/submitting keeper.
+  - `contractService`/`stellarService`: signing and relay helpers (`signKeeperAuthorization`, `relayKeeperAuthorization`, `revokeKeeper`, `relayProofOfLife` / `authorizeKeeper`, `revokeKeeperAuthorization`, `relayProofOfLifeAsKeeper`, `getKeeperAuthorization`) for both chains.
+  - Reference keeper jobs: `scripts/keeper-relay-evm.mjs` and `scripts/keeper-relay-soroban.mjs`.
+  - Hardhat tests (`test/HeartbeatRelay.test.cjs`) and Soroban `cargo test` coverage (`contracts-stellar/src/test.rs`) for the authorization, expiry, revocation, and replay-protection paths on both chains.
 - **Web Crypto API ECIES Migration (Issue #17)**:
   - Replaced deprecated MetaMask `eth_decrypt` and `eth_getEncryptionPublicKey` RPC methods with browser-native Web Crypto API ECIES (ECDH P-256 + AES-256-GCM).
   - Built `clientKeyringService` with browser IndexedDB storage (`spoovault-keyring`), encrypting client-side private keys using PBKDF2-SHA256 (600,000 iterations) + AES-256-GCM with optional PIN/passphrase protection and in-memory session caching.

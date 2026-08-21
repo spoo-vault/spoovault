@@ -74,6 +74,11 @@ export interface VaultReleaseState {
   postDeathUnlocked: boolean;
 }
 
+export interface KeeperAuthorizationData {
+  keeper: string;
+  expiresAt: number;
+}
+
 const CONTRACT_ABI = [
   "function createVault(string name, string description, address[] guardians, uint256 approvalThreshold) external returns (uint256)",
   "function addDocument(uint256 vaultId, string encryptedMetadata, string ipfsHash, uint8 requiredAccess) external returns (uint256)",
@@ -82,6 +87,11 @@ const CONTRACT_ABI = [
   "function addDocumentWithReleaseCondition(uint256 vaultId, string encryptedMetadata, string ipfsHash, uint8 requiredAccess, uint8 releaseCondition, address[] guardiansList, string[] shares) external returns (uint256)",
   "function configureVaultRelease(uint256 vaultId, uint256 inactivityPeriod) external",
   "function proveLife(uint256 vaultId) external",
+  "function authorizeKeeperBySig(uint256 vaultId, address keeper, uint256 expiresAt, bytes signature) external",
+  "function revokeKeeper(uint256 vaultId) external",
+  "function proveLifeByKeeper(uint256 vaultId) external",
+  "function keeperAuthorizations(uint256 vaultId) external view returns (address keeper, uint256 expiresAt)",
+  "function keeperAuthNonces(uint256 vaultId) external view returns (uint256)",
   "function setEmergencyMode(uint256 vaultId, bool enabled) external",
   "function getVaultReleaseState(uint256 vaultId) external view returns (bool emergencyMode, uint256 inactivityPeriod, uint256 lastProofOfLife, bool postDeathUnlocked)",
   "function documentReleaseCondition(uint256 documentId) external view returns (uint8)",
@@ -120,7 +130,19 @@ const CONTRACT_ABI = [
   "event PublicKeyRegistered(address indexed user, string publicKey)",
   "event GuardianSharesSaved(uint256 indexed documentId)",
   "event ShareSubmittedForBeneficiary(uint256 indexed requestId, address indexed guardian, string encryptedShare)",
+  "event KeeperAuthorized(uint256 indexed vaultId, address indexed owner, address indexed keeper, uint256 expiresAt)",
+  "event KeeperRevoked(uint256 indexed vaultId, address indexed owner)",
+  "event ProofOfLifeRelayed(uint256 indexed vaultId, address indexed owner, address indexed keeper, uint256 timestamp)",
 ];
+
+const KEEPER_AUTHORIZATION_EIP712_TYPES = {
+  KeeperAuthorization: [
+    { name: "vaultId", type: "uint256" },
+    { name: "keeper", type: "address" },
+    { name: "expiresAt", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+  ],
+};
 
 let provider: ethers.Provider | null = null;
 let fallbackProviders: ethers.JsonRpcProvider[] = [];
@@ -1279,6 +1301,98 @@ const setEmergencyMode = async (vaultId: number, enabled: boolean): Promise<void
   await waitForReceipt(tx);
 };
 
+/**
+ * Vault creator signs an EIP-712 "KeeperAuthorization" message off-chain, delegating
+ * proof-of-life heartbeats for `vaultId` to `keeper` until `expiresAt`. Signing costs no
+ * gas; the returned signature is later relayed on-chain (by anyone, typically the keeper
+ * itself) via {relayKeeperAuthorization}.
+ */
+const signKeeperAuthorization = async (
+  vaultId: number,
+  keeper: string,
+  expiresAt: number
+): Promise<string> => {
+  const contract = ensureWriteContract();
+  const signer = contract.runner;
+  if (!signer || typeof (signer as ethers.Signer).signTypedData !== "function") {
+    throw new Error("A connected wallet signer is required to authorize a keeper.");
+  }
+
+  const nonce = await contract.keeperAuthNonces(vaultId);
+  const domain = {
+    name: "SpooVault",
+    version: "1",
+    chainId: getConfiguredChainId(),
+    verifyingContract: getContractAddress(),
+  };
+
+  return (signer as ethers.Signer).signTypedData(domain, KEEPER_AUTHORIZATION_EIP712_TYPES, {
+    vaultId,
+    keeper,
+    expiresAt,
+    nonce,
+  });
+};
+
+/**
+ * Submits a vault creator's signed keeper authorization on-chain. Callable by anyone —
+ * the EIP-712 signature alone proves the creator's consent — so this is typically invoked
+ * by the keeper itself when it first registers to relay a vault's heartbeats.
+ */
+const relayKeeperAuthorization = async (
+  vaultId: number,
+  keeper: string,
+  expiresAt: number,
+  signature: string
+): Promise<void> => {
+  const contract = ensureWriteContract();
+  if (!contractHasFunction(contract, "authorizeKeeperBySig(uint256,address,uint256,bytes)")) {
+    throw new Error("Current contract does not support keeper delegation.");
+  }
+  const tx = await contract.authorizeKeeperBySig(vaultId, keeper, expiresAt, signature);
+  await waitForReceipt(tx);
+};
+
+const revokeKeeper = async (vaultId: number): Promise<void> => {
+  const contract = ensureWriteContract();
+  if (!contractHasFunction(contract, "revokeKeeper(uint256)")) {
+    throw new Error("Current contract does not support keeper delegation.");
+  }
+  const tx = await contract.revokeKeeper(vaultId);
+  await waitForReceipt(tx);
+};
+
+/**
+ * Web3 Keeper (Chainlink Automation / Gelato) relay of a proof-of-life heartbeat,
+ * submitted using the keeper's own signer rather than the vault creator's.
+ */
+const relayProofOfLife = async (vaultId: number): Promise<void> => {
+  const contract = ensureWriteContract();
+  if (!contractHasFunction(contract, "proveLifeByKeeper(uint256)")) {
+    throw new Error("Current contract does not support keeper-relayed heartbeats.");
+  }
+  const tx = await contract.proveLifeByKeeper(vaultId);
+  await waitForReceipt(tx);
+};
+
+const getKeeperAuthorization = async (vaultId: number): Promise<KeeperAuthorizationData | null> => {
+  await ensureContractDeployed();
+  const contract = ensureReadContract();
+  if (!contractHasFunction(contract, "keeperAuthorizations(uint256)")) {
+    return null;
+  }
+  try {
+    const value = await contract.keeperAuthorizations(vaultId);
+    const keeper = String(value.keeper ?? value[0]);
+    if (keeper === ethers.ZeroAddress) {
+      return null;
+    }
+    return { keeper, expiresAt: Number(value.expiresAt ?? value[1]) };
+  } catch {
+    return null;
+  }
+};
+
 const fetchPendingInvites = async (user: string): Promise<GuardianInviteData[]> => {
   if (!user) {
     return [];
@@ -1888,6 +2002,11 @@ export const contractService = {
   configureVaultRelease,
   recordProofOfLife,
   setEmergencyMode,
+  signKeeperAuthorization,
+  relayKeeperAuthorization,
+  revokeKeeper,
+  relayProofOfLife,
+  getKeeperAuthorization,
   fetchPendingApprovalsForGuardian: proxiedFetchPendingApprovalsForGuardian,
   getRecentActivity,
   registerPublicKey: proxiedRegisterPublicKey,

@@ -24,6 +24,7 @@ Enterprise-grade document custody app supporting both **Avalanche (EVM)** and **
 - **Zero-Knowledge Client-Side Encryption**: Documents are encrypted in the browser with TweetNaCl / AES-256 before leaving your device.
 - **Guardian Multi-Sig Approval**: Distribute access keys across trusted guardians requiring threshold approval before document release.
 - **Proof-of-Life & Dead-Man's Switch**: Configurable inactivity timers automatically release encrypted access packages to designated beneficiaries if owner heartbeat lapses.
+- **Web3 Keeper Heartbeat Relay**: Vault owners can delegate proof-of-life heartbeats to automation keepers (Chainlink Automation / Gelato) via an EIP-712 signed authorization on Avalanche or a native on-chain authorization on Soroban, so a missed personal check-in doesn't trigger a false emergency unlock. See `docs/HEARTBEAT_RELAYER.md`.
 - **IPFS Storage & Proxying**: Decoupled decentralized storage with optional serverless proxy to prevent Pinata API key exposure.
 - **NFT Access Passes**: Tokenized authorization layers representing access rights to specific document vaults.
 

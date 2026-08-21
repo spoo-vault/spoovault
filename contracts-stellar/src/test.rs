@@ -1,5 +1,5 @@
 use super::*;
-use soroban_sdk::{testutils::Address as _, vec, Address, Env, String};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, vec, Address, Env, String};
 
 #[test]
 fn test_register_and_get_public_key() {
@@ -245,4 +245,187 @@ fn test_prove_life_and_emergency_mode() {
     client.configure_vault_release(&creator, &vault_id, &(60 * 24 * 60 * 60));
     let updated_state = client.get_release_state(&vault_id).unwrap();
     assert_eq!(updated_state.inactivity_period, 60 * 24 * 60 * 60);
+}
+
+#[test]
+fn test_authorize_keeper_and_relay_heartbeat() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SpooVaultStellar);
+    let client = SpooVaultStellarClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let g1 = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    env.mock_all_auths();
+
+    let name = String::from_str(&env, "Automated Vault");
+    let desc = String::from_str(&env, "Keeper relay test");
+    let guardians = vec![&env, g1.clone()];
+    let vault_id = client.create_vault(&creator, &name, &desc, &guardians, &1);
+
+    let expires_at = env.ledger().timestamp() + 30 * 24 * 60 * 60;
+    client.authorize_keeper(&creator, &vault_id, &keeper, &expires_at);
+
+    let authorization = client
+        .get_keeper_authorization(&vault_id)
+        .expect("authorization should be stored");
+    assert_eq!(authorization.keeper, keeper);
+    assert_eq!(authorization.expires_at, expires_at);
+
+    let before = client.get_release_state(&vault_id).unwrap().last_proof_of_life;
+    env.ledger().with_mut(|li| li.timestamp += 3600);
+    client.prove_life_by_keeper(&keeper, &vault_id);
+
+    let after = client.get_release_state(&vault_id).unwrap();
+    assert!(after.last_proof_of_life > before);
+
+    // The keeper can heartbeat again later with no further owner action required.
+    env.ledger().with_mut(|li| li.timestamp += 3600);
+    client.prove_life_by_keeper(&keeper, &vault_id);
+}
+
+// Negative paths are asserted via the generated `try_*` client methods rather than
+// `#[should_panic]`: a contract-side `assert!`/panic is caught by the Soroban host at
+// the client-invocation boundary and surfaced as an `Err`, not as a Rust panic that
+// unwinds into the test thread — calling the panicking method directly here would abort
+// the test process instead of failing the assertion.
+
+#[test]
+fn test_prove_life_by_keeper_fails_when_unauthorized() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SpooVaultStellar);
+    let client = SpooVaultStellarClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let g1 = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    env.mock_all_auths();
+
+    let vault_id = client.create_vault(
+        &creator,
+        &String::from_str(&env, "Vault"),
+        &String::from_str(&env, "Desc"),
+        &vec![&env, g1],
+        &1,
+    );
+
+    let result = client.try_prove_life_by_keeper(&keeper, &vault_id);
+    assert!(
+        result.is_err(),
+        "expected relay from an unauthorized keeper to fail"
+    );
+}
+
+#[test]
+fn test_prove_life_by_keeper_fails_for_wrong_keeper() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SpooVaultStellar);
+    let client = SpooVaultStellarClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let g1 = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    let other_keeper = Address::generate(&env);
+    env.mock_all_auths();
+
+    let vault_id = client.create_vault(
+        &creator,
+        &String::from_str(&env, "Vault"),
+        &String::from_str(&env, "Desc"),
+        &vec![&env, g1],
+        &1,
+    );
+
+    let expires_at = env.ledger().timestamp() + 30 * 24 * 60 * 60;
+    client.authorize_keeper(&creator, &vault_id, &keeper, &expires_at);
+
+    let result = client.try_prove_life_by_keeper(&other_keeper, &vault_id);
+    assert!(
+        result.is_err(),
+        "expected relay from a non-authorized keeper to fail"
+    );
+}
+
+#[test]
+fn test_prove_life_by_keeper_fails_when_expired() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SpooVaultStellar);
+    let client = SpooVaultStellarClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let g1 = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    env.mock_all_auths();
+
+    let vault_id = client.create_vault(
+        &creator,
+        &String::from_str(&env, "Vault"),
+        &String::from_str(&env, "Desc"),
+        &vec![&env, g1],
+        &1,
+    );
+
+    let expires_at = env.ledger().timestamp() + 3600;
+    client.authorize_keeper(&creator, &vault_id, &keeper, &expires_at);
+
+    env.ledger().with_mut(|li| li.timestamp = expires_at + 1);
+    let result = client.try_prove_life_by_keeper(&keeper, &vault_id);
+    assert!(result.is_err(), "expected relay after expiry to fail");
+}
+
+#[test]
+fn test_revoke_keeper_blocks_future_relays() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SpooVaultStellar);
+    let client = SpooVaultStellarClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let g1 = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    env.mock_all_auths();
+
+    let vault_id = client.create_vault(
+        &creator,
+        &String::from_str(&env, "Vault"),
+        &String::from_str(&env, "Desc"),
+        &vec![&env, g1],
+        &1,
+    );
+
+    let expires_at = env.ledger().timestamp() + 30 * 24 * 60 * 60;
+    client.authorize_keeper(&creator, &vault_id, &keeper, &expires_at);
+    client.revoke_keeper(&creator, &vault_id);
+
+    assert!(client.get_keeper_authorization(&vault_id).is_none());
+
+    let result = client.try_prove_life_by_keeper(&keeper, &vault_id);
+    assert!(result.is_err(), "expected relay after revocation to fail");
+}
+
+#[test]
+fn test_authorize_keeper_rejects_non_creator() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SpooVaultStellar);
+    let client = SpooVaultStellarClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let g1 = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    env.mock_all_auths();
+
+    let vault_id = client.create_vault(
+        &creator,
+        &String::from_str(&env, "Vault"),
+        &String::from_str(&env, "Desc"),
+        &vec![&env, g1.clone()],
+        &1,
+    );
+
+    let expires_at = env.ledger().timestamp() + 30 * 24 * 60 * 60;
+    // g1 is a guardian, not the creator, and must not be able to authorize a keeper.
+    let result = client.try_authorize_keeper(&g1, &vault_id, &keeper, &expires_at);
+    assert!(
+        result.is_err(),
+        "expected authorization from a non-creator to fail"
+    );
 }

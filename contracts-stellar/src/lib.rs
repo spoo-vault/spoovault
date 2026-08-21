@@ -1,6 +1,6 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, Env, String, Vec,
+    contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec,
 };
 
 /// Ledger constants for TTL extension thresholds and bump amounts (~5s per ledger)
@@ -93,6 +93,31 @@ pub struct VaultReleaseState {
     pub last_proof_of_life: u64,
 }
 
+/// A Web3 Keeper (Chainlink Automation / Gelato) delegation: `keeper` may relay
+/// proof-of-life heartbeats on the vault creator's behalf until `expires_at`.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct KeeperAuthorization {
+    pub keeper: Address,
+    pub expires_at: u64,
+}
+
+/// Typed errors for the keeper-delegation entrypoints. Returned as `Result::Err`
+/// rather than raised via `assert!`, so callers (and `try_*` client methods) get a
+/// normal typed failure instead of a contract panic.
+#[contracterror]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum RelayerError {
+    VaultNotFound = 1,
+    VaultNotActive = 2,
+    OnlyCreator = 3,
+    ExpiryInPast = 4,
+    NoKeeperAuthorized = 5,
+    KeeperMismatch = 6,
+    KeeperAuthorizationExpired = 7,
+}
+
 #[contracttype]
 pub enum DataKey {
     VaultCount,
@@ -112,6 +137,7 @@ pub enum DataKey {
     BShare(u64, Address),
     DocReleaseCond(u64),
     ReleaseState(u64),
+    KeeperAuth(u64),
     // Cross-Chain Identity Lookup Map
     EvmToStellar(String),
     StellarToEvm(Address),
@@ -628,6 +654,122 @@ impl SpooVaultStellar {
 
         Self::bump_persistent(&env, &vault_key);
         Self::bump_persistent(&env, &rel_key);
+    }
+
+    /// Authorize a Web3 Keeper (Chainlink Automation / Gelato) to relay proof-of-life
+    /// heartbeats on the vault creator's behalf until `expires_at`. Soroban's native
+    /// `require_auth` already decouples who authorizes an action (`owner`) from who
+    /// pays for and submits the transaction, so this delegation needs no off-chain
+    /// signature scheme of its own: the creator authorizes here in a normal signed
+    /// invocation, and the keeper can then relay heartbeats on its own signed
+    /// transactions without further owner involvement. Re-authorizing replaces any
+    /// prior grant for this vault.
+    pub fn authorize_keeper(
+        env: Env,
+        owner: Address,
+        vault_id: u64,
+        keeper: Address,
+        expires_at: u64,
+    ) -> Result<(), RelayerError> {
+        owner.require_auth();
+        Self::bump_instance(&env);
+
+        let vault_key = DataKey::Vault(vault_id);
+        let vault: Vault = env
+            .storage()
+            .persistent()
+            .get(&vault_key)
+            .ok_or(RelayerError::VaultNotFound)?;
+        if vault.creator != owner {
+            return Err(RelayerError::OnlyCreator);
+        }
+        if !vault.is_active {
+            return Err(RelayerError::VaultNotActive);
+        }
+        if expires_at <= env.ledger().timestamp() {
+            return Err(RelayerError::ExpiryInPast);
+        }
+
+        let auth_key = DataKey::KeeperAuth(vault_id);
+        let authorization = KeeperAuthorization { keeper, expires_at };
+        env.storage().persistent().set(&auth_key, &authorization);
+        Self::bump_persistent(&env, &auth_key);
+        Ok(())
+    }
+
+    /// Revoke any active keeper authorization for a vault.
+    pub fn revoke_keeper(env: Env, owner: Address, vault_id: u64) -> Result<(), RelayerError> {
+        owner.require_auth();
+        Self::bump_instance(&env);
+
+        let vault_key = DataKey::Vault(vault_id);
+        let vault: Vault = env
+            .storage()
+            .persistent()
+            .get(&vault_key)
+            .ok_or(RelayerError::VaultNotFound)?;
+        if vault.creator != owner {
+            return Err(RelayerError::OnlyCreator);
+        }
+
+        let auth_key = DataKey::KeeperAuth(vault_id);
+        env.storage().persistent().remove(&auth_key);
+        Ok(())
+    }
+
+    /// Fetch the current keeper authorization for a vault, if any.
+    pub fn get_keeper_authorization(env: Env, vault_id: u64) -> Option<KeeperAuthorization> {
+        Self::bump_instance(&env);
+        let auth_key = DataKey::KeeperAuth(vault_id);
+        let authorization: Option<KeeperAuthorization> = env.storage().persistent().get(&auth_key);
+        if authorization.is_some() {
+            Self::bump_persistent(&env, &auth_key);
+        }
+        authorization
+    }
+
+    /// Record a proof-of-life heartbeat relayed by an authorized Web3 Keeper on the
+    /// vault creator's behalf, preventing a keeper outage or owner-preferred
+    /// automation from triggering a false emergency unlock.
+    pub fn prove_life_by_keeper(
+        env: Env,
+        keeper: Address,
+        vault_id: u64,
+    ) -> Result<(), RelayerError> {
+        keeper.require_auth();
+        Self::bump_instance(&env);
+
+        let vault_key = DataKey::Vault(vault_id);
+        let vault: Vault = env
+            .storage()
+            .persistent()
+            .get(&vault_key)
+            .ok_or(RelayerError::VaultNotFound)?;
+        if !vault.is_active {
+            return Err(RelayerError::VaultNotActive);
+        }
+
+        let auth_key = DataKey::KeeperAuth(vault_id);
+        let authorization: KeeperAuthorization = env
+            .storage()
+            .persistent()
+            .get(&auth_key)
+            .ok_or(RelayerError::NoKeeperAuthorized)?;
+        if authorization.keeper != keeper {
+            return Err(RelayerError::KeeperMismatch);
+        }
+        if env.ledger().timestamp() >= authorization.expires_at {
+            return Err(RelayerError::KeeperAuthorizationExpired);
+        }
+
+        let rel_key = DataKey::ReleaseState(vault_id);
+        let mut state: VaultReleaseState = env.storage().persistent().get(&rel_key).unwrap();
+        state.last_proof_of_life = env.ledger().timestamp();
+        env.storage().persistent().set(&rel_key, &state);
+
+        Self::bump_persistent(&env, &vault_key);
+        Self::bump_persistent(&env, &rel_key);
+        Ok(())
     }
 
     /// Configure vault release conditions

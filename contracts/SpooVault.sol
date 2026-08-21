@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./ISpooVault.sol";
 
 /**
@@ -11,7 +13,7 @@ import "./ISpooVault.sol";
  *      document access delegations through a standardized, ERC-165 discoverable
  *      interface.
  */
-contract SpooVault is ERC721, ISpooVault {
+contract SpooVault is ERC721, EIP712, ISpooVault {
     uint256 private _tokenIdCounter;
     uint256 private _vaultIdCounter;
     uint256 private _documentIdCounter;
@@ -81,6 +83,11 @@ contract SpooVault is ERC721, ISpooVault {
         uint256 lastProofOfLife;
     }
 
+    struct KeeperAuthorization {
+        address keeper;
+        uint256 expiresAt;
+    }
+
     struct GuardianRemovalProposal {
         uint256 vaultId;
         address guardianToRemove;
@@ -133,6 +140,10 @@ contract SpooVault is ERC721, ISpooVault {
     error ProposalAlreadyExecuted();
     error ApprovalAlreadyGiven();
     error CannotSelfApproveAccess();
+    error InvalidSigner();
+    error KeeperExpiryInPast();
+    error KeeperNotAuthorized();
+    error KeeperAuthorizationExpired();
 
     mapping(uint256 => Vault) public vaults;
     mapping(uint256 => Document) public documents;
@@ -168,6 +179,12 @@ contract SpooVault is ERC721, ISpooVault {
     mapping(uint256 => mapping(address => mapping(address => bool))) public hasApprovedRemoval;
     mapping(uint256 => mapping(uint256 => mapping(address => bool))) public hasApprovedThreshold;
 
+    // Web3 Keeper (Chainlink Automation / Gelato) proof-of-life relay delegation
+    bytes32 private constant KEEPER_AUTHORIZATION_TYPEHASH =
+        keccak256("KeeperAuthorization(uint256 vaultId,address keeper,uint256 expiresAt,uint256 nonce)");
+    mapping(uint256 => KeeperAuthorization) public keeperAuthorizations;
+    mapping(uint256 => uint256) public keeperAuthNonces;
+
     event VaultCreated(uint256 indexed vaultId, address indexed creator, string name);
     event GuardianAdded(uint256 indexed vaultId, address indexed guardian);
     event GuardianRemoved(uint256 indexed vaultId, address indexed guardian);
@@ -190,6 +207,9 @@ contract SpooVault is ERC721, ISpooVault {
     event ThresholdUpdateProposed(uint256 indexed vaultId, uint256 newThreshold, address indexed proposedBy);
     event ThresholdUpdateApproved(uint256 indexed vaultId, uint256 newThreshold, address indexed approver);
     event VaultReconfigurationExecuted(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold);
+    event KeeperAuthorized(uint256 indexed vaultId, address indexed owner, address indexed keeper, uint256 expiresAt);
+    event KeeperRevoked(uint256 indexed vaultId, address indexed owner);
+    event ProofOfLifeRelayed(uint256 indexed vaultId, address indexed owner, address indexed keeper, uint256 timestamp);
 
     /// @notice Registers the caller's ECIES/X25519 encryption public key.
     /// @param publicKey The public key string to store for `msg.sender`.
@@ -214,7 +234,7 @@ contract SpooVault is ERC721, ISpooVault {
         return beneficiaryKeyShares[requestId][guardian];
     }
 
-    constructor() ERC721("SpooVault Access Token", "SPVT") {}
+    constructor() ERC721("SpooVault Access Token", "SPVT") EIP712("SpooVault", "1") {}
 
     /**
      * @dev Create a new vault with guardian invites.
@@ -424,8 +444,77 @@ contract SpooVault is ERC721, ISpooVault {
         if (vaults[vaultId].creator != msg.sender) revert OnlyVaultCreator();
         if (!vaults[vaultId].isActive) revert VaultNotActive();
 
+        _recordProofOfLife(vaultId);
+    }
+
+    /**
+     * @dev Register a Web3 Keeper (Chainlink Automation / Gelato) to relay proof-of-life
+     *      heartbeats on behalf of `vaults[vaultId].creator` until `expiresAt`, using an
+     *      EIP-712 typed signature produced off-chain by the vault creator. Anyone (typically
+     *      the keeper itself) can submit this signed grant on-chain; the signature alone
+     *      proves the creator's consent, so this never needs to be sent from the creator's
+     *      own wallet. Superseding an active grant via a fresh signature or {revokeKeeper}
+     *      immediately invalidates the previous one.
+     */
+    function authorizeKeeperBySig(
+        uint256 vaultId,
+        address keeper,
+        uint256 expiresAt,
+        bytes calldata signature
+    ) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (!vaults[vaultId].isActive) revert VaultNotActive();
+        if (expiresAt <= block.timestamp) revert KeeperExpiryInPast();
+
+        uint256 nonce = keeperAuthNonces[vaultId];
+        bytes32 structHash = keccak256(
+            abi.encode(KEEPER_AUTHORIZATION_TYPEHASH, vaultId, keeper, expiresAt, nonce)
+        );
+        address signer = ECDSA.recover(_hashTypedDataV4(structHash), signature);
+        if (signer != vaults[vaultId].creator) revert InvalidSigner();
+
+        keeperAuthNonces[vaultId] = nonce + 1;
+        keeperAuthorizations[vaultId] = KeeperAuthorization({keeper: keeper, expiresAt: expiresAt});
+
+        emit KeeperAuthorized(vaultId, signer, keeper, expiresAt);
+    }
+
+    /**
+     * @dev Owner revokes any active keeper authorization for their vault.
+     */
+    function revokeKeeper(uint256 vaultId) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (vaults[vaultId].creator != msg.sender) revert OnlyVaultCreator();
+
+        delete keeperAuthorizations[vaultId];
+        emit KeeperRevoked(vaultId, msg.sender);
+    }
+
+    /**
+     * @dev Web3 Keeper relay of a proof-of-life heartbeat, gated on a previously
+     *      registered {authorizeKeeperBySig} grant instead of the creator's own tx.
+     *      Prevents a keeper outage or an owner who simply prefers automation from
+     *      triggering a false emergency unlock.
+     */
+    function proveLifeByKeeper(uint256 vaultId) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (!vaults[vaultId].isActive) revert VaultNotActive();
+
+        KeeperAuthorization storage authorization = keeperAuthorizations[vaultId];
+        if (authorization.keeper != msg.sender) revert KeeperNotAuthorized();
+        if (block.timestamp >= authorization.expiresAt) revert KeeperAuthorizationExpired();
+
+        _recordProofOfLife(vaultId);
+        emit ProofOfLifeRelayed(vaultId, vaults[vaultId].creator, msg.sender, block.timestamp);
+    }
+
+    /**
+     * @dev Shared proof-of-life state update used by both the direct owner path and
+     *      the keeper-relayed path.
+     */
+    function _recordProofOfLife(uint256 vaultId) internal {
         _vaultReleaseStates[vaultId].lastProofOfLife = block.timestamp;
-        emit ProofOfLifeRecorded(vaultId, msg.sender, block.timestamp);
+        emit ProofOfLifeRecorded(vaultId, vaults[vaultId].creator, block.timestamp);
     }
 
     /**

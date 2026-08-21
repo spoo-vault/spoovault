@@ -148,6 +148,11 @@ export interface StellarDocumentData {
   requiredAccess: number;
 }
 
+export interface StellarKeeperAuthorizationData {
+  keeper: string;
+  expiresAt: number;
+}
+
 export interface StellarPendingApprovalData {
   requestId: number;
   documentId: number;
@@ -1030,6 +1035,108 @@ const mintAccessToken = async (
   return nextId;
 };
 
+interface MockKeeperAuthorization {
+  keeper: string;
+  expiresAt: number;
+}
+
+/**
+ * Authorize a Web3 Keeper (Chainlink Automation / Gelato) to relay proof-of-life
+ * heartbeats for `vaultId` until `expiresAt`. Soroban's native `require_auth`
+ * already separates who authorizes an action from who submits/pays for the
+ * transaction, so — unlike the EVM side — this needs no off-chain signature
+ * scheme of its own: it's a normal owner-signed contract call.
+ */
+const authorizeKeeper = async (
+  vaultId: number,
+  keeper: string,
+  expiresAt: number
+): Promise<void> => {
+  if (!activeAccount) throw new Error("Wallet not connected");
+
+  if (isConfigured()) {
+    try {
+      await executeSorobanCall("authorize_keeper", [activeAccount, vaultId, keeper, expiresAt]);
+      return;
+    } catch (err) {
+      console.error("Soroban authorize_keeper failed:", err);
+      throw err;
+    }
+  }
+
+  const authorizations = getMockStorage<Record<number, MockKeeperAuthorization>>(
+    "keeper_authorizations",
+    {}
+  );
+  authorizations[vaultId] = { keeper, expiresAt };
+  saveMockStorage("keeper_authorizations", authorizations);
+};
+
+const revokeKeeperAuthorization = async (vaultId: number): Promise<void> => {
+  if (!activeAccount) throw new Error("Wallet not connected");
+
+  if (isConfigured()) {
+    try {
+      await executeSorobanCall("revoke_keeper", [activeAccount, vaultId]);
+      return;
+    } catch (err) {
+      console.error("Soroban revoke_keeper failed:", err);
+      throw err;
+    }
+  }
+
+  const authorizations = getMockStorage<Record<number, MockKeeperAuthorization>>(
+    "keeper_authorizations",
+    {}
+  );
+  delete authorizations[vaultId];
+  saveMockStorage("keeper_authorizations", authorizations);
+};
+
+const getKeeperAuthorization = async (
+  vaultId: number
+): Promise<StellarKeeperAuthorizationData | null> => {
+  if (isConfigured()) {
+    try {
+      const result = await executeSorobanQuery("get_keeper_authorization", [vaultId]);
+      if (!result) return null;
+      return {
+        keeper: String(result.keeper ?? result[0]),
+        expiresAt: Number(result.expires_at ?? result[1]),
+      };
+    } catch (err) {
+      console.error("Soroban get_keeper_authorization failed:", err);
+      return null;
+    }
+  }
+
+  const authorizations = getMockStorage<Record<number, MockKeeperAuthorization>>(
+    "keeper_authorizations",
+    {}
+  );
+  return authorizations[vaultId] || null;
+};
+
+/**
+ * Web3 Keeper relay of a proof-of-life heartbeat, submitted using the keeper's
+ * own connected account as both the transaction source and the `require_auth`
+ * signer — gated by a prior {authorizeKeeper} grant on-chain.
+ */
+const relayProofOfLifeAsKeeper = async (vaultId: number): Promise<void> => {
+  if (!activeAccount) throw new Error("Wallet not connected");
+
+  if (!isConfigured()) {
+    throw new Error("Proof-of-life relay requires a configured Soroban contract.");
+  }
+
+  try {
+    await executeSorobanCall("prove_life_by_keeper", [activeAccount, vaultId]);
+  } catch (err) {
+    console.error("Soroban prove_life_by_keeper failed:", err);
+    throw err;
+  }
+};
+
 const registerCrossChainIdentity = async (
   stellarAddress: string,
   evmAddress: string,
@@ -1117,6 +1224,10 @@ export const stellarService = {
   resolveEvmToStellar,
   resolveStellarToEvm,
   resolveEvmToPublicKey,
+  authorizeKeeper,
+  revokeKeeperAuthorization,
+  getKeeperAuthorization,
+  relayProofOfLifeAsKeeper,
   isConfigured,
   setMockStellarSdk,
   setMockFreighter,
