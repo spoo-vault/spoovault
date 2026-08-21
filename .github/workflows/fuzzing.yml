@@ -26,7 +26,7 @@ jobs:
           docker run --rm \
             -v "$PWD":/src -w /src \
             trailofbits/echidna:v2.2.3 \
-            bash -c "solc-select install 0.8.24 && solc-select use 0.8.24 && echidna /src/fuzz/harness/SpooVaultFuzz.sol --contract SpooVaultFuzz --config /src/fuzz/echidna/config.yaml --test-mode property"
+            bash -c "pip install -q -U solc-select && solc-select install 0.8.24 && solc-select use 0.8.24 && echidna /src/fuzz/harness/SpooVaultFuzz.sol --contract SpooVaultFuzz --config /src/fuzz/echidna/config.yaml --test-mode property"
 
   medusa:
     name: Medusa (Solidity invariant fuzzing)
@@ -46,9 +46,9 @@ jobs:
       - name: Install dependencies (for OpenZeppelin imports)
         run: npm install --legacy-peer-deps
 
-      - name: Install solc-select (used by Medusa's crytic-compile)
+      - name: Install solc-select + crytic-compile (for Medusa compilation)
         run: |
-          python3 -m pip install --user solc-select
+          python3 -m pip install --user crytic-compile solc-select
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run Medusa campaign
