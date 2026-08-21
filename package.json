@@ -15,7 +15,7 @@
     "test:sss": "node scripts/test-sss.mjs",
     "deploy:contract": "node scripts/deploy.mjs",
     "e2e:deploy": "node e2e/scripts/deploy-anvil.mjs",
-    "e2e:install": "npx playwright install chromium && HEADLESS=true npx synpress e2e/wallet-setup",
+    "e2e:install": "npx playwright install chromium && HEADLESS=true npx synpress e2e/wallet-setup/spoovault.setup.ts",
     "e2e:evm": "HEADLESS=true npx playwright test",
     "e2e:stellar": "node e2e/soroban/soroban-flow.test.mjs",
     "proxy:pinata": "node scripts/pinata-proxy.mjs"
