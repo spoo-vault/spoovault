@@ -1,7 +1,5 @@
 #![no_std]
-use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, Env, String, Vec,
-};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
 
 /// Ledger constants for TTL extension thresholds and bump amounts (~5s per ledger)
 /// ~7 days = 120,960 ledgers
@@ -116,6 +114,8 @@ pub enum DataKey {
     EvmToStellar(String),
     StellarToEvm(Address),
     EvmToPubKey(String),
+    // Compromised key revocation registry (issue #156): revoked public key => true
+    RevokedKey(String),
 }
 
 #[contract]
@@ -158,13 +158,86 @@ impl SpooVaultStellar {
     }
 
     /// Register a user's encryption public key
+    ///
+    /// # Panics
+    /// Panics if the public key has previously been revoked as compromised.
     pub fn register_public_key(env: Env, user: Address, public_key: String) {
         user.require_auth();
         Self::bump_instance(&env);
 
+        let revoked_entry = DataKey::RevokedKey(public_key.clone());
+        let is_revoked: bool = env
+            .storage()
+            .persistent()
+            .get(&revoked_entry)
+            .unwrap_or(false);
+        assert!(!is_revoked, "Public key has been revoked as compromised");
+
         let key = DataKey::PubKey(user.clone());
         env.storage().persistent().set(&key, &public_key);
         Self::bump_persistent(&env, &key);
+    }
+
+    /// Revoke a compromised public key and atomically rotate to a new one.
+    ///
+    /// Proof of possession: only the account whose registered key equals
+    /// `old_public_key` may revoke it. The old key is permanently blacklisted:
+    /// it can never be re-registered on this contract.
+    pub fn revoke_key(env: Env, user: Address, old_public_key: String, new_public_key: String) {
+        user.require_auth();
+        Self::bump_instance(&env);
+
+        assert!(new_public_key.len() > 0, "New public key is required");
+        assert!(
+            old_public_key != new_public_key,
+            "New key must differ from old key"
+        );
+
+        let new_revoked_entry = DataKey::RevokedKey(new_public_key.clone());
+        let new_is_revoked: bool = env
+            .storage()
+            .persistent()
+            .get(&new_revoked_entry)
+            .unwrap_or(false);
+        assert!(!new_is_revoked, "Cannot rotate to a revoked public key");
+
+        let current: Option<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PubKey(user.clone()));
+        match current {
+            Some(cur) => assert!(
+                cur == old_public_key,
+                "Caller does not own the old public key"
+            ),
+            None => panic!("No registered public key for caller"),
+        }
+
+        let revoked_entry = DataKey::RevokedKey(old_public_key.clone());
+        let already_revoked: bool = env
+            .storage()
+            .persistent()
+            .get(&revoked_entry)
+            .unwrap_or(false);
+        assert!(!already_revoked, "Key already revoked");
+
+        env.storage().persistent().set(&revoked_entry, &true);
+        Self::bump_persistent(&env, &revoked_entry);
+
+        let pk_key = DataKey::PubKey(user);
+        env.storage().persistent().set(&pk_key, &new_public_key);
+        Self::bump_persistent(&env, &pk_key);
+    }
+
+    /// Returns true if the given public key has been revoked as compromised.
+    pub fn is_key_revoked(env: Env, public_key: String) -> bool {
+        Self::bump_instance(&env);
+        let key = DataKey::RevokedKey(public_key);
+        let revoked: bool = env.storage().persistent().get(&key).unwrap_or(false);
+        if revoked {
+            Self::bump_persistent(&env, &key);
+        }
+        revoked
     }
 
     /// Retrieve public key for a user
@@ -192,13 +265,25 @@ impl SpooVaultStellar {
         let evm_to_stellar_key = DataKey::EvmToStellar(evm_address.clone());
         let stellar_to_evm_key = DataKey::StellarToEvm(stellar_user.clone());
 
-        env.storage().persistent().set(&evm_to_stellar_key, &stellar_user);
-        env.storage().persistent().set(&stellar_to_evm_key, &evm_address);
+        env.storage()
+            .persistent()
+            .set(&evm_to_stellar_key, &stellar_user);
+        env.storage()
+            .persistent()
+            .set(&stellar_to_evm_key, &evm_address);
 
         Self::bump_persistent(&env, &evm_to_stellar_key);
         Self::bump_persistent(&env, &stellar_to_evm_key);
 
         if let Some(pubkey) = encryption_pubkey {
+            let revoked_entry = DataKey::RevokedKey(pubkey.clone());
+            let is_revoked: bool = env
+                .storage()
+                .persistent()
+                .get(&revoked_entry)
+                .unwrap_or(false);
+            assert!(!is_revoked, "Public key has been revoked as compromised");
+
             let evm_to_pubkey_key = DataKey::EvmToPubKey(evm_address);
             let stellar_pubkey_key = DataKey::PubKey(stellar_user);
 
@@ -277,16 +362,25 @@ impl SpooVaultStellar {
             }
         }
 
-        assert!(ext_guardian_count > 0, "At least one external guardian required");
+        assert!(
+            ext_guardian_count > 0,
+            "At least one external guardian required"
+        );
         let total_guardians = ext_guardian_count + 1;
         assert!(
             approval_threshold > 0 && approval_threshold <= total_guardians,
             "Invalid approval threshold"
         );
 
-        let vault_count: u64 = env.storage().instance().get(&DataKey::VaultCount).unwrap_or(0);
+        let vault_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::VaultCount)
+            .unwrap_or(0);
         let next_vault_id = vault_count + 1;
-        env.storage().instance().set(&DataKey::VaultCount, &next_vault_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::VaultCount, &next_vault_id);
 
         let mut actual_guardians = Vec::new(&env);
         actual_guardians.push_back(creator.clone());
@@ -379,7 +473,10 @@ impl SpooVaultStellar {
         for i in 0..user_invites.len() {
             let mut invite = user_invites.get(i).unwrap();
             if invite.vault_id == vault_id && !invite.accepted {
-                assert!(env.ledger().timestamp() < invite.expires_at, "Invite expired");
+                assert!(
+                    env.ledger().timestamp() < invite.expires_at,
+                    "Invite expired"
+                );
                 invite.accepted = true;
                 user_invites.set(i, invite);
                 accepted = true;
@@ -425,9 +522,15 @@ impl SpooVaultStellar {
             "Guardians list and shares count mismatch"
         );
 
-        let doc_count: u64 = env.storage().instance().get(&DataKey::DocCount).unwrap_or(0);
+        let doc_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::DocCount)
+            .unwrap_or(0);
         let next_doc_id = doc_count + 1;
-        env.storage().instance().set(&DataKey::DocCount, &next_doc_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::DocCount, &next_doc_id);
 
         let doc = Document {
             id: next_doc_id,
@@ -498,9 +601,15 @@ impl SpooVaultStellar {
             "Release condition locked"
         );
 
-        let req_count: u64 = env.storage().instance().get(&DataKey::ReqCount).unwrap_or(0);
+        let req_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ReqCount)
+            .unwrap_or(0);
         let next_req_id = req_count + 1;
-        env.storage().instance().set(&DataKey::ReqCount, &next_req_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::ReqCount, &next_req_id);
 
         let access_req = AccessRequest {
             request_id: next_req_id,
@@ -515,7 +624,9 @@ impl SpooVaultStellar {
         let req_key = DataKey::Request(next_req_id);
         let latest_req_key = DataKey::LatestReq(document_id, requester);
         env.storage().persistent().set(&req_key, &access_req);
-        env.storage().persistent().set(&latest_req_key, &next_req_id);
+        env.storage()
+            .persistent()
+            .set(&latest_req_key, &next_req_id);
 
         Self::bump_persistent(&env, &req_key);
         Self::bump_persistent(&env, &latest_req_key);
@@ -594,7 +705,9 @@ impl SpooVaultStellar {
             let acc_key = DataKey::HasAccess(request.document_id, request.requester.clone());
             let lvl_key = DataKey::AccessLvl(request.document_id, request.requester.clone());
             env.storage().persistent().set(&acc_key, &true);
-            env.storage().persistent().set(&lvl_key, &doc.required_access);
+            env.storage()
+                .persistent()
+                .set(&lvl_key, &doc.required_access);
             Self::bump_persistent(&env, &acc_key);
             Self::bump_persistent(&env, &lvl_key);
         }
@@ -614,15 +727,14 @@ impl SpooVaultStellar {
             .persistent()
             .get(&vault_key)
             .expect("Vault not found");
-        assert!(vault.creator == owner, "Only creator can record proof of life");
+        assert!(
+            vault.creator == owner,
+            "Only creator can record proof of life"
+        );
         assert!(vault.is_active, "Vault not active");
 
         let rel_key = DataKey::ReleaseState(vault_id);
-        let mut state: VaultReleaseState = env
-            .storage()
-            .persistent()
-            .get(&rel_key)
-            .unwrap();
+        let mut state: VaultReleaseState = env.storage().persistent().get(&rel_key).unwrap();
         state.last_proof_of_life = env.ledger().timestamp();
         env.storage().persistent().set(&rel_key, &state);
 
@@ -654,11 +766,7 @@ impl SpooVaultStellar {
         );
 
         let rel_key = DataKey::ReleaseState(vault_id);
-        let mut state: VaultReleaseState = env
-            .storage()
-            .persistent()
-            .get(&rel_key)
-            .unwrap();
+        let mut state: VaultReleaseState = env.storage().persistent().get(&rel_key).unwrap();
         state.inactivity_period = inactivity_period;
         env.storage().persistent().set(&rel_key, &state);
 
@@ -677,15 +785,14 @@ impl SpooVaultStellar {
             .persistent()
             .get(&vault_key)
             .expect("Vault not found");
-        assert!(vault.creator == owner, "Only creator can set emergency mode");
+        assert!(
+            vault.creator == owner,
+            "Only creator can set emergency mode"
+        );
         assert!(vault.is_active, "Vault not active");
 
         let rel_key = DataKey::ReleaseState(vault_id);
-        let mut state: VaultReleaseState = env
-            .storage()
-            .persistent()
-            .get(&rel_key)
-            .unwrap();
+        let mut state: VaultReleaseState = env.storage().persistent().get(&rel_key).unwrap();
         state.emergency_mode = enabled;
         env.storage().persistent().set(&rel_key, &state);
 
@@ -711,7 +818,8 @@ impl SpooVaultStellar {
             .expect("Vault state missing");
         Self::bump_persistent(env, &rel_key);
 
-        let is_dead = env.ledger().timestamp() >= state.last_proof_of_life + state.inactivity_period;
+        let is_dead =
+            env.ledger().timestamp() >= state.last_proof_of_life + state.inactivity_period;
 
         match condition {
             ReleaseCondition::LiveOnly => !is_dead,
@@ -783,9 +891,11 @@ impl SpooVaultStellar {
     }
 
     fn bump_persistent(env: &Env, key: &DataKey) {
-        env.storage()
-            .persistent()
-            .extend_ttl(key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        env.storage().persistent().extend_ttl(
+            key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
     }
 }
 

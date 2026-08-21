@@ -1,5 +1,6 @@
 import CryptoJS from "crypto-js";
 import { CryptoWorkerRequest, CryptoWorkerResponse } from "../workers/crypto.worker";
+import { decryptWithPrivateKey, encryptWithPublicKey } from "../utils/crypto";
 
 class CryptoWorkerService {
   private worker: Worker | null = null;
@@ -89,6 +90,34 @@ class CryptoWorkerService {
         id: requestId,
         type: "DECRYPT",
         payload: { data: encryptedData, key },
+      };
+      this.worker!.postMessage(request);
+    });
+  }
+
+  /**
+   * Re-encrypt a share envelope from an old (e.g. compromised) key to a new
+   * public key asynchronously using Web Worker (with main-thread fallback).
+   * Used by the key rotation protocol (issue #156).
+   */
+  public async reencryptEnvelopeAsync(
+    envelope: string,
+    oldPrivateKey: string,
+    newPublicKey: string
+  ): Promise<string> {
+    if (!this.worker) {
+      // Fallback for environments where Web Worker is unavailable
+      const plaintext = await decryptWithPrivateKey(envelope, oldPrivateKey);
+      return encryptWithPublicKey(plaintext, newPublicKey);
+    }
+
+    const requestId = this.generateId();
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(requestId, { resolve, reject });
+      const request: CryptoWorkerRequest = {
+        id: requestId,
+        type: "REENCRYPT_ENVELOPE",
+        payload: { data: envelope, key: "", oldPrivateKey, newPublicKey },
       };
       this.worker!.postMessage(request);
     });

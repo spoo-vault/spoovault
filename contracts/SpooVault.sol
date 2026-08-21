@@ -132,8 +132,12 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     error ProposalExpired();
     error CannotRemoveOnlyGuardian();
     error ProposalAlreadyExecuted();
-    error ApprovalAlreadyGiven();
-    error CannotSelfApproveAccess();
+error ApprovalAlreadyGiven();
+error CannotSelfApproveAccess();
+error InvalidNewPublicKey();
+error KeyOwnershipProofFailed();
+error KeyAlreadyRevoked();
+error RevokedPublicKey();
 
     mapping(uint256 => Vault) public vaults;
     mapping(uint256 => Document) public documents;
@@ -157,6 +161,12 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     mapping(uint256 => mapping(address => string)) public encryptedGuardianShares;
     // requestId => guardianAddress => encryptedShareForBeneficiary
     mapping(uint256 => mapping(address => string)) public beneficiaryKeyShares;
+
+    // Compromised key rotation and revocation registry (issue #156)
+    // keccak256(publicKey) => revoked flag; blacklisted keys can never be re-registered
+    mapping(bytes32 => bool) private _revokedKeyHashes;
+    // Number of times an account has rotated its encryption key
+    mapping(address => uint256) public keyRotationCount;
 
     // Access versions let us invalidate all prior document grants for a user+vault in O(1).
     mapping(uint256 => mapping(address => uint256)) private _vaultAccessVersion;
@@ -184,6 +194,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     event EmergencyModeUpdated(uint256 indexed vaultId, bool enabled);
     event DocumentReleaseConditionSet(uint256 indexed documentId, ReleaseCondition condition);
     event PublicKeyRegistered(address indexed user, string publicKey);
+    event KeyRevoked(address indexed user, string oldPublicKey, string newPublicKey, uint256 rotationCount);
     event GuardianSharesSaved(uint256 indexed documentId);
     event ShareSubmittedForBeneficiary(uint256 indexed requestId, address indexed guardian, string encryptedShare);
     event GuardianRemovalProposed(uint256 indexed vaultId, address indexed guardian, address indexed proposedBy);
@@ -194,9 +205,46 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
 
     /// @notice Registers the caller's ECIES/X25519 encryption public key.
     /// @param publicKey The public key string to store for `msg.sender`.
+    /// @dev Reverts with `RevokedPublicKey` if the key was previously revoked as compromised.
     function registerPublicKey(string calldata publicKey) external {
+        if (_revokedKeyHashes[keccak256(bytes(publicKey))]) revert RevokedPublicKey();
         userPublicKeys[msg.sender] = publicKey;
         emit PublicKeyRegistered(msg.sender, publicKey);
+    }
+
+    /// @notice Revokes a compromised public key and atomically rotates to a new one.
+    /// @param oldPublicKey The compromised public key currently registered to `msg.sender`.
+    /// @param newPublicKey The fresh replacement public key.
+    /// @dev Proof of possession: only the account whose registered key equals `oldPublicKey`
+    ///      may revoke it. The old key is permanently blacklisted: it can never be
+    ///      re-registered and any contract call path that submits key material using it
+    ///      is rejected while it remains the caller's registered key.
+    function revokeKey(string calldata oldPublicKey, string calldata newPublicKey) external nonReentrant {
+        bytes32 oldHash = keccak256(bytes(oldPublicKey));
+        bytes32 newHash = keccak256(bytes(newPublicKey));
+
+        if (bytes(newPublicKey).length == 0) revert InvalidNewPublicKey();
+        if (oldHash == newHash) revert InvalidNewPublicKey();
+        if (_revokedKeyHashes[newHash]) revert RevokedPublicKey();
+
+        string memory currentKey = userPublicKeys[msg.sender];
+        if (bytes(currentKey).length == 0 || keccak256(bytes(currentKey)) != oldHash) {
+            revert KeyOwnershipProofFailed();
+        }
+        if (_revokedKeyHashes[oldHash]) revert KeyAlreadyRevoked();
+
+        _revokedKeyHashes[oldHash] = true;
+        userPublicKeys[msg.sender] = newPublicKey;
+        unchecked {
+            keyRotationCount[msg.sender] += 1;
+        }
+
+        emit KeyRevoked(msg.sender, oldPublicKey, newPublicKey, keyRotationCount[msg.sender]);
+    }
+
+    /// @notice Returns true if the given public key has been revoked as compromised.
+    function isKeyRevoked(string calldata publicKey) external view returns (bool) {
+        return _revokedKeyHashes[keccak256(bytes(publicKey))];
     }
 
     /// @notice Returns the encrypted guardian share stored for a document/guardian pair.
@@ -757,6 +805,13 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
         uint256 vaultId = documents[request.documentId].vaultId;
         if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
         if (hasApprovedRequest[requestId][msg.sender]) revert AlreadyApproved();
+
+        // A guardian whose registered key is blacklisted as compromised may not submit
+        // new key material until it has been rotated via revokeKey().
+        bytes memory guardianKey = bytes(userPublicKeys[msg.sender]);
+        if (guardianKey.length != 0 && _revokedKeyHashes[keccak256(guardianKey)]) {
+            revert RevokedPublicKey();
+        }
 
         hasApprovedRequest[requestId][msg.sender] = true;
         request.approvedBy.push(msg.sender);

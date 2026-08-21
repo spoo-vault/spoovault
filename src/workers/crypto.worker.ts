@@ -1,22 +1,30 @@
 import CryptoJS from "crypto-js";
+import { decryptWithPrivateKey, encryptWithPublicKey } from "../utils/crypto";
 
 export interface CryptoWorkerRequest {
   id: string;
-  type: "ENCRYPT" | "DECRYPT";
+  type: "ENCRYPT" | "DECRYPT" | "REENCRYPT_ENVELOPE";
   payload: {
     data: string;
     key: string;
+    /**
+     * Only used by REENCRYPT_ENVELOPE: decrypts `data` (an encrypted share
+     * envelope) with this Base64 private key, then re-encrypts the plaintext
+     * to `newPublicKey`.
+     */
+    oldPrivateKey?: string;
+    newPublicKey?: string;
   };
 }
 
 export interface CryptoWorkerResponse {
   id: string;
-  type: "ENCRYPT_SUCCESS" | "DECRYPT_SUCCESS" | "ERROR";
+  type: "ENCRYPT_SUCCESS" | "DECRYPT_SUCCESS" | "REENCRYPT_SUCCESS" | "ERROR";
   result?: string;
   error?: string;
 }
 
-self.onmessage = (event: MessageEvent<CryptoWorkerRequest>) => {
+self.onmessage = async (event: MessageEvent<CryptoWorkerRequest>) => {
   const { id, type, payload } = event.data;
 
   try {
@@ -40,6 +48,19 @@ self.onmessage = (event: MessageEvent<CryptoWorkerRequest>) => {
         id,
         type: "DECRYPT_SUCCESS",
         result: decrypted,
+      };
+      self.postMessage(response);
+    } else if (type === "REENCRYPT_ENVELOPE") {
+      const { oldPrivateKey, newPublicKey } = payload;
+      if (!oldPrivateKey || !newPublicKey) {
+        throw new Error("REENCRYPT_ENVELOPE requires oldPrivateKey and newPublicKey");
+      }
+      const plaintext = await decryptWithPrivateKey(payload.data, oldPrivateKey);
+      const reencrypted = await encryptWithPublicKey(plaintext, newPublicKey);
+      const response: CryptoWorkerResponse = {
+        id,
+        type: "REENCRYPT_SUCCESS",
+        result: reencrypted,
       };
       self.postMessage(response);
     } else {
