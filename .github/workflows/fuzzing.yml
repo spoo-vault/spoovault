@@ -1,0 +1,84 @@
+name: Fuzzing Suite (Echidna / Medusa / Soroban)
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master, dev ]
+
+concurrency:
+  group: fuzzing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  echidna:
+    name: Echidna (Solidity property fuzzing)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (for OpenZeppelin imports)
+        run: npm install --legacy-peer-deps
+
+      - name: Run Echidna campaign
+        run: |
+          docker run --rm \
+            -v "$PWD":/src -w /src \
+            trailofbits/echidna:v2.2.3 \
+            /src/fuzz/harness/SpooVaultFuzz.sol \
+            --contract SpooVaultFuzz \
+            --config /src/fuzz/echidna/config.yaml \
+            --test-mode property
+
+  medusa:
+    name: Medusa (Solidity invariant fuzzing)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install Medusa
+        run: go install github.com/crytic/medusa@latest
+
+      - name: Install dependencies (for OpenZeppelin imports)
+        run: npm install --legacy-peer-deps
+
+      - name: Run Medusa campaign
+        run: |
+          export PATH="$HOME/go/bin:$PATH"
+          medusa fuzz --config fuzz/medusa/medusa.toml
+
+  soroban-fuzz:
+    name: Soroban proptest (cargo-fuzz / proptest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts-stellar/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts-stellar/Cargo.lock') }}
+
+      - name: Format (Soroban crate)
+        working-directory: contracts-stellar
+        run: cargo fmt
+
+      - name: Run Soroban contract test suite
+        working-directory: contracts-stellar
+        run: cargo test

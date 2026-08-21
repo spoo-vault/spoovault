@@ -1,0 +1,8 @@
+[workspace]
+rootDirectory = "../.."
+
+[fuzzing]
+workers = 2
+timeout = 600
+maxCallsPerTest = 64
+stopOnBug = true

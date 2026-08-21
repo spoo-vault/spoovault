@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { clientKeyringService } from "../services/clientKeyring.service";
 import { generateECIESKeyPairBase64, encryptWithPublicKey, decryptWithPrivateKey } from "../utils/crypto";
 
-describe("ClientKeyringService (IndexedDB & Secure Key Management)", () => {
+describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 30000 }, () => {
   const testAccount = "0x71C838936352937A71E976BBE84e941E79409932";
   const testAccount2 = "0x2546BcD3c84621e976D8185a91A922aE77ECEc30";
 

@@ -1,0 +1,13 @@
+# Echidna campaign configuration for the SpooVault differential fuzzing suite.
+# See https://github.com/crytic/echidna/wiki/Configuration
+testMode: property
+testLimit: 100000
+seqLen: 100
+corpusDir: "/tmp/echidna-corpus"
+coverage: false
+# Echidna will only attempt to break `echidna_*` properties.
+format: text
+# Increase the number of transactions attempted per fuzzing campaign.
+maxFuzzSpaceSize: 100000
+# Stop early if a property is violated.
+stopOnFail: true

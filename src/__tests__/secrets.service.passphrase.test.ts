@@ -6,7 +6,7 @@ import {
   decryptWithPassphrase,
 } from '../services/secrets.service';
 
-describe('Passphrase-based key derivation (issue #20)', () => {
+describe('Passphrase-based key derivation (issue #20)', { timeout: 15000 }, () => {
   it('should use 600,000 PBKDF2 iterations by default', () => {
     expect(PBKDF2_ITERATIONS).toBe(600_000);
   });

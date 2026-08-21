@@ -1,0 +1,165 @@
+name: Gas Profiling & Performance Regression
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Allow the workflow to post PR comments, apply labels and push the
+# refreshed baseline / benchmark dashboard back to the repository.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Cancel superseded runs on the same ref to avoid wasted minutes.
+concurrency:
+  group: gas-profile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gas-profile:
+    # Prevent the auto-committed baseline update from re-triggering this job.
+    if: github.actor != 'github-actions[bot]'
+    name: Gas Profile & Regression Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Compile Hardhat EVM Contracts
+        run: npx hardhat compile --config hardhat.config.cjs
+
+      - name: Run Contract Tests with Gas Reporter
+        # The gas report is written incrementally as tests execute, so we
+        # still capture measurements even if a non-gas test fails.
+        run: REPORT_GAS=true npx hardhat test --config hardhat.config.cjs || echo "::warning::Some contract tests failed; gas report was still captured."
+
+      - name: Analyze Gas Report
+        id: gas
+        env:
+          UPDATE_BASELINE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: node scripts/gas-benchmark.mjs
+
+      - name: Upload Gas Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-profile
+          path: |
+            gas-report.txt
+            gas-benchmark.json
+            gas-comparison.md
+            gas-summary.json
+            .github/gas-baseline.json
+          if-no-files-found: warn
+
+      - name: Refresh Baseline on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/gas-baseline.json
+          if git diff --cached --quiet; then
+            echo "Baseline unchanged — nothing to commit."
+          else
+            git commit -m "chore(ci): refresh gas baseline [skip ci]"
+            git push
+          fi
+
+      # Benchmark dashboard + PR alert/comment (github-action-benchmark).
+      - name: Benchmark (push to main ➜ dashboard)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: SpooVault Gas
+          tool: customSmallerIsBetter
+          output-file-path: gas-benchmark.json
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: gas
+          auto-push: true
+          save-data-file: all
+          alert-threshold: "105.0%"
+          comment-on-alert: false
+          fail-on-alert: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Benchmark (pull_request ➜ alert + comment)
+        if: github.event_name == 'pull_request'
+        # On fork PRs the GITHUB_TOKEN cannot post PR comments, so we keep
+        # this step non-fatal; the regression failure gate is still enforced
+        # by the `node scripts/gas-benchmark.mjs` step above (it exits 1 on
+        # a >5% regression).
+        continue-on-error: true
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: SpooVault Gas
+          tool: customSmallerIsBetter
+          output-file-path: gas-benchmark.json
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: gas
+          auto-push: false
+          save-data-file: false
+          alert-threshold: "105.0%"
+          comment-always: true
+          comment-on-alert: true
+          fail-on-alert: true
+          alert-comment: |
+            ⚠️ **Gas regression detected** — one or more SpooVault methods increased
+            more than 5% over the `main` baseline. See the gas comparison table below.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Detailed, repository-owned PR comment (same-repo PRs only, because a
+      # fork PR's GITHUB_TOKEN cannot write to the base repository).
+      - name: Post Detailed Gas Comparison Comment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: gas-profile
+          body-file: gas-comparison.md
+
+      - name: Label PR on Regression
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const summary = JSON.parse(fs.readFileSync("gas-summary.json", "utf8"));
+            const label = "gas-regression";
+            const issue = context.payload.pull_request.number;
+            const repo = context.repo;
+            if (summary.hasRegression) {
+              await github.rest.issues.addLabels({
+                ...repo,
+                issue_number: issue,
+                labels: [label],
+              });
+              console.log(`Applied "${label}" label (max +${summary.maxIncreasePct}%).`);
+            } else {
+              try {
+                await github.rest.issues.removeLabel({
+                  ...repo,
+                  issue_number: issue,
+                  name: label,
+                });
+                console.log(`Removed "${label}" label (no regression).`);
+              } catch (err) {
+                // Label may not exist yet — ignore.
+                console.log("No existing regression label to remove.");
+              }
+            }

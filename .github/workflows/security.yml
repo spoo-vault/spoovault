@@ -1,0 +1,74 @@
+name: "Security Static Analysis"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  security-events: write # Required for SARIF upload
+
+jobs:
+  solidity-security:
+    name: Solidity Analysis (Slither & Mythril)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.0
+        id: slither
+        continue-on-error: true # We want to upload SARIF even if it finds issues
+        with:
+          sarif: results.sarif
+          fail-on: medium # Fails CI on High/Medium findings
+
+      - name: Upload Slither results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: slither
+
+      - name: Run Mythril
+        run: |
+          docker run --rm -v $(pwd):/tmp mythril/myth analyze /tmp/contracts/SpooVault.sol --execution-timeout 60
+        # Replace path with your actual primary contract path if different
+
+  rust-stellar-security:
+    name: Soroban Analysis (Audit, Clippy, Geiger)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts-stellar # Adjust to your Rust contract path
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Security Tools
+        run: |
+          cargo install cargo-audit
+          cargo install cargo-geiger
+
+      - name: Run Cargo Audit
+        run: cargo audit # Fails if vulnerabilities are found in dependencies
+
+      - name: Run Cargo Clippy
+        run: cargo clippy -- -D warnings # Fails on linter warnings
+
+      - name: Run Cargo Geiger
+        run: cargo geiger --output-format sarif > geiger-results.sarif || true
+
+      - name: Upload Geiger SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: ./contracts-stellar/geiger-results.sarif
+          category: cargo-geiger

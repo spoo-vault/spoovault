@@ -1,0 +1,19 @@
+{
+  "SpooVault.acceptGuardianInvite": 101748,
+  "SpooVault.addDocument": 244940,
+  "SpooVault.approveAccess": 210299,
+  "SpooVault.approveGuardianRemoval": 92611,
+  "SpooVault.approveThresholdUpdate": 91229,
+  "SpooVault.burnAccessToken": 52092,
+  "SpooVault.createVault": 561207,
+  "SpooVault.executeVaultReconfiguration": 80290,
+  "SpooVault.mintAccessToken": 213507,
+  "SpooVault.proposeGuardianRemoval": 148895,
+  "SpooVault.proposeThresholdUpdate": 146293,
+  "SpooVault.proveLife": 35024,
+  "SpooVault.registerPublicKey": 69313,
+  "SpooVault.requestAccess": 197878,
+  "SpooVault.setEmergencyMode": 52028,
+  "SpooVault.constructor": 4813820,
+  "SpooVault.SpooVaultConsumer": 305177
+}

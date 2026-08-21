@@ -40,6 +40,12 @@ dev.log
 artifacts/
 cache/
 
+# Generated gas profiling artifacts
+gas-report.txt
+gas-benchmark.json
+gas-comparison.md
+gas-summary.json
+
 # Rust / Soroban
 target/
 contracts-stellar/target/
