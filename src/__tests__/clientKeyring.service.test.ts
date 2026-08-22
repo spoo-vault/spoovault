@@ -96,8 +96,13 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
       await clientKeyringService.generateAndSaveKeyPair(testAccount, "some-pin");
       expect(clientKeyringService.isUnlocked(testAccount)).toBe(true);
 
+      const cachedBytes = clientKeyringService.getCachedPrivateKeyBytes(testAccount);
+      expect(cachedBytes).not.toBeNull();
+      const originalBytes = Array.from(cachedBytes!);
+
       clientKeyringService.lockAccount(testAccount);
       expect(clientKeyringService.isUnlocked(testAccount)).toBe(false);
+      expect(Array.from(cachedBytes!)).not.toEqual(originalBytes);
 
       // Calling without PIN should fail now
       await expect(
@@ -109,6 +114,11 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
       await clientKeyringService.generateAndSaveKeyPair(testAccount);
       await clientKeyringService.generateAndSaveKeyPair(testAccount2);
 
+      const firstCachedBytes = clientKeyringService.getCachedPrivateKeyBytes(testAccount);
+      const secondCachedBytes = clientKeyringService.getCachedPrivateKeyBytes(testAccount2);
+      const firstOriginalBytes = Array.from(firstCachedBytes!);
+      const secondOriginalBytes = Array.from(secondCachedBytes!);
+
       expect(clientKeyringService.isUnlocked(testAccount)).toBe(true);
       expect(clientKeyringService.isUnlocked(testAccount2)).toBe(true);
 
@@ -116,6 +126,18 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
 
       expect(clientKeyringService.isUnlocked(testAccount)).toBe(false);
       expect(clientKeyringService.isUnlocked(testAccount2)).toBe(false);
+      expect(Array.from(firstCachedBytes!)).not.toEqual(firstOriginalBytes);
+      expect(Array.from(secondCachedBytes!)).not.toEqual(secondOriginalBytes);
+    });
+
+    it("should return the live mutable cache buffer instead of a decoded copy", async () => {
+      await clientKeyringService.generateAndSaveKeyPair(testAccount);
+
+      const firstRead = clientKeyringService.getCachedPrivateKeyBytes(testAccount);
+      const secondRead = clientKeyringService.getCachedPrivateKeyBytes(testAccount);
+
+      expect(firstRead).not.toBeNull();
+      expect(secondRead).toBe(firstRead);
     });
   });
 
