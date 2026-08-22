@@ -21,15 +21,17 @@ jobs:
       - name: Install dependencies (for OpenZeppelin imports)
         run: npm install --legacy-peer-deps
 
+      # The echidna image ships solc-select but starts with no version
+      # selected, so plain `echidna-test` fails before it ever reads the
+      # harness ("No solc version set"). Select the same solc version the
+      # rest of the repo builds with (hardhat.config.cjs) before fuzzing.
       - name: Run Echidna campaign
         run: |
           docker run --rm \
             -v "$PWD":/src -w /src \
+            --entrypoint bash \
             trailofbits/echidna:v2.2.3 \
-            echidna-test /src/fuzz/harness/SpooVaultFuzz.sol \
-            --contract SpooVaultFuzz \
-            --config /src/fuzz/echidna/config.yaml \
-            --test-mode property
+            -c "solc-select install 0.8.24 && solc-select use 0.8.24 && echidna-test /src/fuzz/harness/SpooVaultFuzz.sol --contract SpooVaultFuzz --config /src/fuzz/echidna/config.yaml --test-mode property"
 
   medusa:
     name: Medusa (Solidity invariant fuzzing)
@@ -48,6 +50,22 @@ jobs:
 
       - name: Install dependencies (for OpenZeppelin imports)
         run: npm install --legacy-peer-deps
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Medusa shells out to crytic-compile (a Python tool, not a Go one) to
+      # compile the Solidity harness, and crytic-compile itself resolves solc
+      # through solc-select. Neither is installed by default, so without this
+      # step medusa fails immediately with "crytic-compile: executable file
+      # not found in $PATH".
+      - name: Install crytic-compile
+        run: |
+          pip install --upgrade pip crytic-compile solc-select
+          solc-select install 0.8.24
+          solc-select use 0.8.24
 
       - name: Run Medusa campaign
         run: |

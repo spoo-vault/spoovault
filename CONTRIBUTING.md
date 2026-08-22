@@ -9,7 +9,7 @@ Thank you for your interest in contributing to SpooVault! This project is a **mu
 - `contracts/`: Solidity smart contracts for Avalanche EVM.
 - `contracts-stellar/`: Rust smart contracts for Stellar Soroban.
 - `src/`: React + Vite frontend application.
-  - `src/context/Web3Context.tsx`: Manages multi-chain connections (Metamask for Avalanche, Freighter for Stellar).
+  - `src/context/Web3Context.tsx`: Manages multi-chain connections (Metamask for Avalanche, Freighter for Stellar). The silent auto-connect check (on mount and on `accountsChanged`/`chainChanged`) retries transient failures with capped exponential backoff (3 attempts) and halts immediately - with no more retries until the user explicitly clicks Connect again - the moment a failure looks like an explicit wallet rejection.
   - `src/services/contract.service.ts`: Client service wrapper routing calls to either network.
   - `src/services/stellar.service.ts`: Stellar/Freighter wallet integration service.
   - `src/services/ipfs.service.ts`, `src/services/ipfsGateway.ts` & `src/services/keyInbox.service.ts`: IPFS storage. Uploads use Pinata/proxy; downloads race Pinata, Infura, Cloudflare, and ipfs.io with a per-gateway circuit breaker.
@@ -90,6 +90,10 @@ CI runs [Slither](https://github.com/crytic/slither) and [Mythril](https://githu
    ```
    Set the same value in `VITE_SPOOVUALT_PROXY_SECRET`. Unsigned or cross-origin pin requests are rejected with 403.
 3. Use the network switcher in the header sidebar to toggle between Avalanche (MetaMask) and Stellar (Freighter).
+4. Run the frontend unit tests (Vitest):
+   ```bash
+   npm run test
+   ```
 
 ---
 

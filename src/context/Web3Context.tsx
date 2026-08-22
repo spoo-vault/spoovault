@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import { ethers } from "ethers";
 import { toast } from "react-hot-toast";
 import { contractService } from "../services/contract.service";
@@ -27,6 +27,36 @@ const CONTRACT_ABI = [
   "event DocumentAdded(uint256 indexed documentId, uint256 indexed vaultId, string ipfsHash)",
   "event AccessRequested(uint256 indexed requestId, uint256 indexed documentId, address indexed requester)",
 ];
+
+// ---------------------------------------------------------------------------
+// Auto-connect retry/backoff policy
+//
+// checkConnection() below runs unattended - on mount, and whenever the
+// injected provider fires `accountsChanged`/`chainChanged` - rather than from
+// a user click. Previously a transient failure there (provider not fully
+// injected yet, an RPC hiccup, a wallet permission prompt the user declines)
+// had no retry ceiling: `accountsChanged` can fire repeatedly in quick
+// succession, and each occurrence re-ran the check with no backoff and no
+// memory of a prior rejection, so a user who dismissed one wallet prompt
+// could be re-prompted continuously, freezing the tab's UI thread under the
+// resulting churn.
+//
+// The policy: retry transient failures a bounded number of times with
+// exponential backoff, but the moment a failure looks like an explicit user
+// rejection, stop rescheduling entirely until the user takes a new explicit
+// action (clicking Connect, or switching ecosystem).
+// ---------------------------------------------------------------------------
+const AUTO_CONNECT_MAX_ATTEMPTS = 3;
+const AUTO_CONNECT_BASE_DELAY_MS = 1000;
+const AUTO_CONNECT_MAX_DELAY_MS = 8000;
+
+const isUserRejection = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const err = error as { code?: number; message?: unknown };
+  if (err.code === 4001) return true; // EIP-1193 UserRejectedRequestError
+  const message = typeof err.message === "string" ? err.message.toLowerCase() : "";
+  return message.includes("user rejected") || message.includes("user denied");
+};
 
 interface Web3ContextType {
   provider: ethers.BrowserProvider | null;
@@ -77,6 +107,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
       window.localStorage.setItem("spoovault-ecosystem", eco);
       document.documentElement.setAttribute("data-ecosystem", eco);
     }
+    resetAutoConnectGuard();
     disconnect({ notify: false });
   };
 
@@ -130,20 +161,20 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     }
   }, [CONTRACT_ADDRESS]);
 
+  // Note: unlike the pre-existing version of this function, failures are
+  // allowed to propagate to the caller instead of being swallowed here - the
+  // auto-connect retry/backoff wrapper below needs to see them to decide
+  // whether to retry, back off, or stop.
   const checkConnection = useCallback(async () => {
     if (ecosystem === "stellar") {
-      try {
-        const address = await stellarService.initialize();
-        if (address) {
-          setAccount(address);
-          const network = await stellarService.getNetwork();
-          if (network) {
-            setStellarNetwork(network);
-            validateStellarNetwork(network);
-          }
+      const address = await stellarService.initialize();
+      if (address) {
+        setAccount(address);
+        const network = await stellarService.getNetwork();
+        if (network) {
+          setStellarNetwork(network);
+          validateStellarNetwork(network);
         }
-      } catch (error) {
-        console.error("Stellar connection check failed:", error);
       }
       return;
     }
@@ -152,34 +183,84 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    try {
-      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+    const accounts = await window.ethereum.request({ method: "eth_accounts" });
 
-      if (accounts.length > 0) {
-        const ethersProvider = new ethers.BrowserProvider(window.ethereum);
-        const network = await ethersProvider.getNetwork();
-        const signer = await ethersProvider.getSigner();
-        const contract = initContract(signer);
+    if (accounts.length > 0) {
+      const ethersProvider = new ethers.BrowserProvider(window.ethereum);
+      const network = await ethersProvider.getNetwork();
+      const signer = await ethersProvider.getSigner();
+      const contract = initContract(signer);
 
-        setProvider(ethersProvider);
-        setSigner(signer);
-        setAccount(accounts[0]);
-        setChainId(Number(network.chainId));
-        setContract(contract);
+      setProvider(ethersProvider);
+      setSigner(signer);
+      setAccount(accounts[0]);
+      setChainId(Number(network.chainId));
+      setContract(contract);
 
-        contractService.initialize(ethersProvider, signer);
+      contractService.initialize(ethersProvider, signer);
 
-        if (Number(network.chainId) !== FUJI_CHAIN_ID) {
-          toast.error("Please switch to Avalanche Fuji network");
-        }
+      if (Number(network.chainId) !== FUJI_CHAIN_ID) {
+        toast.error("Please switch to Avalanche Fuji network");
       }
-    } catch (error) {
-      console.error("Error checking connection:", error);
     }
   }, [initContract, ecosystem, validateStellarNetwork]);
 
+  const autoConnectAttemptRef = useRef(0);
+  const autoConnectSuppressedRef = useRef(false);
+  const autoConnectTimerRef = useRef<number | null>(null);
+
+  const clearAutoConnectTimer = useCallback(() => {
+    if (autoConnectTimerRef.current !== null) {
+      window.clearTimeout(autoConnectTimerRef.current);
+      autoConnectTimerRef.current = null;
+    }
+  }, []);
+
+  // Re-arms the auto-connect policy. Called whenever the user takes a fresh,
+  // explicit action (clicking Connect, switching ecosystem) so a past
+  // rejection or exhausted retry count doesn't linger and block a check the
+  // user themselves just asked for.
+  const resetAutoConnectGuard = useCallback(() => {
+    autoConnectAttemptRef.current = 0;
+    autoConnectSuppressedRef.current = false;
+    clearAutoConnectTimer();
+  }, [clearAutoConnectTimer]);
+
+  const attemptAutoConnect = useCallback(() => {
+    if (autoConnectSuppressedRef.current) return;
+    clearAutoConnectTimer();
+
+    checkConnection()
+      .then(() => {
+        autoConnectAttemptRef.current = 0;
+      })
+      .catch((error) => {
+        if (isUserRejection(error)) {
+          // Halt cleanly: no further automatic attempts until the user
+          // explicitly asks to connect again.
+          autoConnectSuppressedRef.current = true;
+          return;
+        }
+
+        autoConnectAttemptRef.current += 1;
+        if (autoConnectAttemptRef.current >= AUTO_CONNECT_MAX_ATTEMPTS) {
+          console.error(
+            `Auto-connect gave up after ${AUTO_CONNECT_MAX_ATTEMPTS} attempts:`,
+            error
+          );
+          return;
+        }
+
+        const delay = Math.min(
+          AUTO_CONNECT_BASE_DELAY_MS * 2 ** (autoConnectAttemptRef.current - 1),
+          AUTO_CONNECT_MAX_DELAY_MS
+        );
+        autoConnectTimerRef.current = window.setTimeout(attemptAutoConnect, delay);
+      });
+  }, [checkConnection, clearAutoConnectTimer]);
+
   useEffect(() => {
-    checkConnection();
+    attemptAutoConnect();
 
     if (window.ethereum) {
       const handleAccountsChanged = (accounts: string[]) => {
@@ -192,26 +273,29 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
           setContract(null);
           contractService.clear();
         } else {
-          checkConnection();
+          attemptAutoConnect();
         }
       };
 
       const handleChainChanged = () => {
         if (ecosystem === "stellar") return;
-        checkConnection();
+        attemptAutoConnect();
       };
 
       window.ethereum.on("accountsChanged", handleAccountsChanged);
       window.ethereum.on("chainChanged", handleChainChanged);
 
       return () => {
+        clearAutoConnectTimer();
         if (window.ethereum) {
           window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
           window.ethereum.removeListener("chainChanged", handleChainChanged);
         }
       };
     }
-  }, [checkConnection, ecosystem]);
+
+    return () => clearAutoConnectTimer();
+  }, [attemptAutoConnect, ecosystem, clearAutoConnectTimer]);
 
   useEffect(() => {
     if (ecosystem !== "stellar") {
@@ -254,6 +338,11 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   }, [ecosystem, validateStellarNetwork]);
 
   const connect = async () => {
+    // A user-initiated connect always gets a clean slate: any suppression or
+    // exhausted retry count left over from a prior auto-connect attempt
+    // shouldn't block a deliberate click.
+    resetAutoConnectGuard();
+
     if (ecosystem === "stellar") {
       setIsConnecting(true);
       try {
@@ -271,6 +360,11 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
         }
         toast.success(`Connected Freighter: ${address.slice(0, 6)}...${address.slice(-4)}`);
       } catch (error: any) {
+        if (isUserRejection(error)) {
+          // Don't let the accountsChanged/chainChanged auto-connect path
+          // immediately re-prompt after an explicit rejection.
+          autoConnectSuppressedRef.current = true;
+        }
         toast.error(error.message || "Failed to connect Freighter wallet");
       } finally {
         setIsConnecting(false);
@@ -309,7 +403,10 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
         toast.success(`Connected to ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`);
       }
     } catch (error: any) {
-      if (error.code === 4001) {
+      if (isUserRejection(error)) {
+        // Don't let the accountsChanged/chainChanged auto-connect path
+        // immediately re-prompt after an explicit rejection.
+        autoConnectSuppressedRef.current = true;
         toast.error("Connection rejected by user");
       } else {
         toast.error(error.message || "Failed to connect wallet");
@@ -357,7 +454,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
         params: [{ chainId: "0xA869" }],
       });
       toast.success("Switched to Avalanche Fuji");
-      checkConnection();
+      attemptAutoConnect();
     } catch (error: any) {
       if (error.code === 4902) {
         try {
@@ -378,7 +475,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
             ],
           });
           toast.success("Added and switched to Avalanche Fuji");
-          checkConnection();
+          attemptAutoConnect();
         } catch (addError) {
           toast.error("Failed to add Fuji network");
         }
