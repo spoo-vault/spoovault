@@ -134,6 +134,15 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     error ProposalAlreadyExecuted();
     error ApprovalAlreadyGiven();
     error CannotSelfApproveAccess();
+    error ReshareSessionAlreadyActive();
+    error ReshareSessionNotActive();
+    error ReshareDeadlineNotReached();
+    error ReshareDeadlineExceeded();
+    error ReshareIncomplete();
+    error InvalidZeroShareCommitment();
+    error ZeroShareAlreadySubmitted();
+    error InvalidShareRefreshInput();
+    error InvalidReshareDuration();
 
     mapping(uint256 => Vault) public vaults;
     mapping(uint256 => Document) public documents;
@@ -169,6 +178,33 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     mapping(uint256 => mapping(address => mapping(address => bool))) public hasApprovedRemoval;
     mapping(uint256 => mapping(uint256 => mapping(address => bool))) public hasApprovedThreshold;
 
+    // ------------------------------------------------------------------
+    // Proactive Secret Sharing (PSS) state.
+    //
+    // Guardians refresh their Shamir shares of a document's master key via
+    // the zero-sharing protocol: each guardian i publishes Feldman-style
+    // commitments to a zero-polynomial h_i(x) with h_i(0) = 0, every
+    // guardian then updates S_j' = S_j + sum_i h_i(j). The master secret
+    // S(0) is preserved while all old shares become useless.
+    // ------------------------------------------------------------------
+    struct ReshareSession {
+        uint256 startedAt;
+        uint256 deadline;
+        uint256 submittedCount;
+        bool active;
+    }
+
+    // documentId => active reshare session
+    mapping(uint256 => ReshareSession) public reshareSessions;
+    // documentId => current share epoch (increments on every successful refresh)
+    mapping(uint256 => uint256) public shareEpoch;
+    // documentId => epoch => guardian => commitments[0..degree] where
+    // commitments[k] represents the coefficient commitment of h_i(x).
+    // commitments[0] is always bytes32(0) because h_i(0) = 0.
+    mapping(uint256 => mapping(uint256 => mapping(address => bytes32[]))) public zeroShareCommitments;
+    // documentId => epoch => guardian => whether the zero-share was submitted
+    mapping(uint256 => mapping(uint256 => mapping(address => bool))) private _zeroShareSubmitted;
+
     event VaultCreated(uint256 indexed vaultId, address indexed creator, string name);
     event GuardianAdded(uint256 indexed vaultId, address indexed guardian);
     event GuardianRemoved(uint256 indexed vaultId, address indexed guardian);
@@ -191,6 +227,9 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
     event ThresholdUpdateProposed(uint256 indexed vaultId, uint256 newThreshold, address indexed proposedBy);
     event ThresholdUpdateApproved(uint256 indexed vaultId, uint256 newThreshold, address indexed approver);
     event VaultReconfigurationExecuted(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold);
+    event ShareRefreshStarted(uint256 indexed documentId, uint256 indexed epoch, uint256 deadline);
+    event ZeroShareCommitmentSubmitted(uint256 indexed documentId, uint256 indexed epoch, address indexed guardian, uint256 degree);
+    event SharesRefreshed(uint256 indexed documentId, uint256 indexed epoch);
 
     /// @notice Registers the caller's ECIES/X25519 encryption public key.
     /// @param publicKey The public key string to store for `msg.sender`.
@@ -629,6 +668,157 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuard {
         }
 
         emit VaultReconfigurationExecuted(vaultId, guardianToRemove, newThreshold);
+    }
+
+    // ------------------------------------------------------------------
+    // Proactive Secret Sharing (zero-sharing based share refresh)
+    // ------------------------------------------------------------------
+
+    /**
+     * @dev Opens a reshare window for a document's guardian shares.
+     * Every current guardian must publish a zero-polynomial commitment
+     * before {applyShareRefresh} can bump the share epoch.
+     * @param documentId The document whose shares are being refreshed.
+     * @param duration Length of the submission window (1 hour .. 7 days).
+     */
+    function startShareRefresh(uint256 documentId, uint256 duration) external {
+        if (documents[documentId].id == 0) revert DocumentNotExist();
+        uint256 vaultId = documents[documentId].vaultId;
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+        if (reshareSessions[documentId].active) revert ReshareSessionAlreadyActive();
+        if (duration < 1 hours || duration > 7 days) revert InvalidReshareDuration();
+
+        uint256 nextEpoch = shareEpoch[documentId] + 1;
+        ReshareSession storage session = reshareSessions[documentId];
+        session.startedAt = block.timestamp;
+        session.deadline = block.timestamp + duration;
+        session.submittedCount = 0;
+        session.active = true;
+
+        emit ShareRefreshStarted(documentId, nextEpoch, session.deadline);
+    }
+
+    /**
+     * @dev Guardian submits Feldman-style commitments to its zero-polynomial
+     * h_i(x) with the defining property h_i(0) = 0 (enforced on-chain by
+     * requiring commitments[0] == bytes32(0)). Off-chain, h_i(j) is derived
+     * from these commitments and added to guardian j's share.
+     * @param documentId The document whose shares are being refreshed.
+     * @param commitments Coefficient commitments [g^a_0, g^a_1, ..., g^a_t]
+     *        where a_0 must be zero.
+     */
+    function submitZeroShareCommitment(uint256 documentId, bytes32[] calldata commitments) external {
+        if (documents[documentId].id == 0) revert DocumentNotExist();
+        ReshareSession storage session = reshareSessions[documentId];
+        if (!session.active) revert ReshareSessionNotActive();
+        if (block.timestamp > session.deadline) revert ReshareDeadlineExceeded();
+
+        uint256 vaultId = documents[documentId].vaultId;
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+
+        uint256 epoch = shareEpoch[documentId] + 1;
+        if (_zeroShareSubmitted[documentId][epoch][msg.sender]) {
+            revert ZeroShareAlreadySubmitted();
+        }
+        if (commitments.length < 2 || commitments[0] != bytes32(0)) {
+            revert InvalidZeroShareCommitment();
+        }
+
+        _zeroShareSubmitted[documentId][epoch][msg.sender] = true;
+        zeroShareCommitments[documentId][epoch][msg.sender] = commitments;
+        session.submittedCount += 1;
+
+        emit ZeroShareCommitmentSubmitted(documentId, epoch, msg.sender, commitments.length - 1);
+    }
+
+    /**
+     * @dev Finalizes the refresh once every current guardian has published a
+     * zero-share commitment. Stores the redistributed (re-encrypted) shares
+     * and irreversibly bumps the share epoch, invalidating all pre-refresh
+     * share material for this document.
+     * @param documentId The document whose shares are being refreshed.
+     * @param guardiansList Full guardian set of the vault (order defines
+     *        the polynomial evaluation points used off-chain).
+     * @param newShares Updated ECIES-encrypted shares, one per guardian.
+     */
+    function applyShareRefresh(
+        uint256 documentId,
+        address[] calldata guardiansList,
+        string[] calldata newShares
+    ) external {
+        if (documents[documentId].id == 0) revert DocumentNotExist();
+        ReshareSession storage session = reshareSessions[documentId];
+        if (!session.active) revert ReshareSessionNotActive();
+
+        uint256 vaultId = documents[documentId].vaultId;
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+
+        address[] storage vaultGuardians = vaults[vaultId].guardians;
+        if (
+            guardiansList.length != vaultGuardians.length ||
+            newShares.length != guardiansList.length
+        ) {
+            revert InvalidShareRefreshInput();
+        }
+
+        for (uint256 i = 0; i < guardiansList.length; i++) {
+            address guardian = guardiansList[i];
+            if (!isGuardian[vaultId][guardian]) revert InvalidShareRefreshInput();
+
+            for (uint256 j = 0; j < i; j++) {
+                if (guardiansList[j] == guardian) revert InvalidShareRefreshInput();
+            }
+
+            encryptedGuardianShares[documentId][guardian] = newShares[i];
+        }
+
+        if (session.submittedCount < vaultGuardians.length) {
+            if (block.timestamp <= session.deadline) revert ReshareDeadlineNotReached();
+            revert ReshareIncomplete();
+        }
+
+        session.active = false;
+        uint256 newEpoch = shareEpoch[documentId] + 1;
+        shareEpoch[documentId] = newEpoch;
+
+        emit SharesRefreshed(documentId, newEpoch);
+    }
+
+    /**
+     * @dev Returns whether a guardian has submitted its zero-share commitment
+     * for the given epoch.
+     */
+    function hasSubmittedZeroShare(
+        uint256 documentId,
+        uint256 epoch,
+        address guardian
+    ) external view returns (bool) {
+        return _zeroShareSubmitted[documentId][epoch][guardian];
+    }
+
+    /**
+     * @dev Returns the full zero-polynomial commitment vector published by
+     * `guardian` for `epoch`. commitments[0] is always bytes32(0).
+     */
+    function getZeroShareCommitments(
+        uint256 documentId,
+        uint256 epoch,
+        address guardian
+    ) external view returns (bytes32[] memory) {
+        return zeroShareCommitments[documentId][epoch][guardian];
+    }
+
+    /**
+     * @dev Returns the active reshare session summary for a document.
+     */
+    function getReshareSession(uint256 documentId) external view returns (
+        uint256 startedAt,
+        uint256 deadline,
+        uint256 submittedCount,
+        bool active
+    ) {
+        ReshareSession storage session = reshareSessions[documentId];
+        return (session.startedAt, session.deadline, session.submittedCount, session.active);
     }
 
     /**
