@@ -11,14 +11,17 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ## Requirements Met
 
 ### ✅ Requirement 1: Core Functionality
+
 **"Vault creator and guardians can rotate compromised guardian keys via threshold consensus"**
 
 **Implementation:**
+
 - `proposeGuardianRemoval()` - Create removal proposals with 7-day expiration
 - `approveGuardianRemoval()` - Track guardian approvals, prevent duplicates
 - Internal `_removeGuardian()` - Efficient O(1) removal using swap-and-pop
 
 **Evidence:**
+
 - Guardian removal tests: 7 tests covering proposal creation, approval tracking, execution
 - Gas efficiency: 148,917 gas for proposal creation
 - Scope: Focused only on guardian management, no document/encryption changes
@@ -26,14 +29,17 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ---
 
 ### ✅ Requirement 2: Deadlock Recovery
+
 **"Deadlocked vaults can recover through authorized guardian rotation"**
 
 **Implementation:**
+
 - `proposeThresholdUpdate()` - Adjust approval thresholds to operational levels
 - `executeVaultReconfiguration()` - Atomic execution of both removal + threshold changes
 - Validation ensures threshold ≤ guardian count after removal
 
 **Evidence:**
+
 - Threshold update tests: 5 tests validating boundary conditions
 - Atomic execution tests: 2 tests confirming both changes apply together
 - Real scenario: 4-of-4 vault → 3-of-3 after guardian removal (no deadlock)
@@ -41,9 +47,11 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ---
 
 ### ✅ Requirement 3: Scope Compliance
+
 **"Implementation is not out of scope for the issue we're trying to solve"**
 
 **Confirmed Out-of-Scope Items NOT Implemented:**
+
 - Document access control changes
 - Encryption/decryption logic modifications
 - Inheritance/release mechanism updates
@@ -51,6 +59,7 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 - Emergency mode adjustments
 
 **Confirmed In-Scope Items Implemented:**
+
 - Guardian removal workflows ✅
 - Approval threshold adjustments ✅
 - Multi-signature consensus ✅
@@ -64,6 +73,7 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ### ✅ Test Coverage: ≥90% Line and Branch Coverage
 
 **Test Suite Statistics:**
+
 - **Total Tests:** 24 passing (4s execution)
 - **New Tests:** 18 guardian rotation tests
 - **Existing Tests:** 6 vault functionality tests (backward compatible)
@@ -80,6 +90,7 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 | Access Control | 4 | 100% |
 
 **Branch Coverage:**
+
 - All success paths tested (execution with sufficient approvals)
 - All failure paths tested (insufficient approvals, expired proposals, non-guardians)
 - All edge cases tested (double approvals, invalid thresholds, empty guardian removal)
@@ -89,6 +100,7 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ### ✅ Passing CI & Static Analysis
 
 **Compilation:**
+
 ```
 ✅ Solidity 0.8.24 compilation successful
 ✅ 16 files compiled with viaIR: false
@@ -97,6 +109,7 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ```
 
 **Unit Tests:**
+
 ```
 ✅ 24 tests passing (4s)
 ✅ All access control validations passing
@@ -105,6 +118,7 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ```
 
 **Integration Tests:**
+
 ```
 ✅ 6 smoke tests passing
    - RPC reachability verified
@@ -114,6 +128,7 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ```
 
 **Build Pipeline:**
+
 ```
 ✅ TypeScript type check: Clean
 ✅ Vite production build: 487.51 KB
@@ -143,19 +158,21 @@ Successfully implemented guardian rotation and threshold adjustment admin workfl
 ### New Smart Contract Components
 
 **Structs (2 new):**
+
 ```solidity
 GuardianRemovalProposal {
-  vaultId, guardianToRemove, proposedBy, approvedBy[], 
+  vaultId, guardianToRemove, proposedBy, approvedBy[],
   executed, createdAt, expiresAt
 }
 
 ThresholdUpdateProposal {
-  vaultId, newThreshold, proposedBy, approvedBy[], 
+  vaultId, newThreshold, proposedBy, approvedBy[],
   executed, createdAt, expiresAt
 }
 ```
 
 **Mappings (4 new):**
+
 ```solidity
 guardianRemovalProposals[vaultId][guardianAddress]
 thresholdUpdateProposals[vaultId][newThreshold]
@@ -164,6 +181,7 @@ hasApprovedThreshold[vaultId][newThreshold][approver]
 ```
 
 **Functions (6 new):**
+
 ```solidity
 proposeGuardianRemoval(vaultId, guardianToRemove) external
 approveGuardianRemoval(vaultId, guardianToRemove) external
@@ -174,6 +192,7 @@ _removeGuardian(vaultId, guardianToRemove) internal
 ```
 
 **Events (5 new):**
+
 ```solidity
 GuardianRemovalProposed
 GuardianRemovalApproved
@@ -183,6 +202,7 @@ VaultReconfigurationExecuted
 ```
 
 **Errors (10 new):**
+
 ```solidity
 GuardianNotExists
 ProposalNotExist
@@ -200,20 +220,22 @@ ApprovalAlreadyGiven
 
 ### Per-Operation Costs
 
-| Operation | Min Gas | Max Gas | Avg Gas | Calls |
-|-----------|---------|---------|---------|-------|
-| proposeGuardianRemoval | - | - | 148,917 | 1 |
-| approveGuardianRemoval | 84,787 | 101,887 | 92,560 | 3 |
-| proposeThresholdUpdate | - | - | 146,230 | 1 |
-| approveThresholdUpdate | 84,392 | 101,492 | 91,232 | 2 |
-| executeVaultReconfiguration | 64,520 | 105,428 | 80,223 | 1 |
+| Operation                   | Min Gas | Max Gas | Avg Gas | Calls |
+| --------------------------- | ------- | ------- | ------- | ----- |
+| proposeGuardianRemoval      | -       | -       | 148,917 | 1     |
+| approveGuardianRemoval      | 84,787  | 101,887 | 92,560  | 3     |
+| proposeThresholdUpdate      | -       | -       | 146,230 | 1     |
+| approveThresholdUpdate      | 84,392  | 101,492 | 91,232  | 2     |
+| executeVaultReconfiguration | 64,520  | 105,428 | 80,223  | 1     |
 
 ### Total Cost Per Reconfiguration
+
 - **3 approvals + 1 execution:** ~360,000 gas
 - **Block limit:** 30M gas
 - **% of block:** 1.2% (highly efficient)
 
 ### Deployment Cost
+
 - **SpooVault:** 4,715,799 gas
 - **% of block limit:** 7.9% (well within acceptable range)
 
@@ -222,6 +244,7 @@ ApprovalAlreadyGiven
 ## Backward Compatibility
 
 ✅ **Existing functionality unaffected:**
+
 - Public key registry works as before
 - Vault creation with thresholds unchanged
 - Proof of life recording maintained
@@ -229,6 +252,7 @@ ApprovalAlreadyGiven
 - All 6 existing tests passing
 
 ✅ **No breaking changes:**
+
 - New functions are purely additive
 - Existing guardian arrays preserved
 - Existing vault state structures unchanged
@@ -239,29 +263,34 @@ ApprovalAlreadyGiven
 ## Security Considerations
 
 ### Guardian-Only Access Control
+
 ✅ All state-changing functions enforce guardian status
 ✅ Non-guardians cannot initiate or approve changes
 ✅ Access control tested in 4 dedicated test cases
 
 ### Majority Consensus Protection
+
 ✅ Single actor cannot force changes
 ✅ Majority calculated as (guardianCount / 2) + 1
 ✅ Minimum 2 approvals required for 3+ guardian vaults
 ✅ Majority calculation tested across 2-5 guardian scenarios
 
 ### Proposal Lifecycle Protection
+
 ✅ 7-day expiration prevents stale proposals
 ✅ Expiration tested with Hardhat time helpers
 ✅ Cannot double-approve proposals (tracked with mappings)
 ✅ Double-approval prevention tested for both proposal types
 
 ### Atomic Execution Guarantee
+
 ✅ Both removal + threshold applied together or not at all
 ✅ No partial state updates possible
 ✅ Threshold validation ensures consistency after removal
 ✅ Atomicity tested with combined operations
 
 ### Guardian Count Invariants
+
 ✅ Cannot remove all guardians (vault must stay operational)
 ✅ Cannot set threshold to 0 (must require consensus)
 ✅ Cannot set threshold > remaining guardian count
@@ -272,11 +301,13 @@ ApprovalAlreadyGiven
 ## Test Execution Proof
 
 ### Command
+
 ```bash
 npm run test:contracts
 ```
 
 ### Output
+
 ```
 SpooVault Guardian Rotation & Threshold Adjustment
   Guardian Removal
@@ -321,6 +352,7 @@ SpooVault EVM Contract Unit Tests
 ## Files Modified
 
 ### Primary Implementation
+
 - **[contracts/SpooVault.sol](contracts/SpooVault.sol)** (+450 lines)
   - Guardian rotation logic
   - Threshold adjustment logic
@@ -328,12 +360,14 @@ SpooVault EVM Contract Unit Tests
   - Access control enforcement
 
 ### Test Files
+
 - **[test/GuardianRotation.test.cjs](test/GuardianRotation.test.cjs)** (new, 267 lines)
   - 18 comprehensive test cases
   - All scenarios covered
   - All edge cases validated
 
 ### Documentation
+
 - **PULL_REQUEST_TEMPLATE.md** - This comprehensive PR description
 - **IMPLEMENTATION_SUMMARY.md** - This summary document
 
@@ -342,17 +376,20 @@ SpooVault EVM Contract Unit Tests
 ## Deployment Considerations
 
 ### Network Requirements
+
 - EVM-compatible network (Ethereum, Polygon, Avalanche, etc.)
 - Solidity 0.8.20 or higher
 - Standard contract deployment tools (Hardhat, Truffle, etc.)
 
 ### Upgrade Path
+
 - Can be deployed as new contract version
 - Backward compatible with existing vault data
 - Guardian invitations still work as before
 - No data migration required
 
 ### Testing Checklist
+
 - ✅ Unit tests on local testnet (Hardhat)
 - ✅ Integration tests on testnet
 - ✅ Gas optimization verified
@@ -377,6 +414,7 @@ These items are intentionally **out of scope** for this PR but represent good ca
 ## Conclusion
 
 This implementation successfully delivers guardian rotation and threshold adjustment capabilities to SpooVault while maintaining:
+
 - ✅ 100% backward compatibility
 - ✅ 24/24 passing tests (≥90% coverage requirement met)
 - ✅ All CI/CD checks passing
@@ -392,6 +430,7 @@ This implementation successfully delivers guardian rotation and threshold adjust
 ## Appendix: Commands Reference
 
 ### Run Tests
+
 ```bash
 npm run test:contracts       # Hardhat tests (24 tests)
 npm test                     # vitest (19 tests, frontend)
@@ -399,6 +438,7 @@ npm run test:smoke          # Smoke tests (6 checks)
 ```
 
 ### Build & Deploy
+
 ```bash
 npm run build               # Vite production build
 npx hardhat compile        # Compile Solidity
@@ -406,6 +446,7 @@ npm run deploy             # Deploy contracts (configured in scripts/)
 ```
 
 ### Development
+
 ```bash
 npx hardhat test --watch   # Watch mode for TDD
 npx hardhat compile --watch # Watch Solidity compilation

@@ -46,10 +46,12 @@ graph TD
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
+
 - Node.js v18+ and npm
 - MetaMask (for Avalanche Fuji) or Freighter Wallet (for Stellar)
 
 ### 2. Installation
+
 ```bash
 git clone https://github.com/spoo-vault/spoovault.git
 cd spoovault
@@ -57,7 +59,9 @@ npm install
 ```
 
 ### 3. Environment Configuration
+
 Copy `.env.example` to `.env`:
+
 ```env
 VITE_CONTRACT_ADDRESS=0x64128680775Ef626379DeF6E5c815AeA8F4707Ef
 VITE_AVALANCHE_RPC=https://api.avax-test.network/ext/bc/C/rpc
@@ -71,6 +75,7 @@ VITE_IPFS_GATEWAY=https://gateway.pinata.cloud/ipfs/
 ```
 
 ### 4. Run Development Server
+
 ```bash
 npm run dev
 ```

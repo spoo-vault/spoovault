@@ -160,7 +160,9 @@ const getContractAddress = (): string => {
 };
 
 const getRpcCandidates = (): string[] => {
-  const configured = (import.meta.env.VITE_AVALANCHE_RPC as string | undefined)?.trim();
+  const configured = (
+    import.meta.env.VITE_AVALANCHE_RPC as string | undefined
+  )?.trim();
   const chainId = Number(import.meta.env.VITE_CHAIN_ID);
   const defaults = chainId === 43114 ? MAINNET_RPC_URLS : FUJI_RPC_URLS;
   const all = configured ? [configured, ...defaults] : [...defaults];
@@ -218,7 +220,11 @@ const waitForReceipt = async (tx: any) => {
   if (tx?.hash && fallbackProviders.length > 0) {
     for (const activeProvider of fallbackProviders) {
       try {
-        const mined = await activeProvider.waitForTransaction(tx.hash, 1, timeoutMs);
+        const mined = await activeProvider.waitForTransaction(
+          tx.hash,
+          1,
+          timeoutMs
+        );
         if (mined) {
           return mined;
         }
@@ -276,7 +282,10 @@ const ensureWriteContract = (): ethers.Contract => {
   return writeContract;
 };
 
-const contractHasFunction = (contract: ethers.Contract, signature: string): boolean => {
+const contractHasFunction = (
+  contract: ethers.Contract,
+  signature: string
+): boolean => {
   try {
     contract.interface.getFunction(signature);
     return true;
@@ -295,7 +304,7 @@ const getLogChunkSize = (): number => {
   return 2000;
 };
 
-const chunkArray = <T,>(items: T[], size: number): T[][] => {
+const chunkArray = <T>(items: T[], size: number): T[][] => {
   if (size <= 0) return [items];
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
@@ -491,7 +500,9 @@ const normalizeFilterValue = (
 
 const normalizeFilterValues = (
   filters: EventLogQueryOptions["filters"]
-): Array<string | bigint | null | Array<string | bigint | null>> | undefined => {
+):
+  | Array<string | bigint | null | Array<string | bigint | null>>
+  | undefined => {
   if (!filters) return undefined;
   return filters.map((filter) => {
     if (Array.isArray(filter)) {
@@ -531,7 +542,9 @@ const getEventLogs = async (
   const fromBlock = await getFromBlock();
   const cached = readEventLogCache(eventName, address, filterKey);
   const cachedLogs = cached
-    ? cached.logs.map(fromCacheRecord).filter((log) => log.blockNumber >= fromBlock)
+    ? cached.logs
+        .map(fromCacheRecord)
+        .filter((log) => log.blockNumber >= fromBlock)
     : [];
   let lastError: string | null = null;
 
@@ -550,7 +563,11 @@ const getEventLogs = async (
         ? Math.max(startBlock, cached!.lastSyncedBlock + 1)
         : startBlock;
 
-      for (let current = incrementalStart; current <= toBlock; current += chunkSize) {
+      for (
+        let current = incrementalStart;
+        current <= toBlock;
+        current += chunkSize
+      ) {
         const end = Math.min(current + chunkSize - 1, toBlock);
         const chunk = await activeProvider.getLogs({
           address,
@@ -582,14 +599,17 @@ const getEventLogs = async (
       logs = sortLogsAscending(cachedLogs);
       lastError = null;
     } else {
-      const hint = "Log query failed. Set VITE_CONTRACT_DEPLOY_BLOCK to the contract deploy block.";
+      const hint =
+        "Log query failed. Set VITE_CONTRACT_DEPLOY_BLOCK to the contract deploy block.";
       throw new Error(`[${eventName}] ${hint} ${lastError}`);
     }
   }
 
   const effectiveTail = options?.tail && options.tail > 0 ? options.tail : 0;
   const logsForParsing =
-    effectiveTail > 0 && logs.length > effectiveTail ? logs.slice(-effectiveTail) : logs;
+    effectiveTail > 0 && logs.length > effectiveTail
+      ? logs.slice(-effectiveTail)
+      : logs;
 
   const parsedLogs = logsForParsing
     .map((log) => {
@@ -597,7 +617,10 @@ const getEventLogs = async (
       if (!parsed) return null;
       return { log, parsed };
     })
-    .filter((entry): entry is { log: ethers.Log; parsed: ethers.LogDescription } => entry !== null);
+    .filter(
+      (entry): entry is { log: ethers.Log; parsed: ethers.LogDescription } =>
+        entry !== null
+    );
 
   return parsedLogs;
 };
@@ -710,7 +733,8 @@ const addDocument = async (
 ): Promise<number> => {
   const contract = ensureWriteContract();
   let tx: any;
-  const hasShares = guardiansList && shares && guardiansList.length > 0 && shares.length > 0;
+  const hasShares =
+    guardiansList && shares && guardiansList.length > 0 && shares.length > 0;
 
   if (
     releaseCondition !== 0 &&
@@ -739,7 +763,13 @@ const addDocument = async (
       );
     }
   } else if (releaseCondition === 0) {
-    if (hasShares && contractHasFunction(contract, "addDocument(uint256,string,string,uint8,address[],string[])")) {
+    if (
+      hasShares &&
+      contractHasFunction(
+        contract,
+        "addDocument(uint256,string,string,uint8,address[],string[])"
+      )
+    ) {
       tx = await contract.addDocument(
         vaultId,
         encryptedMetadata,
@@ -807,10 +837,16 @@ const requestAccess = async (documentId: number): Promise<number> => {
   return 0;
 };
 
-const approveAccess = async (requestId: number, encryptedShareForBeneficiary?: string): Promise<void> => {
+const approveAccess = async (
+  requestId: number,
+  encryptedShareForBeneficiary?: string
+): Promise<void> => {
   const contract = ensureWriteContract();
   let tx: any;
-  if (encryptedShareForBeneficiary && contractHasFunction(contract, "approveAccess(uint256,string)")) {
+  if (
+    encryptedShareForBeneficiary &&
+    contractHasFunction(contract, "approveAccess(uint256,string)")
+  ) {
     tx = await contract.approveAccess(requestId, encryptedShareForBeneficiary);
   } else {
     tx = await contract.approveAccess(requestId);
@@ -834,7 +870,10 @@ const getUserPublicKey = async (user: string): Promise<string> => {
   }
 };
 
-const getEncryptedGuardianShare = async (documentId: number, guardian: string): Promise<string> => {
+const getEncryptedGuardianShare = async (
+  documentId: number,
+  guardian: string
+): Promise<string> => {
   await ensureContractDeployed();
   const contract = ensureReadContract();
   try {
@@ -844,7 +883,10 @@ const getEncryptedGuardianShare = async (documentId: number, guardian: string): 
   }
 };
 
-const getBeneficiaryKeyShare = async (requestId: number, guardian: string): Promise<string> => {
+const getBeneficiaryKeyShare = async (
+  requestId: number,
+  guardian: string
+): Promise<string> => {
   await ensureContractDeployed();
   const contract = ensureReadContract();
   try {
@@ -905,8 +947,13 @@ const burnAccessToken = async (tokenId: number): Promise<void> => {
   clearAccessCache();
 };
 
-const cachedGetVault = (contract: ethers.Contract, vaultId: number): Promise<any> =>
-  getVaultCache.getOrFetch(`getVault:${vaultId}`, () => contract.getVault(vaultId));
+const cachedGetVault = (
+  contract: ethers.Contract,
+  vaultId: number
+): Promise<any> =>
+  getVaultCache.getOrFetch(`getVault:${vaultId}`, () =>
+    contract.getVault(vaultId)
+  );
 
 const mapVaultData = (vault: any): VaultData => ({
   id: Number(vault[0]),
@@ -960,7 +1007,9 @@ const fetchVaults = async (): Promise<VaultData[]> => {
     new Set(logs.map((entry) => Number(entry.parsed.args.vaultId)))
   );
 
-  const vaults = await Promise.all(ids.map((id) => cachedGetVault(contract, id)));
+  const vaults = await Promise.all(
+    ids.map((id) => cachedGetVault(contract, id))
+  );
   return vaults.map((vault) => mapVaultData(vault));
 };
 
@@ -972,14 +1021,14 @@ const fetchDocuments = async (): Promise<DocumentData[]> => {
     new Set(logs.map((entry) => Number(entry.parsed.args.documentId)))
   );
 
-  const documents = await Promise.all(
-    ids.map((id) => contract.documents(id))
-  );
+  const documents = await Promise.all(ids.map((id) => contract.documents(id)));
 
   return documents.map((doc) => mapDocumentData(doc));
 };
 
-const fetchDocumentsForVaults = async (vaultIds: number[]): Promise<DocumentData[]> => {
+const fetchDocumentsForVaults = async (
+  vaultIds: number[]
+): Promise<DocumentData[]> => {
   await ensureContractDeployed();
   const contract = ensureReadContract();
   const uniqueVaultIds = Array.from(new Set(vaultIds)).filter((id) => id > 0);
@@ -1026,8 +1075,12 @@ const fetchVaultsForAccount = async (
   ]);
 
   const vaultIds = new Set<number>();
-  createdLogs.forEach((entry) => vaultIds.add(Number(entry.parsed.args.vaultId)));
-  guardianLogs.forEach((entry) => vaultIds.add(Number(entry.parsed.args.vaultId)));
+  createdLogs.forEach((entry) =>
+    vaultIds.add(Number(entry.parsed.args.vaultId))
+  );
+  guardianLogs.forEach((entry) =>
+    vaultIds.add(Number(entry.parsed.args.vaultId))
+  );
 
   if (options?.tokenVaultIds?.length) {
     options.tokenVaultIds
@@ -1037,7 +1090,9 @@ const fetchVaultsForAccount = async (
     const mintedLogs = await getEventLogs("NFTMinted", {
       filters: [null, accountLower, null],
     });
-    mintedLogs.forEach((entry) => vaultIds.add(Number(entry.parsed.args.vaultId)));
+    mintedLogs.forEach((entry) =>
+      vaultIds.add(Number(entry.parsed.args.vaultId))
+    );
   }
 
   const candidateVaults = await fetchVaultsByIds(Array.from(vaultIds));
@@ -1164,7 +1219,9 @@ const getLatestRequestsForUser = async (
   return Object.fromEntries(entries);
 };
 
-const getDocumentReleaseCondition = async (documentId: number): Promise<number> => {
+const getDocumentReleaseCondition = async (
+  documentId: number
+): Promise<number> => {
   await ensureContractDeployed();
   const contract = ensureReadContract();
 
@@ -1208,7 +1265,9 @@ const getDocumentReleaseConditionMap = async (
   return Object.fromEntries(entries);
 };
 
-const getVaultReleaseState = async (vaultId: number): Promise<VaultReleaseState> => {
+const getVaultReleaseState = async (
+  vaultId: number
+): Promise<VaultReleaseState> => {
   await ensureContractDeployed();
   const contract = ensureReadContract();
 
@@ -1244,7 +1303,9 @@ const fetchVaultReleaseStates = async (
   }
 
   const entries = await Promise.all(
-    vaultIds.map(async (vaultId) => [vaultId, await getVaultReleaseState(vaultId)] as const)
+    vaultIds.map(
+      async (vaultId) => [vaultId, await getVaultReleaseState(vaultId)] as const
+    )
   );
 
   return Object.fromEntries(entries);
@@ -1255,8 +1316,12 @@ const configureVaultRelease = async (
   inactivityPeriod: number
 ): Promise<void> => {
   const contract = ensureWriteContract();
-  if (!contractHasFunction(contract, "configureVaultRelease(uint256,uint256)")) {
-    throw new Error("Current contract does not support vault release policy configuration.");
+  if (
+    !contractHasFunction(contract, "configureVaultRelease(uint256,uint256)")
+  ) {
+    throw new Error(
+      "Current contract does not support vault release policy configuration."
+    );
   }
   const tx = await contract.configureVaultRelease(vaultId, inactivityPeriod);
   await waitForReceipt(tx);
@@ -1271,16 +1336,23 @@ const recordProofOfLife = async (vaultId: number): Promise<void> => {
   await waitForReceipt(tx);
 };
 
-const setEmergencyMode = async (vaultId: number, enabled: boolean): Promise<void> => {
+const setEmergencyMode = async (
+  vaultId: number,
+  enabled: boolean
+): Promise<void> => {
   const contract = ensureWriteContract();
   if (!contractHasFunction(contract, "setEmergencyMode(uint256,bool)")) {
-    throw new Error("Current contract does not support emergency mode controls.");
+    throw new Error(
+      "Current contract does not support emergency mode controls."
+    );
   }
   const tx = await contract.setEmergencyMode(vaultId, enabled);
   await waitForReceipt(tx);
 };
 
-const fetchPendingInvites = async (user: string): Promise<GuardianInviteData[]> => {
+const fetchPendingInvites = async (
+  user: string
+): Promise<GuardianInviteData[]> => {
   if (!user) {
     return [];
   }
@@ -1336,14 +1408,21 @@ const fetchPendingApprovalsForGuardian = async (
     seen.add(requestId);
 
     try {
-      const approvedByGuardian = await contract.hasApprovedRequest(requestId, guardian);
+      const approvedByGuardian = await contract.hasApprovedRequest(
+        requestId,
+        guardian
+      );
       if (approvedByGuardian) {
         continue;
       }
 
       const requestRaw = await contract.accessRequests(requestId);
       const request = normalizeAccessRequest(requestRaw);
-      if (!request.requestId || request.status !== 0 || request.expiresAt <= now) {
+      if (
+        !request.requestId ||
+        request.status !== 0 ||
+        request.expiresAt <= now
+      ) {
         continue;
       }
 
@@ -1398,7 +1477,10 @@ const fetchUserTokens = async (account: string): Promise<TokenData[]> => {
   const mintedLogs = await getEventLogs("NFTMinted", {
     filters: [null, accountLower, null],
   });
-  const mintedByToken = new Map<number, { vaultId: number; blockNumber: number }>();
+  const mintedByToken = new Map<
+    number,
+    { vaultId: number; blockNumber: number }
+  >();
   for (const entry of mintedLogs) {
     const tokenId = Number(entry.parsed.args.tokenId);
     mintedByToken.set(tokenId, {
@@ -1447,7 +1529,10 @@ const fetchUserTokens = async (account: string): Promise<TokenData[]> => {
     .sort((a, b) => b.tokenId - a.tokenId);
 };
 
-const hasVaultToken = async (account: string, vaultId: number): Promise<boolean> => {
+const hasVaultToken = async (
+  account: string,
+  vaultId: number
+): Promise<boolean> => {
   if (!account || !vaultId || vaultId <= 0) return false;
   try {
     await ensureContractDeployed();
@@ -1525,12 +1610,7 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
     getEventLogs("NFTMinted", { tail: perEventTail }),
   ]);
 
-  const allLogs = [
-    ...vaultLogs,
-    ...documentLogs,
-    ...requestLogs,
-    ...nftLogs,
-  ];
+  const allLogs = [...vaultLogs, ...documentLogs, ...requestLogs, ...nftLogs];
 
   allLogs.sort((a, b) => {
     if (a.log.blockNumber !== b.log.blockNumber) {
@@ -1544,7 +1624,10 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
   const limited = allLogs.slice(0, limit);
   const events = await Promise.all(
     limited.map(async (entry) => {
-      const timestamp = await getBlockTimestamp(entry.log.blockNumber, blockCache);
+      const timestamp = await getBlockTimestamp(
+        entry.log.blockNumber,
+        blockCache
+      );
       const name = entry.parsed.name;
       const txHash = entry.log.transactionHash;
 
@@ -1561,7 +1644,9 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
 
       if (name === "DocumentAdded") {
         try {
-          const doc = await contract.documents(Number(entry.parsed.args.documentId));
+          const doc = await contract.documents(
+            Number(entry.parsed.args.documentId)
+          );
           return {
             action: "Document Added",
             actor: doc[4],
@@ -1620,7 +1705,11 @@ const getRecentActivity = async (limit = 5): Promise<ActivityEvent[]> => {
 
 const getEcosystem = (): "avalanche" | "stellar" => {
   if (typeof window === "undefined") return "avalanche";
-  return (window.localStorage.getItem("spoovault-ecosystem") as "avalanche" | "stellar") || "avalanche";
+  return (
+    (window.localStorage.getItem("spoovault-ecosystem") as
+      | "avalanche"
+      | "stellar") || "avalanche"
+  );
 };
 
 const proxiedCreateVault = async (
@@ -1630,7 +1719,12 @@ const proxiedCreateVault = async (
   approvalThreshold: number
 ): Promise<number> => {
   if (getEcosystem() === "stellar") {
-    return stellarService.createVault(name, description, guardians, approvalThreshold);
+    return stellarService.createVault(
+      name,
+      description,
+      guardians,
+      approvalThreshold
+    );
   }
   return createVault(name, description, guardians, approvalThreshold);
 };
@@ -1655,7 +1749,15 @@ const proxiedAddDocument = async (
       shares
     );
   }
-  return addDocument(vaultId, encryptedMetadata, ipfsHash, requiredAccess, releaseCondition, guardiansList, shares);
+  return addDocument(
+    vaultId,
+    encryptedMetadata,
+    ipfsHash,
+    requiredAccess,
+    releaseCondition,
+    guardiansList,
+    shares
+  );
 };
 
 const proxiedRequestAccess = async (documentId: number): Promise<number> => {
@@ -1665,7 +1767,10 @@ const proxiedRequestAccess = async (documentId: number): Promise<number> => {
   return requestAccess(documentId);
 };
 
-const proxiedApproveAccess = async (requestId: number, encryptedShareForBeneficiary?: string): Promise<void> => {
+const proxiedApproveAccess = async (
+  requestId: number,
+  encryptedShareForBeneficiary?: string
+): Promise<void> => {
   if (getEcosystem() === "stellar") {
     await stellarService.approveAccess(requestId, encryptedShareForBeneficiary);
   } else {
@@ -1692,14 +1797,20 @@ const proxiedFetchVaultsForAccount = async (
   options?: { tokenVaultIds?: number[] }
 ): Promise<VaultData[]> => {
   if (getEcosystem() === "stellar") {
-    return stellarService.fetchVaultsForAccount(account) as unknown as Promise<VaultData[]>;
+    return stellarService.fetchVaultsForAccount(account) as unknown as Promise<
+      VaultData[]
+    >;
   }
   return fetchVaultsForAccount(account, options);
 };
 
-const proxiedFetchDocumentsForVaults = async (vaultIds: number[]): Promise<DocumentData[]> => {
+const proxiedFetchDocumentsForVaults = async (
+  vaultIds: number[]
+): Promise<DocumentData[]> => {
   if (getEcosystem() === "stellar") {
-    return stellarService.fetchDocumentsForVaults(vaultIds) as unknown as Promise<DocumentData[]>;
+    return stellarService.fetchDocumentsForVaults(
+      vaultIds
+    ) as unknown as Promise<DocumentData[]>;
   }
   return fetchDocumentsForVaults(vaultIds);
 };
@@ -1709,19 +1820,27 @@ const proxiedFetchPendingApprovalsForGuardian = async (
   _limit?: number
 ): Promise<PendingApprovalData[]> => {
   if (getEcosystem() === "stellar") {
-    return stellarService.fetchPendingApprovalsForGuardian(guardianAddress) as unknown as Promise<PendingApprovalData[]>;
+    return stellarService.fetchPendingApprovalsForGuardian(
+      guardianAddress
+    ) as unknown as Promise<PendingApprovalData[]>;
   }
   return fetchPendingApprovalsForGuardian(guardianAddress);
 };
 
-const proxiedGetEncryptedGuardianShare = async (documentId: number, guardian: string): Promise<string> => {
+const proxiedGetEncryptedGuardianShare = async (
+  documentId: number,
+  guardian: string
+): Promise<string> => {
   if (getEcosystem() === "stellar") {
     return stellarService.getEncryptedGuardianShare(documentId, guardian);
   }
   return getEncryptedGuardianShare(documentId, guardian);
 };
 
-const proxiedGetBeneficiaryKeyShare = async (requestId: number, guardian: string): Promise<string> => {
+const proxiedGetBeneficiaryKeyShare = async (
+  requestId: number,
+  guardian: string
+): Promise<string> => {
   if (getEcosystem() === "stellar") {
     return stellarService.getBeneficiaryKeyShare(requestId, guardian);
   }
@@ -1749,7 +1868,10 @@ const proxiedFetchPendingInvites = async (account: string): Promise<any[]> => {
   return fetchPendingInvites(account);
 };
 
-const proxiedHasActiveAccess = async (documentId: number, user: string): Promise<boolean> => {
+const proxiedHasActiveAccess = async (
+  documentId: number,
+  user: string
+): Promise<boolean> => {
   if (getEcosystem() === "stellar") {
     const account = stellarService.getAccount();
     if (!account) return false;
@@ -1757,20 +1879,32 @@ const proxiedHasActiveAccess = async (documentId: number, user: string): Promise
       `hasActiveAccess:stellar:${documentId}:${account.toLowerCase()}`,
       async () => {
         const vaults = await stellarService.fetchVaultsForAccount(account);
-        const docs = await stellarService.fetchDocumentsForVaults(vaults.map(v => v.id));
-        const doc = docs.find(d => d.id === documentId);
+        const docs = await stellarService.fetchDocumentsForVaults(
+          vaults.map((v) => v.id)
+        );
+        const doc = docs.find((d) => d.id === documentId);
         if (!doc) return false;
         if (doc.uploadedBy.toLowerCase() === account.toLowerCase()) return true;
 
-        const vault = vaults.find(v => v.id === doc.vaultId);
-        if (vault?.guardians.some(g => g.toLowerCase() === account.toLowerCase())) return true;
+        const vault = vaults.find((v) => v.id === doc.vaultId);
+        if (
+          vault?.guardians.some(
+            (g) => g.toLowerCase() === account.toLowerCase()
+          )
+        )
+          return true;
 
         try {
-          const requestsRaw = localStorage.getItem("spoovault-stellar-mock-requests");
+          const requestsRaw = localStorage.getItem(
+            "spoovault-stellar-mock-requests"
+          );
           if (requestsRaw) {
             const requests = JSON.parse(requestsRaw) as any[];
             return requests.some(
-              r => r.documentId === documentId && r.requester.toLowerCase() === account.toLowerCase() && r.status === 1
+              (r) =>
+                r.documentId === documentId &&
+                r.requester.toLowerCase() === account.toLowerCase() &&
+                r.status === 1
             );
           }
         } catch {}
@@ -1787,7 +1921,9 @@ const proxiedGetActiveAccessMap = async (
 ): Promise<Record<number, boolean>> => {
   if (getEcosystem() === "stellar") {
     const entries = await Promise.all(
-      documentIds.map(async (id) => [id, await proxiedHasActiveAccess(id, user)] as const)
+      documentIds.map(
+        async (id) => [id, await proxiedHasActiveAccess(id, user)] as const
+      )
     );
     return Object.fromEntries(entries);
   }
@@ -1800,12 +1936,16 @@ const proxiedGetLatestRequestsForUser = async (
 ): Promise<Record<number, AccessRequestData | null>> => {
   if (getEcosystem() === "stellar") {
     try {
-      const requestsRaw = localStorage.getItem("spoovault-stellar-mock-requests");
+      const requestsRaw = localStorage.getItem(
+        "spoovault-stellar-mock-requests"
+      );
       const requests = requestsRaw ? (JSON.parse(requestsRaw) as any[]) : [];
       const res: Record<number, AccessRequestData | null> = {};
       for (const id of documentIds) {
         const matched = requests.filter(
-          r => r.documentId === id && r.requester.toLowerCase() === user.toLowerCase()
+          (r) =>
+            r.documentId === id &&
+            r.requester.toLowerCase() === user.toLowerCase()
         );
         if (matched.length > 0) {
           matched.sort((a, b) => b.requestId - a.requestId);
@@ -1822,9 +1962,13 @@ const proxiedGetLatestRequestsForUser = async (
   return getLatestRequestsForUser(user, documentIds);
 };
 
-const proxiedFetchUserTokens = async (account: string): Promise<TokenData[]> => {
+const proxiedFetchUserTokens = async (
+  account: string
+): Promise<TokenData[]> => {
   if (getEcosystem() === "stellar") {
-    return stellarService.fetchUserTokens(account) as unknown as Promise<TokenData[]>;
+    return stellarService.fetchUserTokens(account) as unknown as Promise<
+      TokenData[]
+    >;
   }
   return fetchUserTokens(account);
 };

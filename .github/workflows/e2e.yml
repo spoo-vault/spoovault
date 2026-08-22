@@ -31,7 +31,7 @@ jobs:
       - name: Install Foundry (anvil)
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly
+          version: stable
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

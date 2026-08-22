@@ -60,4 +60,3 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </Web3Provider>
   </React.StrictMode>
 );
-

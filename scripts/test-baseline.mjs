@@ -16,13 +16,14 @@ const documentsPage = read("src/pages/Documents.tsx");
 const accessCenter = read("src/pages/AccessCenter.tsx");
 const globalsCss = read("src/styles/globals.css");
 
-const mobileNavBlock = appLayout.match(
-  /const mobileNavItems = \[[\s\S]*?\n\s*\];/
-)?.[0] || "";
+const mobileNavBlock =
+  appLayout.match(/const mobileNavItems = \[[\s\S]*?\n\s*\];/)?.[0] || "";
 
 check(
   "Mobile nav contains Access route",
-  mobileNavBlock.includes('{ path: "/access", label: "Access", icon: FiUnlock }')
+  mobileNavBlock.includes(
+    '{ path: "/access", label: "Access", icon: FiUnlock }'
+  )
 );
 check(
   "Mobile nav contains Passes route",
@@ -30,16 +31,22 @@ check(
 );
 check(
   "Mobile nav excludes Profile route",
-  !mobileNavBlock.includes('{ path: "/profile", label: "Profile", icon: FiUser }')
+  !mobileNavBlock.includes(
+    '{ path: "/profile", label: "Profile", icon: FiUser }'
+  )
 );
 
 check(
   "Documents imports keyStoreService",
-  documentsPage.includes('import { keyStoreService } from "../services/keyStore.service";')
+  documentsPage.includes(
+    'import { keyStoreService } from "../services/keyStore.service";'
+  )
 );
 check(
   "AccessCenter imports keyStoreService",
-  accessCenter.includes('import { keyStoreService } from "../services/keyStore.service";')
+  accessCenter.includes(
+    'import { keyStoreService } from "../services/keyStore.service";'
+  )
 );
 check(
   "Documents does not read doc keys from localStorage directly",
@@ -68,7 +75,9 @@ checks.forEach((item) => {
   if (item.condition) {
     console.log(`PASS: ${item.name}`);
   } else {
-    console.error(`FAIL: ${item.name}${item.detail ? ` -> ${item.detail}` : ""}`);
+    console.error(
+      `FAIL: ${item.name}${item.detail ? ` -> ${item.detail}` : ""}`
+    );
   }
 });
 
@@ -78,4 +87,3 @@ if (failed.length > 0) {
 }
 
 console.log("PASS: Baseline check complete");
-

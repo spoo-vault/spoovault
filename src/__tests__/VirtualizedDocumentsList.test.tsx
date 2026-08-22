@@ -24,7 +24,10 @@ const stubRect = (height: number) => ({
   toJSON: () => ({}),
 });
 
-const buildItem = (id: number, overrides: Partial<DocumentRowItem> = {}): DocumentRowItem => {
+const buildItem = (
+  id: number,
+  overrides: Partial<DocumentRowItem> = {}
+): DocumentRowItem => {
   const doc: DocumentData = {
     id,
     vaultId: 1,
@@ -63,9 +66,17 @@ const renderList = (
       items={items}
       loading={false}
       requestingDocId={null}
-      accessLabel={(level) => (level === 2 ? "admin" : level === 1 ? "read_write" : "read")}
+      accessLabel={(level) =>
+        level === 2 ? "admin" : level === 1 ? "read_write" : "read"
+      }
       releaseConditionLabel={(condition) =>
-        condition === 1 ? "live_only" : condition === 2 ? "emergency_only" : condition === 3 ? "post_death_only" : "anytime"
+        condition === 1
+          ? "live_only"
+          : condition === 2
+          ? "emergency_only"
+          : condition === 3
+          ? "post_death_only"
+          : "anytime"
       }
       onView={noop}
       onDownload={noop}
@@ -83,14 +94,14 @@ const getMountedDocumentIds = () =>
 
 describe("VirtualizedDocumentsList", () => {
   beforeEach(() => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement
-    ) {
-      if (this.getAttribute("data-testid") === "document-row") {
-        return stubRect(DOCUMENT_ROW_HEIGHT) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        if (this.getAttribute("data-testid") === "document-row") {
+          return stubRect(DOCUMENT_ROW_HEIGHT) as DOMRect;
+        }
+        return stubRect(VIEWPORT_HEIGHT) as DOMRect;
       }
-      return stubRect(VIEWPORT_HEIGHT) as DOMRect;
-    });
+    );
   });
 
   afterEach(() => {
@@ -132,7 +143,9 @@ describe("VirtualizedDocumentsList", () => {
     const items = buildItems(500);
     const { container } = renderList(items);
 
-    const scrollContainer = container.querySelector('[role="table"]') as HTMLElement;
+    const scrollContainer = container.querySelector(
+      '[role="table"]'
+    ) as HTMLElement;
     expect(scrollContainer).toBeTruthy();
 
     const idsBeforeScroll = new Set(getMountedDocumentIds());
@@ -146,7 +159,9 @@ describe("VirtualizedDocumentsList", () => {
 
     const idsAfterScroll = new Set(getMountedDocumentIds());
     expect(idsAfterScroll.has("1")).toBe(false);
-    expect([...idsAfterScroll].some((id) => !idsBeforeScroll.has(id as string))).toBe(true);
+    expect(
+      [...idsAfterScroll].some((id) => !idsBeforeScroll.has(id as string))
+    ).toBe(true);
   });
 
   it("invokes onView and onDownload for a decryptable document", () => {
@@ -163,7 +178,11 @@ describe("VirtualizedDocumentsList", () => {
   });
 
   it("disables view/download and shows the Locked chip when a document cannot be decrypted", () => {
-    const item = buildItem(1, { canDecrypt: false, hasChainAccess: false, hasLocalKey: false });
+    const item = buildItem(1, {
+      canDecrypt: false,
+      hasChainAccess: false,
+      hasLocalKey: false,
+    });
     renderList([item]);
 
     expect(screen.getByTestId("document-view-button")).toBeDisabled();
@@ -173,7 +192,11 @@ describe("VirtualizedDocumentsList", () => {
 
   it("invokes onRequestAccess for a document without chain access", () => {
     const onRequestAccess = vi.fn();
-    const item = buildItem(1, { hasChainAccess: false, canDecrypt: false, isRequestPending: false });
+    const item = buildItem(1, {
+      hasChainAccess: false,
+      canDecrypt: false,
+      isRequestPending: false,
+    });
     renderList([item], { onRequestAccess });
 
     fireEvent.click(screen.getByTestId("document-request-access-button"));
@@ -190,7 +213,9 @@ describe("VirtualizedDocumentsList", () => {
 
     expect(screen.getByText("Request Pending")).toBeInTheDocument();
     expect(screen.getByTestId("document-request-access-button")).toBeDisabled();
-    expect(screen.getByTestId("document-request-access-button")).toHaveTextContent("Pending");
+    expect(
+      screen.getByTestId("document-request-access-button")
+    ).toHaveTextContent("Pending");
   });
 
   it("disables the request-access button while that document's request is in flight", () => {
@@ -204,11 +229,17 @@ describe("VirtualizedDocumentsList", () => {
     const item = buildItem(1, { hasChainAccess: true, canDecrypt: true });
     renderList([item]);
 
-    expect(screen.queryByTestId("document-request-access-button")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("document-request-access-button")
+    ).not.toBeInTheDocument();
   });
 
   it("shows Key Missing when access is granted on-chain but no local key is present", () => {
-    const item = buildItem(1, { hasChainAccess: true, hasLocalKey: false, canDecrypt: false });
+    const item = buildItem(1, {
+      hasChainAccess: true,
+      hasLocalKey: false,
+      canDecrypt: false,
+    });
     renderList([item]);
 
     expect(screen.getByText("Key Missing")).toBeInTheDocument();
@@ -250,11 +281,17 @@ describe("VirtualizedDocumentsList", () => {
     );
     renderList(items);
 
-    ["read", "read_write", "admin", "anytime", "live_only", "emergency_only", "post_death_only"].forEach(
-      (label) => {
-        expect(screen.getAllByText(label).length).toBeGreaterThan(0);
-      }
-    );
+    [
+      "read",
+      "read_write",
+      "admin",
+      "anytime",
+      "live_only",
+      "emergency_only",
+      "post_death_only",
+    ].forEach((label) => {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    });
   });
 
   it("shows the loading message instead of the empty message while documents are loading", () => {

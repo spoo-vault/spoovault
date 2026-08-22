@@ -1,5 +1,11 @@
 import React, { useState } from "react";
-import { FiHeart, FiShield, FiAlertTriangle, FiClock, FiCheckCircle } from "react-icons/fi";
+import {
+  FiHeart,
+  FiShield,
+  FiAlertTriangle,
+  FiClock,
+  FiCheckCircle,
+} from "react-icons/fi";
 import { toast } from "react-hot-toast";
 
 export interface InheritanceSettingsProps {
@@ -51,7 +57,9 @@ export const InheritanceSettings: React.FC<InheritanceSettingsProps> = ({
       setLoadingEmergency(true);
       await onToggleEmergencyMode(vaultId, !emergencyMode);
       toast.success(
-        `Emergency mode ${!emergencyMode ? "ENABLED" : "DISABLED"} for ${vaultName}`
+        `Emergency mode ${
+          !emergencyMode ? "ENABLED" : "DISABLED"
+        } for ${vaultName}`
       );
     } catch (err: any) {
       toast.error(err?.message || "Failed to update emergency mode");
@@ -68,22 +76,29 @@ export const InheritanceSettings: React.FC<InheritanceSettingsProps> = ({
             <FiHeart className="w-5 h-5 animate-pulse text-emerald-400" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Inheritance & Dead-Man Switch</h3>
-            <p className="text-xs text-slate-400">Vault #{vaultId} • {vaultName}</p>
+            <h3 className="text-lg font-semibold text-white">
+              Inheritance & Dead-Man Switch
+            </h3>
+            <p className="text-xs text-slate-400">
+              Vault #{vaultId} • {vaultName}
+            </p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
           {emergencyMode ? (
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30">
-              <FiAlertTriangle className="w-3.5 h-3.5 mr-1 text-rose-400" /> Emergency Active
+              <FiAlertTriangle className="w-3.5 h-3.5 mr-1 text-rose-400" />{" "}
+              Emergency Active
             </span>
           ) : isDead ? (
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              <FiClock className="w-3.5 h-3.5 mr-1 text-amber-400" /> Switch Triggered
+              <FiClock className="w-3.5 h-3.5 mr-1 text-amber-400" /> Switch
+              Triggered
             </span>
           ) : (
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-              <FiCheckCircle className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Heartbeat Active
+              <FiCheckCircle className="w-3.5 h-3.5 mr-1 text-emerald-400" />{" "}
+              Heartbeat Active
             </span>
           )}
         </div>
@@ -91,23 +106,37 @@ export const InheritanceSettings: React.FC<InheritanceSettingsProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
-          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Last Heartbeat</span>
+          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+            Last Heartbeat
+          </span>
           <p className="text-base font-medium text-slate-200 mt-1">
             {new Date(lastProofOfLife * 1000).toLocaleDateString()}
           </p>
-          <span className="text-xs text-slate-500">{daysSinceHeartbeat} days ago</span>
+          <span className="text-xs text-slate-500">
+            {daysSinceHeartbeat} days ago
+          </span>
         </div>
 
         <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
-          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Inactivity Period</span>
-          <p className="text-base font-medium text-slate-200 mt-1">{inactivityPeriodDays} Days</p>
+          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+            Inactivity Period
+          </span>
+          <p className="text-base font-medium text-slate-200 mt-1">
+            {inactivityPeriodDays} Days
+          </p>
           <span className="text-xs text-slate-500">Auto-release threshold</span>
         </div>
 
         <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
-          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Time Remaining</span>
-          <p className="text-base font-medium text-slate-200 mt-1">{daysRemaining} Days</p>
-          <span className="text-xs text-slate-500">Before inheritance unlock</span>
+          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+            Time Remaining
+          </span>
+          <p className="text-base font-medium text-slate-200 mt-1">
+            {daysRemaining} Days
+          </p>
+          <span className="text-xs text-slate-500">
+            Before inheritance unlock
+          </span>
         </div>
       </div>
 

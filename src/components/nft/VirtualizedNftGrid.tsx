@@ -17,7 +17,8 @@ export interface VirtualizedNftGridProps {
 }
 
 const NFT_ROW_ESTIMATED_HEIGHT = 380;
-const NFT_GRID_ROW_CLASS = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-6";
+const NFT_GRID_ROW_CLASS =
+  "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-6";
 
 export const VirtualizedNftGrid = ({
   tokens,
@@ -44,8 +45,14 @@ export const VirtualizedNftGrid = ({
   });
 
   return (
-    <div ref={scrollRef} data-testid="nft-scroll-container" className="max-h-[48rem] overflow-auto">
-      <div style={{ position: "relative", height: rowVirtualizer.getTotalSize() }}>
+    <div
+      ref={scrollRef}
+      data-testid="nft-scroll-container"
+      className="max-h-[48rem] overflow-auto"
+    >
+      <div
+        style={{ position: "relative", height: rowVirtualizer.getTotalSize() }}
+      >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const rowTokens = rows[virtualRow.index];
           return (
@@ -79,8 +86,14 @@ export const VirtualizedNftGrid = ({
                         <FiKey className="text-white/85 text-4xl" />
                       </div>
                       <div className="absolute top-3 left-3">
-                        <Chip size="sm" variant="flat" className="bg-black/35 text-gray-100 border border-white/15">
-                          {token.vaultId !== null ? `Vault #${token.vaultId}` : "Vault Unlinked"}
+                        <Chip
+                          size="sm"
+                          variant="flat"
+                          className="bg-black/35 text-gray-100 border border-white/15"
+                        >
+                          {token.vaultId !== null
+                            ? `Vault #${token.vaultId}`
+                            : "Vault Unlinked"}
                         </Chip>
                       </div>
                       <div className="absolute top-3 right-3">
@@ -91,24 +104,31 @@ export const VirtualizedNftGrid = ({
                     </div>
 
                     <div className="p-6">
-                      <h3 className="font-bold text-lg mb-3">Access Pass #{token.tokenId}</h3>
+                      <h3 className="font-bold text-lg mb-3">
+                        Access Pass #{token.tokenId}
+                      </h3>
 
                       <div className="space-y-2 mb-4">
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-400">Vault</span>
                           <span className="font-medium">
                             {token.vaultId !== null
-                              ? vaultNameById[token.vaultId] || `Vault #${token.vaultId}`
+                              ? vaultNameById[token.vaultId] ||
+                                `Vault #${token.vaultId}`
                               : "Unknown"}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-400">Owner</span>
-                          <span className="font-mono text-xs">{shortenAddress(token.owner)}</span>
+                          <span className="font-mono text-xs">
+                            {shortenAddress(token.owner)}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-400">Issued</span>
-                          <span>{token.mintedAt ? formatDate(token.mintedAt) : "-"}</span>
+                          <span>
+                            {token.mintedAt ? formatDate(token.mintedAt) : "-"}
+                          </span>
                         </div>
                       </div>
 

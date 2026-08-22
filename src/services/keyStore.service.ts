@@ -1,8 +1,10 @@
 const SESSION_PREFIX = "spoovault-doc-key-session-";
 const LEGACY_PREFIX = "spoovault-doc-key-";
 
-const getSessionKey = (documentId: number): string => `${SESSION_PREFIX}${documentId}`;
-const getLegacyKey = (documentId: number): string => `${LEGACY_PREFIX}${documentId}`;
+const getSessionKey = (documentId: number): string =>
+  `${SESSION_PREFIX}${documentId}`;
+const getLegacyKey = (documentId: number): string =>
+  `${LEGACY_PREFIX}${documentId}`;
 
 const canUseStorage = (): boolean => typeof window !== "undefined";
 
@@ -71,7 +73,11 @@ export const keyStoreService = {
       return false;
     }
 
-    const didSave = safeSet(window.sessionStorage, getSessionKey(documentId), normalized);
+    const didSave = safeSet(
+      window.sessionStorage,
+      getSessionKey(documentId),
+      normalized
+    );
     safeRemove(window.localStorage, getLegacyKey(documentId));
     return didSave;
   },
@@ -85,4 +91,3 @@ export const keyStoreService = {
     safeRemove(window.localStorage, getLegacyKey(documentId));
   },
 };
-

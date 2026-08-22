@@ -38,7 +38,10 @@ import { shortenAddress } from "../utils/helpers";
 import { captureError } from "../services/telemetry.service";
 import { encryptWithPublicKey, decryptWithPrivateKey } from "../utils/crypto";
 import { clientKeyringService } from "../services/clientKeyring.service";
-import { verifyShare, parseEncryptedMetadataPayload } from "../services/secrets.service";
+import {
+  verifyShare,
+  parseEncryptedMetadataPayload,
+} from "../services/secrets.service";
 
 import { AuditLogTimeline } from "../components/audit/AuditLogTimeline";
 import { getExplorerTxUrl } from "../utils/explorer";
@@ -69,7 +72,8 @@ interface DashboardStats {
 }
 
 const Dashboard = () => {
-  const { account, isConnected, connect, provider, signer, isFujiNetwork } = useWeb3();
+  const { account, isConnected, connect, provider, signer, isFujiNetwork } =
+    useWeb3();
   const navigate = useNavigate();
   const location = useLocation();
   const loadVersionRef = useRef(0);
@@ -84,9 +88,14 @@ const Dashboard = () => {
     totalNFTs: 0,
   });
   const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
-  const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalData[]>([]);
-  const [issuedPassesForVisibleVaults, setIssuedPassesForVisibleVaults] = useState(0);
-  const [approvingRequestId, setApprovingRequestId] = useState<number | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<
+    PendingApprovalData[]
+  >([]);
+  const [issuedPassesForVisibleVaults, setIssuedPassesForVisibleVaults] =
+    useState(0);
+  const [approvingRequestId, setApprovingRequestId] = useState<number | null>(
+    null
+  );
   const [packageExported, setPackageExported] = useState(false);
 
   useEffect(() => {
@@ -133,9 +142,15 @@ const Dashboard = () => {
     };
 
     readPackageFlag();
-    window.addEventListener("spoovault-beneficiary-package-exported", readPackageFlag as EventListener);
+    window.addEventListener(
+      "spoovault-beneficiary-package-exported",
+      readPackageFlag as EventListener
+    );
     return () => {
-      window.removeEventListener("spoovault-beneficiary-package-exported", readPackageFlag as EventListener);
+      window.removeEventListener(
+        "spoovault-beneficiary-package-exported",
+        readPackageFlag as EventListener
+      );
     };
   }, [account]);
 
@@ -242,11 +257,16 @@ const Dashboard = () => {
     }
 
     try {
-      const approvals = await contractService.fetchPendingApprovalsForGuardian(wallet, 5);
+      const approvals = await contractService.fetchPendingApprovalsForGuardian(
+        wallet,
+        5
+      );
       if (loadVersionRef.current !== loadVersion) {
         return;
       }
-      const visibleVaultIds = new Set<number>(userVaults.map((vault) => vault.id));
+      const visibleVaultIds = new Set<number>(
+        userVaults.map((vault) => vault.id)
+      );
       const scopedApprovals = approvals.filter((approval) =>
         visibleVaultIds.has(approval.vaultId)
       );
@@ -261,7 +281,9 @@ const Dashboard = () => {
         pendingApprovals: scopedApprovals,
       });
     } catch (error) {
-      captureError("dashboard.loadPendingApprovals", error, { account: wallet });
+      captureError("dashboard.loadPendingApprovals", error, {
+        account: wallet,
+      });
       if (loadVersionRef.current === loadVersion) {
         setPendingApprovals([]);
       }
@@ -432,18 +454,33 @@ const Dashboard = () => {
         loadVersion
       );
       window.setTimeout(() => {
-        void loadPendingApprovals(account, userVaults, baseStats, issuedPasses, loadVersion);
+        void loadPendingApprovals(
+          account,
+          userVaults,
+          baseStats,
+          issuedPasses,
+          loadVersion
+        );
       }, 160);
       window.setTimeout(() => {
         void loadRecentActivity(account, loadVersion);
       }, 320);
       window.setTimeout(() => {
-        void loadPassSupplyForVisibleVaults(account, userVaults, baseStats, [], loadVersion);
+        void loadPassSupplyForVisibleVaults(
+          account,
+          userVaults,
+          baseStats,
+          [],
+          loadVersion
+        );
       }, 80);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
       captureError("dashboard.loadData", error, { account: account || "" });
-      const message = error instanceof Error ? error.message : "Failed to load dashboard data";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load dashboard data";
       toast.error(message);
     } finally {
       if (!options?.silent && loadVersionRef.current === loadVersion) {
@@ -455,7 +492,9 @@ const Dashboard = () => {
   const handleApproveRequest = async (requestId: number) => {
     setApprovingRequestId(requestId);
     try {
-      const approvalInfo = pendingApprovals.find((a) => a.requestId === requestId);
+      const approvalInfo = pendingApprovals.find(
+        (a) => a.requestId === requestId
+      );
       if (!approvalInfo) {
         throw new Error("Approval request info not found");
       }
@@ -473,8 +512,12 @@ const Dashboard = () => {
         }
 
         toast("Decrypting key share from secure keyring...");
-        const guardianPrivateKey = await clientKeyringService.getDecryptedPrivateKey(account);
-        const decryptedShare = await decryptWithPrivateKey(encryptedShare, guardianPrivateKey);
+        const guardianPrivateKey =
+          await clientKeyringService.getDecryptedPrivateKey(account);
+        const decryptedShare = await decryptWithPrivateKey(
+          encryptedShare,
+          guardianPrivateKey
+        );
 
         if (!decryptedShare) {
           throw new Error("Failed to decrypt share with keyring private key");
@@ -483,32 +526,48 @@ const Dashboard = () => {
         // VSS share verification
         let doc = documents.find((d) => d.id === approvalInfo.documentId);
         if (!doc) {
-          const docs = await contractService.fetchDocumentsForVaults([approvalInfo.vaultId]);
+          const docs = await contractService.fetchDocumentsForVaults([
+            approvalInfo.vaultId,
+          ]);
           doc = docs.find((d) => d.id === approvalInfo.documentId);
         }
 
         if (doc) {
-          const { commitments } = parseEncryptedMetadataPayload(doc.encryptedMetadata);
+          const { commitments } = parseEncryptedMetadataPayload(
+            doc.encryptedMetadata
+          );
           if (commitments && commitments.length > 0) {
             const isValid = verifyShare(decryptedShare, commitments);
             if (!isValid) {
-              throw new Error("Verifiable Secret Sharing (VSS) verification failed: invalid share point received");
+              throw new Error(
+                "Verifiable Secret Sharing (VSS) verification failed: invalid share point received"
+              );
             }
           }
         }
 
         // Fetch beneficiary's public key
-        const beneficiaryPubKey = await contractService.getUserPublicKey(approvalInfo.requester);
+        const beneficiaryPubKey = await contractService.getUserPublicKey(
+          approvalInfo.requester
+        );
         if (!beneficiaryPubKey) {
-          throw new Error("The beneficiary has not registered their encryption public key. They must register it in their Profile page first.");
+          throw new Error(
+            "The beneficiary has not registered their encryption public key. They must register it in their Profile page first."
+          );
         }
 
         // Re-encrypt the share for the beneficiary
-        encryptedShareForBeneficiary = await encryptWithPublicKey(decryptedShare, beneficiaryPubKey);
+        encryptedShareForBeneficiary = await encryptWithPublicKey(
+          decryptedShare,
+          beneficiaryPubKey
+        );
       }
 
       if (encryptedShareForBeneficiary) {
-        await contractService.approveAccess(requestId, encryptedShareForBeneficiary);
+        await contractService.approveAccess(
+          requestId,
+          encryptedShareForBeneficiary
+        );
       } else {
         await contractService.approveAccess(requestId);
       }
@@ -563,7 +622,12 @@ const Dashboard = () => {
         route: "/documents",
       },
     ],
-    [stats.totalVaults, stats.totalDocuments, issuedPassesForVisibleVaults, packageExported]
+    [
+      stats.totalVaults,
+      stats.totalDocuments,
+      issuedPassesForVisibleVaults,
+      packageExported,
+    ]
   );
 
   const vaultLabel = stats.totalVaults === 1 ? "vault" : "vaults";
@@ -620,7 +684,8 @@ const Dashboard = () => {
           </div>
           <h1 className="text-3xl font-bold mb-4">Welcome to SpooVault</h1>
           <p className="text-gray-400 mb-8 max-w-2xl mx-auto">
-            Connect your wallet to manage secure access vaults and family documents on Avalanche Fuji.
+            Connect your wallet to manage secure access vaults and family
+            documents on Avalanche Fuji.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button
@@ -658,10 +723,13 @@ const Dashboard = () => {
           <Button
             size="lg"
             className={buttonClasses.warningLg}
-            onPress={() => window.ethereum && window.ethereum.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0xA869" }]
-            })}
+            onPress={() =>
+              window.ethereum &&
+              window.ethereum.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: "0xA869" }],
+              })
+            }
           >
             Switch to Fuji Network
           </Button>
@@ -683,13 +751,13 @@ const Dashboard = () => {
                 <h1 className="text-2xl lg:text-3xl font-bold">Welcome back</h1>
                 <div className="flex items-center gap-2 text-sm text-gray-400">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  <span>Connected to {account?.slice(0, 6)}...{account?.slice(-4)}</span>
+                  <span>
+                    Connected to {account?.slice(0, 6)}...{account?.slice(-4)}
+                  </span>
                 </div>
               </div>
             </div>
-            <p className="text-gray-400">
-              {welcomeMessage}
-            </p>
+            <p className="text-gray-400">{welcomeMessage}</p>
           </div>
         </div>
       </div>
@@ -710,10 +778,17 @@ const Dashboard = () => {
         ) : (
           <>
             {statCards.map((card) => (
-              <Card key={card.key} className="border border-gray-800 bg-gray-900/30 backdrop-blur-sm">
+              <Card
+                key={card.key}
+                className="border border-gray-800 bg-gray-900/30 backdrop-blur-sm"
+              >
                 <CardBody className="p-6">
                   <div className="mb-4">
-                    <div className={`inline-flex p-3 rounded-xl ${card.iconBg}`}>{card.icon}</div>
+                    <div
+                      className={`inline-flex p-3 rounded-xl ${card.iconBg}`}
+                    >
+                      {card.icon}
+                    </div>
                   </div>
                   <h3 className="text-2xl font-bold mb-1">{card.value}</h3>
                   <p className="text-gray-400 text-sm">{card.label}</p>
@@ -731,7 +806,8 @@ const Dashboard = () => {
             <h2 className="text-xl font-semibold">Handover Checklist</h2>
           </div>
           <Chip size="sm" variant="flat" color="primary">
-            {handoverChecklist.filter((step) => step.done).length}/{handoverChecklist.length} done
+            {handoverChecklist.filter((step) => step.done).length}/
+            {handoverChecklist.length} done
           </Chip>
         </CardHeader>
         <CardBody className="space-y-3">
@@ -752,17 +828,26 @@ const Dashboard = () => {
                 ) : (
                   <FiCircle className="text-gray-500 flex-shrink-0" />
                 )}
-                <span className={`text-sm ${step.done ? "line-through text-gray-400 opacity-70" : ""}`}>
+                <span
+                  className={`text-sm ${
+                    step.done ? "line-through text-gray-400 opacity-70" : ""
+                  }`}
+                >
                   {step.title}
                 </span>
               </div>
-              <span className={`text-xs ${step.done ? "text-green-400/90" : "text-gray-500"}`}>
+              <span
+                className={`text-xs ${
+                  step.done ? "text-green-400/90" : "text-gray-500"
+                }`}
+              >
                 {step.done ? "Done" : "Open"}
               </span>
             </button>
           ))}
           <p className="text-xs text-gray-500">
-            Final step is marked done after you export at least one beneficiary key package.
+            Final step is marked done after you export at least one beneficiary
+            key package.
           </p>
         </CardBody>
       </Card>
@@ -774,7 +859,12 @@ const Dashboard = () => {
               <FiActivity />
               <h2 className="text-xl font-semibold">Recent Activity</h2>
             </div>
-            <Button className={buttonClasses.ghostSm} onPress={() => navigate("/vaults")}>View Access Vaults</Button>
+            <Button
+              className={buttonClasses.ghostSm}
+              onPress={() => navigate("/vaults")}
+            >
+              View Access Vaults
+            </Button>
           </CardHeader>
           <CardBody className="p-0">
             {loading || activityLoading ? (
@@ -791,9 +881,12 @@ const Dashboard = () => {
                   <div className="mx-auto mb-4 w-14 h-14 rounded-2xl border border-gray-700/80 bg-gray-900/70 flex items-center justify-center">
                     <FiActivity className="text-gray-300 text-xl" />
                   </div>
-                  <h3 className="text-xl font-semibold mb-2">No recent activity yet</h3>
+                  <h3 className="text-xl font-semibold mb-2">
+                    No recent activity yet
+                  </h3>
                   <p className="text-sm text-gray-400">
-                    Activity will appear after you create a vault, upload a document, mint a pass, or approve a request.
+                    Activity will appear after you create a vault, upload a
+                    document, mint a pass, or approve a request.
                   </p>
                   <div className="mt-5 flex flex-col sm:flex-row items-center justify-center gap-3">
                     <Button
@@ -816,14 +909,19 @@ const Dashboard = () => {
             ) : (
               <div className="divide-y divide-gray-800">
                 {recentActivity.map((activity, index) => (
-                  <div key={index} className="p-4 hover:bg-gray-800/20 transition-colors">
+                  <div
+                    key={index}
+                    className="p-4 hover:bg-gray-800/20 transition-colors"
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          activity.status === "success"
-                            ? "bg-green-500/20"
-                            : "bg-yellow-500/20"
-                        }`}>
+                        <div
+                          className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            activity.status === "success"
+                              ? "bg-green-500/20"
+                              : "bg-yellow-500/20"
+                          }`}
+                        >
                           {activity.status === "success" ? (
                             <FiCheckCircle className="text-green-400" />
                           ) : (
@@ -832,18 +930,27 @@ const Dashboard = () => {
                         </div>
                         <div>
                           <p className="font-medium">{activity.action}</p>
-                          <p className="text-sm text-gray-400">{activity.actor}</p>
+                          <p className="text-sm text-gray-400">
+                            {activity.actor}
+                          </p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="text-sm">
                           {activity.timestamp
-                            ? formatDistanceToNow(new Date(activity.timestamp * 1000), { addSuffix: true })
+                            ? formatDistanceToNow(
+                                new Date(activity.timestamp * 1000),
+                                { addSuffix: true }
+                              )
                             : "-"}
                         </p>
                         <div className="flex items-center justify-end gap-2 mt-1">
                           <Chip
-                            color={activity.status === "success" ? "success" : "warning"}
+                            color={
+                              activity.status === "success"
+                                ? "success"
+                                : "warning"
+                            }
                             variant="flat"
                             size="sm"
                           >
@@ -851,7 +958,10 @@ const Dashboard = () => {
                           </Chip>
                           {activity.txHash && (
                             <a
-                              href={getExplorerTxUrl(activity.txHash, activity.network)}
+                              href={getExplorerTxUrl(
+                                activity.txHash,
+                                activity.network
+                              )}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-xs text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
@@ -876,7 +986,10 @@ const Dashboard = () => {
             </CardHeader>
             <CardBody className="space-y-3">
               <Link to="/vaults?create=true">
-                <Button fullWidth className={`${buttonClasses.primaryMd} !h-12 justify-between`}>
+                <Button
+                  fullWidth
+                  className={`${buttonClasses.primaryMd} !h-12 justify-between`}
+                >
                   <span className="flex items-center gap-3">
                     <FiShield />
                     Create Access Vault
@@ -885,7 +998,10 @@ const Dashboard = () => {
                 </Button>
               </Link>
               <Link to="/documents">
-                <Button fullWidth className={`${buttonClasses.ghostMd} !h-11 justify-between`}>
+                <Button
+                  fullWidth
+                  className={`${buttonClasses.ghostMd} !h-11 justify-between`}
+                >
                   <span className="flex items-center gap-3">
                     <FiFile />
                     Upload Legacy File
@@ -894,7 +1010,10 @@ const Dashboard = () => {
                 </Button>
               </Link>
               <Link to="/nfts">
-                <Button fullWidth className={`${buttonClasses.ghostMd} !h-11 justify-between`}>
+                <Button
+                  fullWidth
+                  className={`${buttonClasses.ghostMd} !h-11 justify-between`}
+                >
                   <span className="flex items-center gap-3">
                     <FiKey />
                     Mint Beneficiary Pass
@@ -903,7 +1022,10 @@ const Dashboard = () => {
                 </Button>
               </Link>
               <Link to="/access">
-                <Button fullWidth className={`${buttonClasses.ghostMd} !h-11 justify-between`}>
+                <Button
+                  fullWidth
+                  className={`${buttonClasses.ghostMd} !h-11 justify-between`}
+                >
                   <span className="flex items-center gap-3">
                     <FiUsers />
                     Open My Access View
@@ -912,7 +1034,10 @@ const Dashboard = () => {
                 </Button>
               </Link>
               <Link to="/vaults">
-                <Button fullWidth className={`${buttonClasses.ghostMd} !h-11 justify-between`}>
+                <Button
+                  fullWidth
+                  className={`${buttonClasses.ghostMd} !h-11 justify-between`}
+                >
                   <span className="flex items-center gap-3">
                     <FiUsers />
                     Manage Vaults
@@ -921,7 +1046,8 @@ const Dashboard = () => {
                 </Button>
               </Link>
               <p className="text-xs text-gray-500 px-1">
-                Start with vault creation, then upload files and assign guardians from vault setup.
+                Start with vault creation, then upload files and assign
+                guardians from vault setup.
               </p>
             </CardBody>
           </Card>
@@ -933,9 +1059,16 @@ const Dashboard = () => {
             <CardHeader className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <FiCheckCircle className="mt-0.5 flex-shrink-0" />
-                <h2 className="text-lg font-semibold leading-tight whitespace-nowrap">Approval Queue</h2>
+                <h2 className="text-lg font-semibold leading-tight whitespace-nowrap">
+                  Approval Queue
+                </h2>
               </div>
-              <Chip size="sm" variant="flat" color="warning" className="whitespace-nowrap flex-shrink-0">
+              <Chip
+                size="sm"
+                variant="flat"
+                color="warning"
+                className="whitespace-nowrap flex-shrink-0"
+              >
                 {pendingApprovals.length} Pending
               </Chip>
             </CardHeader>
@@ -950,11 +1083,16 @@ const Dashboard = () => {
                 </>
               ) : pendingApprovals.length === 0 ? (
                 <div className="rounded-xl border border-gray-800/80 bg-gray-900/45 p-4">
-                  <p className="text-sm text-gray-400">No pending approvals assigned to your guardian account.</p>
+                  <p className="text-sm text-gray-400">
+                    No pending approvals assigned to your guardian account.
+                  </p>
                 </div>
               ) : (
                 pendingApprovals.map((item) => (
-                  <div key={item.requestId} className="rounded-xl border border-gray-800 bg-gray-900/45 p-3 space-y-2">
+                  <div
+                    key={item.requestId}
+                    className="rounded-xl border border-gray-800 bg-gray-900/45 p-3 space-y-2"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-medium truncate">{item.vaultName}</p>
@@ -975,7 +1113,10 @@ const Dashboard = () => {
                     <div className="flex items-center justify-between text-xs text-gray-400">
                       <span>{shortenAddress(item.requester)}</span>
                       <span>
-                        Expires {formatDistanceToNow(new Date(item.expiresAt * 1000), { addSuffix: true })}
+                        Expires{" "}
+                        {formatDistanceToNow(new Date(item.expiresAt * 1000), {
+                          addSuffix: true,
+                        })}
                       </span>
                     </div>
                   </div>
@@ -1017,9 +1158,12 @@ const Dashboard = () => {
           ) : vaults.length === 0 ? (
             <div className="rounded-2xl border border-gray-800/80 bg-gray-900/45 p-6 md:p-8">
               <div className="max-w-xl">
-                <h3 className="text-lg font-semibold mb-2">No access vaults yet</h3>
+                <h3 className="text-lg font-semibold mb-2">
+                  No access vaults yet
+                </h3>
                 <p className="text-sm text-gray-400 mb-4">
-                  Create your first vault to unlock activity tracking, approvals, and document release history.
+                  Create your first vault to unlock activity tracking,
+                  approvals, and document release history.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button
@@ -1027,7 +1171,7 @@ const Dashboard = () => {
                     startContent={<FiShield />}
                     onPress={() => navigate("/vaults?create=true")}
                   >
-                  Create Access Vault
+                    Create Access Vault
                   </Button>
                   <Button
                     className={buttonClasses.ghostSm}
@@ -1042,18 +1186,25 @@ const Dashboard = () => {
           ) : (
             vaults.map((vault) => {
               const docCount = docCountByVault[vault.id] || 0;
-              const progress = maxDocCount > 0 ? Math.round((docCount / maxDocCount) * 100) : 0;
+              const progress =
+                maxDocCount > 0
+                  ? Math.round((docCount / maxDocCount) * 100)
+                  : 0;
 
               return (
                 <div key={vault.id}>
                   <div className="flex justify-between mb-2">
                     <div>
                       <span className="font-medium">{vault.name}</span>
-                      <span className="text-sm text-gray-400 ml-3">{docCount} docs</span>
+                      <span className="text-sm text-gray-400 ml-3">
+                        {docCount} docs
+                      </span>
                     </div>
                     <div className="text-right">
                       <p className="font-semibold leading-none">{progress}%</p>
-                      <p className="text-[11px] text-gray-500 mt-1">Relative share</p>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Relative share
+                      </p>
                     </div>
                   </div>
                   <Progress
@@ -1091,14 +1242,12 @@ const Dashboard = () => {
       <div className="mt-8">
         <AuditLogTimeline
           vault={vaults[0]}
-          activities={
-            vaults.map((v) => ({
-              action: `Vault #${v.id} Active`,
-              actor: shortenAddress(v.creator),
-              timestamp: v.createdAt || Math.floor(Date.now() / 1000) - 3600,
-              status: "success" as const,
-            }))
-          }
+          activities={vaults.map((v) => ({
+            action: `Vault #${v.id} Active`,
+            actor: shortenAddress(v.creator),
+            timestamp: v.createdAt || Math.floor(Date.now() / 1000) - 3600,
+            status: "success" as const,
+          }))}
         />
       </div>
     </div>
@@ -1106,4 +1255,3 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
-

@@ -3,6 +3,7 @@
 Welcome to the SpooVault codebase!
 
 ## Onboarding Checklist
+
 1. Fork the repository and create your feature branch: `feature/issue-<num>-description`.
 2. Configure local environment variables in `.env`.
 3. Set up hardhat or rust targets.

@@ -53,12 +53,11 @@ interface CircuitRecord {
 export class IpfsGatewayFetchError extends Error {
   readonly code = "GATEWAY_FETCH_FAILED" as const;
 
-  constructor(
-    public readonly cid: string,
-    public readonly failures: string[]
-  ) {
+  constructor(public readonly cid: string, public readonly failures: string[]) {
     super(
-      `Failed to fetch IPFS content (${cid}): all gateways failed. ${failures.join("; ")}`
+      `Failed to fetch IPFS content (${cid}): all gateways failed. ${failures.join(
+        "; "
+      )}`
     );
     this.name = "IpfsGatewayFetchError";
   }
@@ -180,7 +179,10 @@ const combineAbortSignals = (signals: AbortSignal[]): AbortSignal => {
   return controller.signal;
 };
 
-const readPositiveNumber = (value: number | undefined, fallback: number): number => {
+const readPositiveNumber = (
+  value: number | undefined,
+  fallback: number
+): number => {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
     : fallback;
@@ -197,8 +199,14 @@ export const createIpfsGatewayClient = (
       })
   );
   const gateways = pool.length > 0 ? pool : [...DEFAULT_IPFS_GATEWAYS];
-  const timeoutMs = readPositiveNumber(options.timeoutMs, DEFAULT_GATEWAY_TIMEOUT_MS);
-  const cooldownMs = readPositiveNumber(options.cooldownMs, DEFAULT_CIRCUIT_COOLDOWN_MS);
+  const timeoutMs = readPositiveNumber(
+    options.timeoutMs,
+    DEFAULT_GATEWAY_TIMEOUT_MS
+  );
+  const cooldownMs = readPositiveNumber(
+    options.cooldownMs,
+    DEFAULT_CIRCUIT_COOLDOWN_MS
+  );
   const failureThreshold = readPositiveNumber(
     options.failureThreshold,
     DEFAULT_FAILURE_THRESHOLD
@@ -218,7 +226,9 @@ export const createIpfsGatewayClient = (
   };
 
   const selectGateways = (timestamp: number): string[] => {
-    const healthy = gateways.filter((gateway) => !isCircuitOpen(gateway, timestamp));
+    const healthy = gateways.filter(
+      (gateway) => !isCircuitOpen(gateway, timestamp)
+    );
     return healthy.length > 0 ? healthy : [...gateways];
   };
 
@@ -230,7 +240,9 @@ export const createIpfsGatewayClient = (
     const record = getRecord(gateway);
     const consecutiveFailures = record.consecutiveFailures + 1;
     const openedUntil =
-      consecutiveFailures >= failureThreshold ? timestamp + cooldownMs : record.openedUntil;
+      consecutiveFailures >= failureThreshold
+        ? timestamp + cooldownMs
+        : record.openedUntil;
     circuits.set(gateway, { consecutiveFailures, openedUntil });
   };
 
@@ -262,14 +274,20 @@ export const createIpfsGatewayClient = (
     cid: string,
     parentSignal: AbortSignal,
     init?: RequestInit
-  ): Promise<{ ok: true; response: Response } | { ok: false; detail: string; trip: boolean }> => {
+  ): Promise<
+    | { ok: true; response: Response }
+    | { ok: false; detail: string; trip: boolean }
+  > => {
     if (parentSignal.aborted) {
       return { ok: false, detail: "aborted", trip: false };
     }
 
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
-    const combinedSignal = combineAbortSignals([parentSignal, timeoutController.signal]);
+    const combinedSignal = combineAbortSignals([
+      parentSignal,
+      timeoutController.signal,
+    ]);
     const restInit = { ...(init ?? {}) };
     delete (restInit as { signal?: AbortSignal }).signal;
 
@@ -288,7 +306,8 @@ export const createIpfsGatewayClient = (
         trip: shouldTripCircuit(response.status),
       };
     } catch (error) {
-      const timedOut = timeoutController.signal.aborted && !parentSignal.aborted;
+      const timedOut =
+        timeoutController.signal.aborted && !parentSignal.aborted;
       if (timedOut) {
         return { ok: false, detail: "timeout", trip: true };
       }
@@ -302,7 +321,10 @@ export const createIpfsGatewayClient = (
     }
   };
 
-  const fetchFile = async (hash: string, init?: RequestInit): Promise<Response> => {
+  const fetchFile = async (
+    hash: string,
+    init?: RequestInit
+  ): Promise<Response> => {
     const cid = normalizeIpfsCid(hash);
     if (!cid) {
       throw new Error("IPFS CID is required");
@@ -325,7 +347,9 @@ export const createIpfsGatewayClient = (
       parentController.abort();
       if (!settled && settleReject) {
         settled = true;
-        settleReject(new DOMException("The operation was aborted.", "AbortError"));
+        settleReject(
+          new DOMException("The operation was aborted.", "AbortError")
+        );
       }
     };
 
@@ -337,7 +361,11 @@ export const createIpfsGatewayClient = (
       return await new Promise<Response>((resolve, reject) => {
         settleReject = reject;
 
-        const failOne = (gateway: string, detail: string, trip: boolean): void => {
+        const failOne = (
+          gateway: string,
+          detail: string,
+          trip: boolean
+        ): void => {
           if (settled) {
             return;
           }
@@ -353,19 +381,21 @@ export const createIpfsGatewayClient = (
         };
 
         for (const gateway of candidates) {
-          void fetchOne(gateway, cid, parentController.signal, init).then((result) => {
-            if (settled) {
-              return;
+          void fetchOne(gateway, cid, parentController.signal, init).then(
+            (result) => {
+              if (settled) {
+                return;
+              }
+              if (result.ok) {
+                settled = true;
+                recordSuccess(gateway);
+                parentController.abort();
+                resolve(result.response);
+                return;
+              }
+              failOne(gateway, result.detail, result.trip);
             }
-            if (result.ok) {
-              settled = true;
-              recordSuccess(gateway);
-              parentController.abort();
-              resolve(result.response);
-              return;
-            }
-            failOne(gateway, result.detail, result.trip);
-          });
+          );
         }
       });
     } finally {

@@ -7,7 +7,7 @@
     "shrinkLimit": 5000,
     "callSequenceLength": 64,
     "pruneFrequency": 5,
-    "corpusDirectory": "fuzz/medusa/corpus",
+    "corpusDirectory": "corpus",
     "coverageEnabled": false,
     "coverageFormats": [],
     "revertReporterEnabled": false,
@@ -71,8 +71,8 @@
   "compilation": {
     "platform": "crytic-compile",
     "platformConfig": {
-      "target": "fuzz/harness/SpooVaultFuzz.sol",
-      "solcVersion": "",
+      "target": "../harness/SpooVaultFuzz.sol",
+      "solcVersion": "0.8.24",
       "exportDirectory": "",
       "args": []
     }

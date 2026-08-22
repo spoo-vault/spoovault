@@ -281,10 +281,13 @@ function pietrzakChallenge(
 export async function deriveKeyFromVdfOutput(y: bigint): Promise<CryptoKey> {
   const subtle = getSubtle();
   const hash = await subtle.digest("SHA-256", toArrayBuffer(toBytesBE(y)));
-  return subtle.importKey("raw", hash, { name: "AES-GCM", length: 256 }, false, [
-    "encrypt",
-    "decrypt",
-  ]);
+  return subtle.importKey(
+    "raw",
+    hash,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
 }
 
 /** Export raw AES key bytes (for tests / debugging). */

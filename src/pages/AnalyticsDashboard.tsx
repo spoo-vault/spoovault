@@ -49,8 +49,14 @@ const getHeartbeatStatus = (
   now: number
 ): HeartbeatStatus | null => {
   if (!state) return null;
-  const totalDays = Math.max(1, Math.round(state.inactivityPeriod / DAY_SECONDS));
-  const elapsedDays = state.lastProofOfLife > 0 ? (now - state.lastProofOfLife) / DAY_SECONDS : totalDays;
+  const totalDays = Math.max(
+    1,
+    Math.round(state.inactivityPeriod / DAY_SECONDS)
+  );
+  const elapsedDays =
+    state.lastProofOfLife > 0
+      ? (now - state.lastProofOfLife) / DAY_SECONDS
+      : totalDays;
   return {
     daysRemaining: Math.max(0, Math.ceil(totalDays - elapsedDays)),
     totalDays,
@@ -71,7 +77,10 @@ const gradeColorClass: Record<HealthGrade, string> = {
   critical: "text-rose-300",
 };
 
-const gradeChipColor: Record<HealthGrade, "success" | "primary" | "warning" | "danger"> = {
+const gradeChipColor: Record<
+  HealthGrade,
+  "success" | "primary" | "warning" | "danger"
+> = {
   strong: "success",
   fair: "primary",
   weak: "warning",
@@ -86,7 +95,15 @@ const gaugeStroke: Record<HealthGrade, string> = {
 };
 
 const AnalyticsDashboard = () => {
-  const { account, isConnected, connect, provider, signer, isFujiNetwork, ecosystem } = useWeb3();
+  const {
+    account,
+    isConnected,
+    connect,
+    provider,
+    signer,
+    isFujiNetwork,
+    ecosystem,
+  } = useWeb3();
   const prefersReducedMotion = useReducedMotion();
 
   const loadVersionRef = useRef(0);
@@ -94,11 +111,16 @@ const AnalyticsDashboard = () => {
   const [vaults, setVaults] = useState<VaultData[]>([]);
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
-  const [releaseStates, setReleaseStates] = useState<Record<number, VaultReleaseState>>({});
+  const [releaseStates, setReleaseStates] = useState<
+    Record<number, VaultReleaseState>
+  >({});
   const [recordingVaultId, setRecordingVaultId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (isConnected && ((provider && signer && isFujiNetwork) || ecosystem === "stellar")) {
+    if (
+      isConnected &&
+      ((provider && signer && isFujiNetwork) || ecosystem === "stellar")
+    ) {
       if (provider && signer) {
         contractService.initialize(provider, signer);
       }
@@ -147,8 +169,13 @@ const AnalyticsDashboard = () => {
       setReleaseStates(states);
       setActivity(activityData);
     } catch (error) {
-      captureError("analyticsDashboard.loadData", error, { account: account || "" });
-      const message = error instanceof Error ? error.message : "Failed to load analytics data";
+      captureError("analyticsDashboard.loadData", error, {
+        account: account || "",
+      });
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load analytics data";
       toast.error(message);
     } finally {
       if (!options?.silent && loadVersionRef.current === loadVersion) {
@@ -165,14 +192,18 @@ const AnalyticsDashboard = () => {
       await loadAnalytics({ silent: true });
     } catch (error) {
       captureError("analyticsDashboard.recordProofOfLife", error, { vaultId });
-      const message = error instanceof Error ? error.message : "Failed to record heartbeat";
+      const message =
+        error instanceof Error ? error.message : "Failed to record heartbeat";
       toast.error(message);
     } finally {
       setRecordingVaultId(null);
     }
   };
 
-  const nowSec = useMemo(() => Math.floor(Date.now() / 1000), [vaults, releaseStates]);
+  const nowSec = useMemo(
+    () => Math.floor(Date.now() / 1000),
+    [vaults, releaseStates]
+  );
 
   const health = useMemo(
     () => computeSecurityHealth(vaults, documents, releaseStates, nowSec),
@@ -182,7 +213,9 @@ const AnalyticsDashboard = () => {
   const uniqueGuardianCount = useMemo(() => {
     const guardians = new Set<string>();
     vaults.forEach((vault) =>
-      vault.guardians.forEach((guardian) => guardians.add(guardian.toLowerCase()))
+      vault.guardians.forEach((guardian) =>
+        guardians.add(guardian.toLowerCase())
+      )
     );
     return guardians.size;
   }, [vaults]);
@@ -192,7 +225,9 @@ const AnalyticsDashboard = () => {
     vaults.forEach((vault) => {
       const network = vault.network ?? "avalanche";
       if (!byNetwork[network]) byNetwork[network] = new Set<string>();
-      vault.guardians.forEach((guardian) => byNetwork[network].add(guardian.toLowerCase()));
+      vault.guardians.forEach((guardian) =>
+        byNetwork[network].add(guardian.toLowerCase())
+      );
     });
     return Object.entries(byNetwork)
       .map(([network, guardians]) => ({ network, count: guardians.size }))
@@ -209,13 +244,16 @@ const AnalyticsDashboard = () => {
   }, [vaults, documents]);
 
   const activityTimeline = useMemo(() => {
-    const buckets = Array.from({ length: ACTIVITY_WINDOW_DAYS }, (_, index) => ({
-      dayOffset: ACTIVITY_WINDOW_DAYS - 1 - index,
-      label: new Date(
-        (nowSec - (ACTIVITY_WINDOW_DAYS - 1 - index) * DAY_SECONDS) * 1000
-      ).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-      count: 0,
-    }));
+    const buckets = Array.from(
+      { length: ACTIVITY_WINDOW_DAYS },
+      (_, index) => ({
+        dayOffset: ACTIVITY_WINDOW_DAYS - 1 - index,
+        label: new Date(
+          (nowSec - (ACTIVITY_WINDOW_DAYS - 1 - index) * DAY_SECONDS) * 1000
+        ).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        count: 0,
+      })
+    );
     const startIndex = nowSec - ACTIVITY_WINDOW_DAYS * DAY_SECONDS;
     activity.forEach((event) => {
       if (event.timestamp < startIndex) return;
@@ -230,8 +268,14 @@ const AnalyticsDashboard = () => {
 
   const heartbeatRows = useMemo(() => {
     return vaults
-      .map((vault) => ({ vault, status: getHeartbeatStatus(releaseStates[vault.id], nowSec) }))
-      .filter((row): row is { vault: VaultData; status: HeartbeatStatus } => row.status !== null)
+      .map((vault) => ({
+        vault,
+        status: getHeartbeatStatus(releaseStates[vault.id], nowSec),
+      }))
+      .filter(
+        (row): row is { vault: VaultData; status: HeartbeatStatus } =>
+          row.status !== null
+      )
       .sort((a, b) => a.status.daysRemaining - b.status.daysRemaining);
   }, [vaults, releaseStates, nowSec]);
 
@@ -249,8 +293,8 @@ const AnalyticsDashboard = () => {
           </div>
           <h1 className="text-3xl font-bold mb-4">Security Analytics</h1>
           <p className="text-gray-400 mb-8 max-w-2xl mx-auto">
-            Connect your wallet to view your vault security health score, guardian distribution,
-            and dead-man switch deadlines.
+            Connect your wallet to view your vault security health score,
+            guardian distribution, and dead-man switch deadlines.
           </p>
           <Button
             size="lg"
@@ -305,16 +349,20 @@ const AnalyticsDashboard = () => {
               <FiActivity className="text-white text-xl" />
             </div>
             <div>
-              <h1 className="text-2xl lg:text-3xl font-bold">Security Analytics</h1>
+              <h1 className="text-2xl lg:text-3xl font-bold">
+                Security Analytics
+              </h1>
               <p className="text-sm text-gray-400">
-                Live vault health, guardian coverage, and inheritance readiness on{" "}
-                {ecosystem === "stellar" ? "Stellar" : "Avalanche Fuji"}.
+                Live vault health, guardian coverage, and inheritance readiness
+                on {ecosystem === "stellar" ? "Stellar" : "Avalanche Fuji"}.
               </p>
             </div>
           </div>
           <Button
             className={buttonClasses.outlineSm}
-            startContent={<FiRefreshCw className={loading ? "animate-spin" : ""} />}
+            startContent={
+              <FiRefreshCw className={loading ? "animate-spin" : ""} />
+            }
             onPress={() => void loadAnalytics()}
             isDisabled={loading}
           >
@@ -324,7 +372,9 @@ const AnalyticsDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <div className={`lg:col-span-2 p-6 flex flex-col items-center justify-center ${glassCard}`}>
+        <div
+          className={`lg:col-span-2 p-6 flex flex-col items-center justify-center ${glassCard}`}
+        >
           {loading ? (
             <Skeleton className="rounded-full">
               <div className="w-40 h-40 rounded-full bg-default-300" />
@@ -356,11 +406,18 @@ const AnalyticsDashboard = () => {
                       strokeDashoffset:
                         gaugeCircumference * (1 - health.score / 100),
                     }}
-                    transition={{ duration: animationDuration, ease: "easeOut" }}
+                    transition={{
+                      duration: animationDuration,
+                      ease: "easeOut",
+                    }}
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className={`text-4xl font-bold ${gradeColorClass[health.grade]}`}>
+                  <span
+                    className={`text-4xl font-bold ${
+                      gradeColorClass[health.grade]
+                    }`}
+                  >
                     {health.score}
                   </span>
                   <span className="text-xs text-gray-400 uppercase tracking-wider">
@@ -377,8 +434,8 @@ const AnalyticsDashboard = () => {
                 {health.grade}
               </Chip>
               <p className="mt-3 text-xs text-gray-500 text-center max-w-[16rem]">
-                Weighted from guardian quorum (40), encryption strength (30), and heartbeat
-                freshness (30).
+                Weighted from guardian quorum (40), encryption strength (30),
+                and heartbeat freshness (30).
               </p>
             </>
           )}
@@ -417,7 +474,9 @@ const AnalyticsDashboard = () => {
                     <span className="text-gray-300">{component.label}</span>
                     <span className="font-semibold">
                       {component.value}
-                      <span className="text-gray-500 font-normal">/{component.max}</span>
+                      <span className="text-gray-500 font-normal">
+                        /{component.max}
+                      </span>
                     </span>
                   </div>
                   <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
@@ -425,9 +484,15 @@ const AnalyticsDashboard = () => {
                       className={`h-full rounded-full origin-left ${component.barClass}`}
                       initial={{ transform: "scaleX(0)" }}
                       animate={{
-                        transform: `scaleX(${Math.max(component.value / component.max, 0)})`,
+                        transform: `scaleX(${Math.max(
+                          component.value / component.max,
+                          0
+                        )})`,
                       }}
-                      transition={{ duration: animationDuration, ease: "easeOut" }}
+                      transition={{
+                        duration: animationDuration,
+                        ease: "easeOut",
+                      }}
                     />
                   </div>
                 </div>
@@ -442,7 +507,10 @@ const AnalyticsDashboard = () => {
               </div>
               <ul className="space-y-2">
                 {health.recommendations.map((recommendation) => (
-                  <li key={recommendation} className="flex items-start gap-2 text-sm text-gray-400">
+                  <li
+                    key={recommendation}
+                    className="flex items-start gap-2 text-sm text-gray-400"
+                  >
                     <FiArrowUpRight className="mt-0.5 flex-shrink-0 text-brand-300" />
                     <span>{recommendation}</span>
                   </li>
@@ -456,11 +524,21 @@ const AnalyticsDashboard = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Access Vaults", value: vaults.length, icon: <FiShield /> },
-          { label: "Encrypted Documents", value: documents.length, icon: <FiFile /> },
-          { label: "Unique Guardians", value: uniqueGuardianCount, icon: <FiUsers /> },
+          {
+            label: "Encrypted Documents",
+            value: documents.length,
+            icon: <FiFile />,
+          },
+          {
+            label: "Unique Guardians",
+            value: uniqueGuardianCount,
+            icon: <FiUsers />,
+          },
           {
             label: "Next Heartbeat Due",
-            value: upcomingDeadline ? `${upcomingDeadline.status.daysRemaining}d` : "—",
+            value: upcomingDeadline
+              ? `${upcomingDeadline.status.daysRemaining}d`
+              : "—",
             icon: <FiClock />,
           },
         ].map((stat) => (
@@ -501,7 +579,9 @@ const AnalyticsDashboard = () => {
               {documentDistribution.counts.map(({ vault, count }) => (
                 <div key={vault.id}>
                   <div className="flex items-center justify-between mb-1.5 text-sm">
-                    <span className="text-gray-300 truncate pr-2">{vault.name}</span>
+                    <span className="text-gray-300 truncate pr-2">
+                      {vault.name}
+                    </span>
                     <span className="font-semibold flex-shrink-0">{count}</span>
                   </div>
                   <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
@@ -510,10 +590,15 @@ const AnalyticsDashboard = () => {
                       initial={{ transform: "scaleX(0)" }}
                       animate={{
                         transform: `scaleX(${
-                          documentDistribution.max > 0 ? count / documentDistribution.max : 0
+                          documentDistribution.max > 0
+                            ? count / documentDistribution.max
+                            : 0
                         })`,
                       }}
-                      transition={{ duration: animationDuration, ease: "easeOut" }}
+                      transition={{
+                        duration: animationDuration,
+                        ease: "easeOut",
+                      }}
                     />
                   </div>
                 </div>
@@ -548,11 +633,19 @@ const AnalyticsDashboard = () => {
                       className="w-full max-w-[1.75rem] rounded-t-md bg-gradient-to-t from-brand-800 to-brand-500 origin-bottom"
                       initial={{ transform: "scaleY(0)" }}
                       animate={{ transform: "scaleY(1)" }}
-                      transition={{ duration: animationDuration, ease: "easeOut" }}
-                      style={{
-                        height: `${Math.max((bucket.count / activityTimeline.max) * 100, 2)}%`,
+                      transition={{
+                        duration: animationDuration,
+                        ease: "easeOut",
                       }}
-                      title={`${bucket.count} event${bucket.count === 1 ? "" : "s"} on ${bucket.label}`}
+                      style={{
+                        height: `${Math.max(
+                          (bucket.count / activityTimeline.max) * 100,
+                          2
+                        )}%`,
+                      }}
+                      title={`${bucket.count} event${
+                        bucket.count === 1 ? "" : "s"
+                      } on ${bucket.label}`}
                     />
                   </div>
                   <span className="text-[9px] text-gray-500 truncate w-full text-center mt-1.5">
@@ -603,9 +696,12 @@ const AnalyticsDashboard = () => {
                     className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3"
                   >
                     <div className="flex items-center justify-between gap-2 text-sm">
-                      <span className="truncate pr-2 font-medium">{vault.name}</span>
+                      <span className="truncate pr-2 font-medium">
+                        {vault.name}
+                      </span>
                       <span className="flex-shrink-0 text-gray-400">
-                        {vault.approvalThreshold}-of-{vault.guardians.length} quorum
+                        {vault.approvalThreshold}-of-{vault.guardians.length}{" "}
+                        quorum
                       </span>
                     </div>
                     <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
@@ -618,7 +714,10 @@ const AnalyticsDashboard = () => {
                             1
                           )})`,
                         }}
-                        transition={{ duration: animationDuration, ease: "easeOut" }}
+                        transition={{
+                          duration: animationDuration,
+                          ease: "easeOut",
+                        }}
                       />
                     </div>
                   </div>
@@ -648,7 +747,12 @@ const AnalyticsDashboard = () => {
               {heartbeatRows.map(({ vault, status }) => {
                 const progress =
                   status.totalDays > 0
-                    ? Math.min(((status.totalDays - status.daysRemaining) / status.totalDays) * 100, 100)
+                    ? Math.min(
+                        ((status.totalDays - status.daysRemaining) /
+                          status.totalDays) *
+                          100,
+                        100
+                      )
                     : 100;
                 return (
                   <div
@@ -656,17 +760,34 @@ const AnalyticsDashboard = () => {
                     className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 space-y-2.5"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate pr-2 text-sm font-medium">{vault.name}</span>
+                      <span className="truncate pr-2 text-sm font-medium">
+                        {vault.name}
+                      </span>
                       {status.triggered ? (
-                        <Chip size="sm" variant="flat" color="warning" startContent={<FiClock />}>
+                        <Chip
+                          size="sm"
+                          variant="flat"
+                          color="warning"
+                          startContent={<FiClock />}
+                        >
                           Triggered
                         </Chip>
                       ) : status.daysRemaining <= 7 ? (
-                        <Chip size="sm" variant="flat" color="danger" startContent={<FiAlertTriangle />}>
+                        <Chip
+                          size="sm"
+                          variant="flat"
+                          color="danger"
+                          startContent={<FiAlertTriangle />}
+                        >
                           {status.daysRemaining}d left
                         </Chip>
                       ) : (
-                        <Chip size="sm" variant="flat" color="success" startContent={<FiCheckCircle />}>
+                        <Chip
+                          size="sm"
+                          variant="flat"
+                          color="success"
+                          startContent={<FiCheckCircle />}
+                        >
                           {status.daysRemaining}d left
                         </Chip>
                       )}
@@ -682,7 +803,10 @@ const AnalyticsDashboard = () => {
                         }`}
                         initial={{ transform: "scaleX(0)" }}
                         animate={{ transform: `scaleX(${progress / 100})` }}
-                        transition={{ duration: animationDuration, ease: "easeOut" }}
+                        transition={{
+                          duration: animationDuration,
+                          ease: "easeOut",
+                        }}
                       />
                     </div>
                     {ecosystem === "avalanche" && (

@@ -53,7 +53,10 @@ export const computeSecurityHealth = (
   let vssCovered = 0;
   let multiPartyCovered = 0;
   documents.forEach((doc) => {
-    if (parseEncryptedMetadataPayload(doc.encryptedMetadata).commitments.length > 0) {
+    if (
+      parseEncryptedMetadataPayload(doc.encryptedMetadata).commitments.length >
+      0
+    ) {
       vssCovered += 1;
     }
     if (doc.requiredAccess >= 2) {
@@ -125,7 +128,9 @@ export const computeSecurityHealth = (
   }
   if (staleVaultCount > 0) {
     recommendations.push(
-      `${staleVaultCount} vault ${staleVaultCount === 1 ? "heartbeat is" : "heartbeats are"} stale or missing. Record proof of life to keep the dead-man switch armed safely.`
+      `${staleVaultCount} vault ${
+        staleVaultCount === 1 ? "heartbeat is" : "heartbeats are"
+      } stale or missing. Record proof of life to keep the dead-man switch armed safely.`
     );
   }
 
@@ -133,10 +138,10 @@ export const computeSecurityHealth = (
     score >= 80
       ? "strong"
       : score >= 55
-        ? "fair"
-        : score >= 30
-          ? "weak"
-          : "critical";
+      ? "fair"
+      : score >= 30
+      ? "weak"
+      : "critical";
 
   return {
     score,

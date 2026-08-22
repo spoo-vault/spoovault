@@ -5,8 +5,16 @@ import { clientKeyringService } from "./clientKeyring.service";
  * Injecting this makes the manager fully testable without a DOM.
  */
 export interface SessionLockPlatform {
-  addEventListener(target: "window" | "document", type: string, handler: () => void): void;
-  removeEventListener(target: "window" | "document", type: string, handler: () => void): void;
+  addEventListener(
+    target: "window" | "document",
+    type: string,
+    handler: () => void
+  ): void;
+  removeEventListener(
+    target: "window" | "document",
+    type: string,
+    handler: () => void
+  ): void;
   getVisibilityState(): "visible" | "hidden";
   getRandomValues(buf: Uint8Array): Uint8Array;
   setTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout>;
@@ -55,7 +63,10 @@ export function clampIdleTimeout(ms?: number): number {
  * original key material cannot be recovered from memory after the reference is
  * released. This satisfies the "memory zeroing" requirement for decrypted keys.
  */
-export function zeroKeyBuffer(buf: Uint8Array, platform: SessionLockPlatform = defaultPlatform): void {
+export function zeroKeyBuffer(
+  buf: Uint8Array,
+  platform: SessionLockPlatform = defaultPlatform
+): void {
   if (!buf || buf.length === 0) return;
   platform.getRandomValues(buf);
 }
@@ -125,7 +136,11 @@ export class SessionLockManager {
     for (const ev of ACTIVITY_EVENTS) {
       this.platform.addEventListener("window", ev, this.activityHandler);
     }
-    this.platform.addEventListener("document", "visibilitychange", this.visibilityHandler);
+    this.platform.addEventListener(
+      "document",
+      "visibilitychange",
+      this.visibilityHandler
+    );
     this.platform.addEventListener("window", "blur", this.blurHandler);
     this.resetIdleTimer();
   }
@@ -136,7 +151,11 @@ export class SessionLockManager {
     for (const ev of ACTIVITY_EVENTS) {
       this.platform.removeEventListener("window", ev, this.activityHandler);
     }
-    this.platform.removeEventListener("document", "visibilitychange", this.visibilityHandler);
+    this.platform.removeEventListener(
+      "document",
+      "visibilitychange",
+      this.visibilityHandler
+    );
     this.platform.removeEventListener("window", "blur", this.blurHandler);
     this.clearIdleTimer();
   }
@@ -145,7 +164,10 @@ export class SessionLockManager {
   resetIdleTimer(): void {
     this.clearIdleTimer();
     if (!this.running) return;
-    this.idleTimer = this.platform.setTimeout(() => this.lockNow(), this.idleTimeoutMs);
+    this.idleTimer = this.platform.setTimeout(
+      () => this.lockNow(),
+      this.idleTimeoutMs
+    );
   }
 
   private clearIdleTimer(): void {

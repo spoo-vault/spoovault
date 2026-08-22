@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
-import {
-  Button,
-  Avatar,
-  Tooltip,
-} from "@heroui/react";
+import { Button, Avatar, Tooltip } from "@heroui/react";
 import {
   FiHome,
   FiShield,
@@ -31,7 +27,17 @@ import BrandLogo from "../components/BrandLogo";
 const AppLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { account, isConnected, disconnect, isFujiNetwork, switchToFuji, provider, signer, ecosystem, setEcosystem } = useWeb3();
+  const {
+    account,
+    isConnected,
+    disconnect,
+    isFujiNetwork,
+    switchToFuji,
+    provider,
+    signer,
+    ecosystem,
+    setEcosystem,
+  } = useWeb3();
   const [nickname, setNickname] = useState("");
   const [desktopMenuOpen, setDesktopMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -64,10 +70,16 @@ const AppLayout = () => {
       }
     };
 
-    window.addEventListener("spoovault-profile-updated", handleProfileUpdate as EventListener);
+    window.addEventListener(
+      "spoovault-profile-updated",
+      handleProfileUpdate as EventListener
+    );
     window.addEventListener("storage", handleStorage);
     return () => {
-      window.removeEventListener("spoovault-profile-updated", handleProfileUpdate as EventListener);
+      window.removeEventListener(
+        "spoovault-profile-updated",
+        handleProfileUpdate as EventListener
+      );
       window.removeEventListener("storage", handleStorage);
     };
   }, []);
@@ -89,6 +101,7 @@ const AppLayout = () => {
     { path: "/vaults", label: "Vaults", icon: FiShield },
     { path: "/documents", label: "Docs", icon: FiFile },
     { path: "/access", label: "Access", icon: FiUnlock },
+    { path: "/nfts", label: "Passes", icon: FiKey },
     { path: "/docs", label: "Guide", icon: FiBook },
   ];
 
@@ -109,7 +122,8 @@ const AppLayout = () => {
     navigate("/vaults?create=true");
   };
 
-  const displayName = nickname || (account ? shortenAddress(account, 4) : "Guest");
+  const displayName =
+    nickname || (account ? shortenAddress(account, 4) : "Guest");
 
   type ProfileMenuTone = "default" | "warning" | "danger";
   type ProfileMenuItem = {
@@ -144,12 +158,18 @@ const AppLayout = () => {
       },
       {
         key: "ecosystem",
-        label: `Switch to ${ecosystem === "avalanche" ? "Stellar" : "Avalanche"}`,
+        label: `Switch to ${
+          ecosystem === "avalanche" ? "Stellar" : "Avalanche"
+        }`,
         tone: "default",
         onClick: () => {
           const next = ecosystem === "avalanche" ? "stellar" : "avalanche";
           setEcosystem(next);
-          toast.success(`Switched to ${next === "avalanche" ? "Avalanche" : "Stellar"} ecosystem`);
+          toast.success(
+            `Switched to ${
+              next === "avalanche" ? "Avalanche" : "Stellar"
+            } ecosystem`
+          );
         },
       },
       ...(ecosystem === "stellar" || isFujiNetwork
@@ -169,7 +189,15 @@ const AppLayout = () => {
         onClick: disconnect,
       },
     ],
-    [account, disconnect, isFujiNetwork, navigate, switchToFuji, ecosystem, setEcosystem]
+    [
+      account,
+      disconnect,
+      isFujiNetwork,
+      navigate,
+      switchToFuji,
+      ecosystem,
+      setEcosystem,
+    ]
   );
 
   useEffect(() => {
@@ -185,7 +213,10 @@ const AppLayout = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem("spoovault-desktop-sidebar-expanded", desktopSidebarExpanded ? "1" : "0");
+      localStorage.setItem(
+        "spoovault-desktop-sidebar-expanded",
+        desktopSidebarExpanded ? "1" : "0"
+      );
     } catch {
       // ignore storage errors
     }
@@ -211,7 +242,8 @@ const AppLayout = () => {
         if (ecosystem === "avalanche") {
           contractService.initialize(provider!, signer ?? undefined);
         }
-        const approvals = await contractService.fetchPendingApprovalsForGuardian(account, 20);
+        const approvals =
+          await contractService.fetchPendingApprovalsForGuardian(account, 20);
         if (!cancelled) {
           setPendingApprovalCount(approvals.length);
         }
@@ -229,7 +261,15 @@ const AppLayout = () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [account, isConnected, provider, signer, isFujiNetwork, ecosystem, location.pathname]);
+  }, [
+    account,
+    isConnected,
+    provider,
+    signer,
+    isFujiNetwork,
+    ecosystem,
+    location.pathname,
+  ]);
 
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
@@ -304,7 +344,12 @@ const AppLayout = () => {
               const Icon = item.icon;
               const active = isActive(item.path);
               return (
-                <Tooltip key={`rail-tooltip-${item.path}`} content={item.label} placement="right" delay={120}>
+                <Tooltip
+                  key={`rail-tooltip-${item.path}`}
+                  content={item.label}
+                  placement="right"
+                  delay={120}
+                >
                   <Link
                     key={`rail-${item.path}`}
                     to={item.path}
@@ -322,7 +367,11 @@ const AppLayout = () => {
           </nav>
 
           <div className="mt-3 w-full space-y-2 border-t border-gray-800/70 pt-3">
-            <Tooltip content="Create access vault" placement="right" delay={120}>
+            <Tooltip
+              content="Create access vault"
+              placement="right"
+              delay={120}
+            >
               <Button
                 isIconOnly
                 onPress={handleCreateVault}
@@ -339,7 +388,11 @@ const AppLayout = () => {
             </Tooltip>
 
             {desktopProfileItem && (
-              <Tooltip content={desktopProfileItem.label} placement="right" delay={120}>
+              <Tooltip
+                content={desktopProfileItem.label}
+                placement="right"
+                delay={120}
+              >
                 <Link
                   to={desktopProfileItem.path}
                   className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl border transition-all ${
@@ -356,197 +409,213 @@ const AppLayout = () => {
         </div>
 
         {desktopSidebarExpanded && (
-        <div className="flex-1 min-w-0 p-3 flex flex-col">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex-1 min-w-0 rounded-2xl border border-gray-800/80 bg-gray-900/60 px-3 py-3">
-              <p className="text-sm font-semibold truncate">SpooVault</p>
-              <p className="text-xs text-gray-400 truncate">spoovault.web.app</p>
-            </div>
-            <button
-              type="button"
-              onClick={toggleDesktopSidebar}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-700/80 bg-gray-900/85 text-gray-300 hover:border-gray-500 hover:text-white transition-colors"
-              aria-label="Collapse sidebar"
-            >
-              <FiChevronLeft className="text-[15px]" />
-            </button>
-          </div>
-
-          <div className="mt-3 rounded-xl border border-gray-800/80 bg-gray-900/65 px-2 py-2 flex flex-col gap-2.5">
-            <div className="flex items-center justify-between gap-1 bg-black/45 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setEcosystem("avalanche")}
-                className={`flex-1 py-1.5 text-center text-xs rounded-lg font-semibold transition-all duration-200 ${
-                  ecosystem === "avalanche"
-                    ? "bg-brand-700/80 text-white shadow-md border border-brand-600/30"
-                    : "text-gray-500 hover:text-gray-300"
-                }`}
-              >
-                Avalanche
-              </button>
-              <button
-                type="button"
-                onClick={() => setEcosystem("stellar")}
-                className={`flex-1 py-1.5 text-center text-xs rounded-lg font-semibold transition-all duration-200 ${
-                  ecosystem === "stellar"
-                    ? "bg-purple-800/80 text-white shadow-md border border-purple-600/30"
-                    : "text-gray-500 hover:text-gray-300"
-                }`}
-              >
-                Stellar
-              </button>
-            </div>
-            
-            <div className="flex items-center justify-between px-1.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <span
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    !isConnected
-                      ? "bg-gray-500"
-                      : ecosystem === "stellar"
-                      ? "bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.6)]"
-                      : isFujiNetwork
-                      ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]"
-                      : "bg-yellow-400"
-                  }`}
-                />
-                <p
-                  className={`text-[11px] font-semibold truncate ${
-                    !isConnected
-                      ? "text-gray-400"
-                      : ecosystem === "stellar"
-                      ? "text-purple-300"
-                      : isFujiNetwork
-                      ? "text-green-300"
-                      : "text-yellow-300"
-                  }`}
-                >
-                  {!isConnected
-                    ? "Wallet Disconnected"
-                    : ecosystem === "stellar"
-                    ? "Stellar Soroban Online"
-                    : isFujiNetwork
-                    ? "Avalanche Fuji Online"
-                    : "Wrong Network"}
+          <div className="flex-1 min-w-0 p-3 flex flex-col">
+            <div className="mb-3 flex items-center gap-2">
+              <div className="flex-1 min-w-0 rounded-2xl border border-gray-800/80 bg-gray-900/60 px-3 py-3">
+                <p className="text-sm font-semibold truncate">SpooVault</p>
+                <p className="text-xs text-gray-400 truncate">
+                  spoovault.web.app
                 </p>
               </div>
-              {isConnected && ecosystem === "avalanche" && !isFujiNetwork && (
+              <button
+                type="button"
+                onClick={toggleDesktopSidebar}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-700/80 bg-gray-900/85 text-gray-300 hover:border-gray-500 hover:text-white transition-colors"
+                aria-label="Collapse sidebar"
+              >
+                <FiChevronLeft className="text-[15px]" />
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-gray-800/80 bg-gray-900/65 px-2 py-2 flex flex-col gap-2.5">
+              <div className="flex items-center justify-between gap-1 bg-black/45 p-1 rounded-xl">
                 <button
                   type="button"
-                  onClick={switchToFuji}
-                  className="text-[10px] font-semibold text-yellow-300 hover:text-yellow-200"
-                >
-                  Switch
-                </button>
-              )}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={openApprovalQueue}
-            className={`mt-2 w-full rounded-xl border px-3 py-2.5 flex items-center justify-between transition-colors ${
-              pendingApprovalCount > 0
-                ? "border-brand-700/55 bg-brand-700/12 text-brand-200"
-                : "border-gray-800/80 bg-gray-900/65 text-gray-300 hover:bg-gray-900/85"
-            }`}
-          >
-            <span className="flex items-center gap-2 text-sm font-medium">
-              <FiBell className={pendingApprovalCount > 0 ? "text-brand-300" : "text-gray-500"} />
-              <span>Approval Queue</span>
-            </span>
-            <span
-              className={`min-w-[1.6rem] h-6 px-2 rounded-full text-xs font-semibold inline-flex items-center justify-center ${
-                pendingApprovalCount > 0
-                  ? "bg-brand-700/35 text-brand-200"
-                  : "bg-gray-800 text-gray-400"
-              }`}
-            >
-              {pendingApprovalCount}
-            </span>
-          </button>
-
-          <nav className="mt-3 space-y-1.5">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.path);
-              return (
-                <Link
-                  key={`panel-${item.path}`}
-                  to={item.path}
-                  className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-all ${
-                    active
-                      ? "border-gray-700/90 bg-white/10 text-white"
-                      : "border-transparent text-gray-400 hover:text-gray-100 hover:border-gray-800/80 hover:bg-gray-900/70"
+                  onClick={() => setEcosystem("avalanche")}
+                  className={`flex-1 py-1.5 text-center text-xs rounded-lg font-semibold transition-all duration-200 ${
+                    ecosystem === "avalanche"
+                      ? "bg-brand-700/80 text-white shadow-md border border-brand-600/30"
+                      : "text-gray-500 hover:text-gray-300"
                   }`}
                 >
-                  <Icon className={`text-base ${active ? "text-brand-300" : "text-gray-500"}`} />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="mt-3 pt-3 space-y-3 border-t border-gray-800/70">
-            <Button
-              onPress={handleCreateVault}
-              isDisabled={!canCreateVault}
-              className={
-                canCreateVault
-                  ? `w-full ${buttonClasses.outlineSm}`
-                  : "w-full h-12 rounded-full border border-gray-800/80 bg-gray-900/70 text-gray-500"
-              }
-              startContent={<FiPlus className="text-base" />}
-            >
-              Create Access Vault
-            </Button>
-
-            {isConnected ? (
-              <div className="flex items-center gap-2.5 rounded-xl border border-gray-800/80 bg-gray-900/70 p-2.5">
-                <Avatar
-                  className="bg-gradient-to-br from-brand-700 to-brand-900 flex-shrink-0"
-                  name={nickname || account?.substring(2, 6)}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">{displayName}</p>
-                  <p className="text-[11px] text-gray-500 truncate">{shortenAddress(account || "", 4)}</p>
-                </div>
-                <div className="relative" ref={desktopMenuRef}>
-                  <Button
-                    isIconOnly
-                    variant="light"
-                    size="sm"
-                    className="text-gray-400 hover:text-white"
-                    onPress={() => {
-                      setDesktopMenuOpen((open) => !open);
-                      setMobileMenuOpen(false);
-                    }}
-                  >
-                    <FiMoreHorizontal />
-                  </Button>
-                  {desktopMenuOpen && (
-                    <div className="absolute right-0 bottom-10 z-40 w-44 rounded-xl border border-gray-700/80 bg-gray-950/95 p-1 shadow-2xl">
-                      {profileMenuItems.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className={profileMenuItemClass(item.tone)}
-                          onClick={() => {
-                            item.onClick();
-                            setDesktopMenuOpen(false);
-                          }}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  Avalanche
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEcosystem("stellar")}
+                  className={`flex-1 py-1.5 text-center text-xs rounded-lg font-semibold transition-all duration-200 ${
+                    ecosystem === "stellar"
+                      ? "bg-purple-800/80 text-white shadow-md border border-purple-600/30"
+                      : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  Stellar
+                </button>
               </div>
-            ) : null}
+
+              <div className="flex items-center justify-between px-1.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      !isConnected
+                        ? "bg-gray-500"
+                        : ecosystem === "stellar"
+                        ? "bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.6)]"
+                        : isFujiNetwork
+                        ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]"
+                        : "bg-yellow-400"
+                    }`}
+                  />
+                  <p
+                    className={`text-[11px] font-semibold truncate ${
+                      !isConnected
+                        ? "text-gray-400"
+                        : ecosystem === "stellar"
+                        ? "text-purple-300"
+                        : isFujiNetwork
+                        ? "text-green-300"
+                        : "text-yellow-300"
+                    }`}
+                  >
+                    {!isConnected
+                      ? "Wallet Disconnected"
+                      : ecosystem === "stellar"
+                      ? "Stellar Soroban Online"
+                      : isFujiNetwork
+                      ? "Avalanche Fuji Online"
+                      : "Wrong Network"}
+                  </p>
+                </div>
+                {isConnected && ecosystem === "avalanche" && !isFujiNetwork && (
+                  <button
+                    type="button"
+                    onClick={switchToFuji}
+                    className="text-[10px] font-semibold text-yellow-300 hover:text-yellow-200"
+                  >
+                    Switch
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={openApprovalQueue}
+              className={`mt-2 w-full rounded-xl border px-3 py-2.5 flex items-center justify-between transition-colors ${
+                pendingApprovalCount > 0
+                  ? "border-brand-700/55 bg-brand-700/12 text-brand-200"
+                  : "border-gray-800/80 bg-gray-900/65 text-gray-300 hover:bg-gray-900/85"
+              }`}
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <FiBell
+                  className={
+                    pendingApprovalCount > 0
+                      ? "text-brand-300"
+                      : "text-gray-500"
+                  }
+                />
+                <span>Approval Queue</span>
+              </span>
+              <span
+                className={`min-w-[1.6rem] h-6 px-2 rounded-full text-xs font-semibold inline-flex items-center justify-center ${
+                  pendingApprovalCount > 0
+                    ? "bg-brand-700/35 text-brand-200"
+                    : "bg-gray-800 text-gray-400"
+                }`}
+              >
+                {pendingApprovalCount}
+              </span>
+            </button>
+
+            <nav className="mt-3 space-y-1.5">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.path);
+                return (
+                  <Link
+                    key={`panel-${item.path}`}
+                    to={item.path}
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-all ${
+                      active
+                        ? "border-gray-700/90 bg-white/10 text-white"
+                        : "border-transparent text-gray-400 hover:text-gray-100 hover:border-gray-800/80 hover:bg-gray-900/70"
+                    }`}
+                  >
+                    <Icon
+                      className={`text-base ${
+                        active ? "text-brand-300" : "text-gray-500"
+                      }`}
+                    />
+                    <span className="text-sm font-medium">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <div className="mt-3 pt-3 space-y-3 border-t border-gray-800/70">
+              <Button
+                onPress={handleCreateVault}
+                isDisabled={!canCreateVault}
+                className={
+                  canCreateVault
+                    ? `w-full ${buttonClasses.outlineSm}`
+                    : "w-full h-12 rounded-full border border-gray-800/80 bg-gray-900/70 text-gray-500"
+                }
+                startContent={<FiPlus className="text-base" />}
+              >
+                Create Access Vault
+              </Button>
+
+              {isConnected ? (
+                <div className="flex items-center gap-2.5 rounded-xl border border-gray-800/80 bg-gray-900/70 p-2.5">
+                  <Avatar
+                    className="bg-gradient-to-br from-brand-700 to-brand-900 flex-shrink-0"
+                    name={nickname || account?.substring(2, 6)}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">
+                      {displayName}
+                    </p>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {shortenAddress(account || "", 4)}
+                    </p>
+                  </div>
+                  <div className="relative" ref={desktopMenuRef}>
+                    <Button
+                      isIconOnly
+                      variant="light"
+                      size="sm"
+                      className="text-gray-400 hover:text-white"
+                      onPress={() => {
+                        setDesktopMenuOpen((open) => !open);
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      <FiMoreHorizontal />
+                    </Button>
+                    {desktopMenuOpen && (
+                      <div className="absolute right-0 bottom-10 z-40 w-44 rounded-xl border border-gray-700/80 bg-gray-950/95 p-1 shadow-2xl">
+                        {profileMenuItems.map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            className={profileMenuItemClass(item.tone)}
+                            onClick={() => {
+                              item.onClick();
+                              setDesktopMenuOpen(false);
+                            }}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
         )}
 
         {!desktopSidebarExpanded && (
@@ -563,13 +632,20 @@ const AppLayout = () => {
 
       <header className="lg:hidden fixed top-0 inset-x-0 z-40 border-b border-gray-800/80 bg-gray-950/92 backdrop-blur-2xl">
         <div className="h-16 px-3.5 flex items-center gap-2">
-          <Link to="/dashboard" className="min-w-0 flex-1 flex items-center gap-2.5 overflow-hidden">
+          <Link
+            to="/dashboard"
+            className="min-w-0 flex-1 flex items-center gap-2.5 overflow-hidden"
+          >
             <div className="w-9 h-9 rounded-xl bg-white/5 border border-gray-700/60 flex items-center justify-center shadow-lg shadow-brand-900/30">
               <BrandLogo className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-[15px] font-semibold leading-none truncate">SpooVault</p>
-              <p className="text-[11px] text-gray-400 mt-1 truncate">Family Access App</p>
+              <p className="text-[15px] font-semibold leading-none truncate">
+                SpooVault
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1 truncate">
+                Family Access App
+              </p>
             </div>
           </Link>
 
@@ -585,7 +661,11 @@ const AppLayout = () => {
                     : "border-gray-700/75 bg-gray-900/75 hover:border-gray-600 hover:text-gray-100"
                 }`}
               >
-                <FiBell className={`text-[14px] ${pendingApprovalCount > 0 ? "text-brand-300" : ""}`} />
+                <FiBell
+                  className={`text-[14px] ${
+                    pendingApprovalCount > 0 ? "text-brand-300" : ""
+                  }`}
+                />
                 {pendingApprovalCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 min-w-[1rem] h-4 px-1 rounded-full bg-brand-700 text-[10px] font-semibold text-white leading-none inline-flex items-center justify-center">
                     {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
@@ -606,7 +686,11 @@ const AppLayout = () => {
               </Link>
             )}
             {!isConnected ? (
-              <Tooltip content="Wallet not connected" placement="bottom" delay={120}>
+              <Tooltip
+                content="Wallet not connected"
+                placement="bottom"
+                delay={120}
+              >
                 <span className="inline-flex w-2.5 h-2.5 rounded-full bg-gray-500 ring-2 ring-gray-500/20" />
               </Tooltip>
             ) : ecosystem === "stellar" ? (
@@ -695,8 +779,16 @@ const AppLayout = () => {
                       : "border border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800/55"
                   }`}
                 >
-                  <Icon className={`text-[16px] ${active ? "text-brand-300" : "text-gray-500"}`} />
-                  <span className={`text-[10px] leading-none ${active ? "text-brand-300" : "text-gray-500"}`}>
+                  <Icon
+                    className={`text-[16px] ${
+                      active ? "text-brand-300" : "text-gray-500"
+                    }`}
+                  />
+                  <span
+                    className={`text-[10px] leading-none ${
+                      active ? "text-brand-300" : "text-gray-500"
+                    }`}
+                  >
                     {item.label}
                   </span>
                 </Link>

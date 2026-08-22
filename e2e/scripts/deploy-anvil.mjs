@@ -27,7 +27,7 @@ const CHAIN_NAME = "Avalanche Fuji Testnet";
 function loadArtifact() {
   const artifactPath = resolve(
     repoRoot,
-    "artifacts/contracts/SpooVault.sol/SpooVault.json",
+    "artifacts/contracts/SpooVault.sol/SpooVault.json"
   );
   if (!existsSync(artifactPath)) {
     console.log("[deploy-anvil] Hardhat artifact missing, compiling...");
@@ -45,14 +45,14 @@ async function main() {
   const deployer = new Wallet(DEPLOYER_PRIVATE_KEY, provider);
 
   console.log(
-    `[deploy-anvil] Deploying SpooVault to ${RPC_URL} (chainId ${CHAIN_ID})`,
+    `[deploy-anvil] Deploying SpooVault to ${RPC_URL} (chainId ${CHAIN_ID})`
   );
   console.log(`[deploy-anvil] Deployer: ${deployer.address}`);
 
   const factory = new ContractFactory(
     artifact.abi,
     artifact.bytecode,
-    deployer,
+    deployer
   );
   const contract = await factory.deploy();
   await contract.waitForDeployment();

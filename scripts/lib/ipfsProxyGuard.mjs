@@ -19,7 +19,10 @@ export const DEFAULT_ALLOWED_ORIGINS = [
 
 const encoder = new TextEncoder();
 
-export const parseAllowedOrigins = (raw, fallback = DEFAULT_ALLOWED_ORIGINS) => {
+export const parseAllowedOrigins = (
+  raw,
+  fallback = DEFAULT_ALLOWED_ORIGINS
+) => {
   if (raw == null || String(raw).trim() === "") {
     return [...fallback];
   }
@@ -70,7 +73,11 @@ export const hmacSha256Hex = async (secret, message) => {
     false,
     ["sign"]
   );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(message)
+  );
   return toHex(signature);
 };
 
@@ -93,7 +100,9 @@ export const parseSignatureHeader = (value) => {
       parts[trimmed] = "";
       continue;
     }
-    parts[trimmed.slice(0, separator).trim()] = trimmed.slice(separator + 1).trim();
+    parts[trimmed.slice(0, separator).trim()] = trimmed
+      .slice(separator + 1)
+      .trim();
   }
   const timestamp = Number(parts.t);
   const v1 = String(parts.v1 || "").toLowerCase();
@@ -104,7 +113,11 @@ export const parseSignatureHeader = (value) => {
 };
 
 export const timingSafeEqualHex = (left, right) => {
-  if (typeof left !== "string" || typeof right !== "string" || left.length !== right.length) {
+  if (
+    typeof left !== "string" ||
+    typeof right !== "string" ||
+    left.length !== right.length
+  ) {
     return false;
   }
   let mismatch = 0;
@@ -114,7 +127,10 @@ export const timingSafeEqualHex = (left, right) => {
   return mismatch === 0;
 };
 
-export const resolveBodyHash = async ({ body = "", unsignedBody = false } = {}) => {
+export const resolveBodyHash = async ({
+  body = "",
+  unsignedBody = false,
+} = {}) => {
   if (unsignedBody) {
     return UNSIGNED_PAYLOAD;
   }

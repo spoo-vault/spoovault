@@ -51,7 +51,8 @@ describe("Galois Field GF(256) Lookup Table Optimization (Issue #16)", () => {
 
   describe("Shamir's Secret Sharing (SSS) key splitting and reconstruction", () => {
     it("correctly splits and reconstructs a 256-bit AES hex key with 3-of-5 threshold", () => {
-      const secretHex = "4f2a9c1e8b7d6f5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d";
+      const secretHex =
+        "4f2a9c1e8b7d6f5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d";
       const N = 5;
       const K = 3;
 
@@ -89,7 +90,8 @@ describe("Galois Field GF(256) Lookup Table Optimization (Issue #16)", () => {
   });
 
   describe("Feldmann Verifiable Secret Sharing (VSS)", () => {
-    const secretHex = "4f2a9c1e8b7d6f5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d";
+    const secretHex =
+      "4f2a9c1e8b7d6f5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d5a3c1e9b7d";
     const N = 5;
     const K = 3;
 
@@ -113,7 +115,7 @@ describe("Galois Field GF(256) Lookup Table Optimization (Issue #16)", () => {
 
     it("verifyShare returns false for a modified/tampered share value", () => {
       const { shares, commitments } = splitSecretVSS(secretHex, N, K);
-      
+
       // Tamper with the share data (modify last hex char)
       const parts = shares[0].split("-");
       const lastChar = parts[1][parts[1].length - 1];
@@ -159,28 +161,40 @@ describe("Galois Field GF(256) Lookup Table Optimization (Issue #16)", () => {
     it("reconstructSecret is backwards compatible and can reconstruct legacy GF(256) shares", () => {
       // Legacy share generation
       const legacyShares = [
-
         "1-0678d46e9cb08865f1a5f6e8",
         "2-0db1af8a23d46ccbc12a52ef",
         "3-0bfb31057e1082c5cb6ad9c8",
       ];
-      
-      const reconstructed = reconstructSecret([legacyShares[0], legacyShares[1]]);
+
+      const reconstructed = reconstructSecret([
+        legacyShares[0],
+        legacyShares[1],
+      ]);
       // Reconstruction of legacy shares should still work
       expect(reconstructed).toBeDefined();
     });
 
     it("throws error for empty shares or invalid format during reconstruction", () => {
-      expect(() => reconstructSecret([])).toThrow("No shares provided for reconstruction");
+      expect(() => reconstructSecret([])).toThrow(
+        "No shares provided for reconstruction"
+      );
       expect(() => reconstructSecret(["invalid-share"])).toThrow();
     });
 
     it("splitSecretVSS edge cases: invalid parameters", () => {
-      expect(() => splitSecretVSS(secretHex, 3, 5)).toThrow("Threshold cannot exceed total shares");
-      expect(() => splitSecretVSS(secretHex, 5, 0)).toThrow("Threshold must be at least 1");
-      expect(() => splitSecretVSS("123", 5, 3)).toThrow("Secret hex string must have an even length");
+      expect(() => splitSecretVSS(secretHex, 3, 5)).toThrow(
+        "Threshold cannot exceed total shares"
+      );
+      expect(() => splitSecretVSS(secretHex, 5, 0)).toThrow(
+        "Threshold must be at least 1"
+      );
+      expect(() => splitSecretVSS("123", 5, 3)).toThrow(
+        "Secret hex string must have an even length"
+      );
       const hugeSecret = VSS_Q.toString(16).padStart(66, "0");
-      expect(() => splitSecretVSS(hugeSecret, 5, 3)).toThrow("Secret key is too large for the VSS prime field");
+      expect(() => splitSecretVSS(hugeSecret, 5, 3)).toThrow(
+        "Secret key is too large for the VSS prime field"
+      );
     });
 
     it("splitSecretVSS random generation fallback when global crypto is missing", () => {

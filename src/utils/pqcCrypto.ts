@@ -35,12 +35,16 @@ let kemInstance: MlKem768 | null = null;
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i++)
+    binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
 function fromBase64(base64: string): Uint8Array {
-  let sanitized = base64.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  let sanitized = base64
+    .replace(/\s+/g, "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
   while (sanitized.length % 4 !== 0) sanitized += "=";
   const binary = atob(sanitized);
   const out = new Uint8Array(binary.length);
@@ -96,7 +100,8 @@ export async function mlKem768Decapsulate(
   recipientSecretKey: Uint8Array | string
 ): Promise<Uint8Array> {
   const kem = await getMlKem768();
-  const ct = typeof ciphertext === "string" ? fromBase64(ciphertext) : ciphertext;
+  const ct =
+    typeof ciphertext === "string" ? fromBase64(ciphertext) : ciphertext;
   const sk =
     typeof recipientSecretKey === "string"
       ? fromBase64(recipientSecretKey)

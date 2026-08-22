@@ -2,9 +2,9 @@ name: Fuzzing Suite (Echidna / Medusa / Soroban)
 
 on:
   push:
-    branches: [ main, master, dev ]
+    branches: [main, master, dev]
   pull_request:
-    branches: [ main, master, dev ]
+    branches: [main, master, dev]
 
 concurrency:
   group: fuzzing-${{ github.ref }}
@@ -41,10 +41,18 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: "1.22"
 
       - name: Install Medusa
         run: go install github.com/crytic/medusa@latest
+
+      - name: Install crytic-compile and solc
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pip install crytic-compile solc-select
+          solc-select install 0.8.24
+          solc-select use 0.8.24
 
       - name: Install dependencies (for OpenZeppelin imports)
         run: npm install --legacy-peer-deps
@@ -52,7 +60,7 @@ jobs:
       - name: Run Medusa campaign
         run: |
           export PATH="$HOME/go/bin:$PATH"
-          medusa fuzz --config fuzz/medusa/medusa.json
+          cd fuzz/medusa && medusa fuzz --config medusa.json
 
   soroban-fuzz:
     name: Soroban proptest (cargo-fuzz / proptest)

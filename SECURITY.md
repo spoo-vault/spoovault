@@ -61,6 +61,7 @@ If you discover a potential security vulnerability in SpooVault, please **do not
 - **Response SLA**: Initial triage within 48 hours; status updates provided every 5 business days until resolution.
 
 Please include:
+
 - Description of the vulnerability and potential impact.
 - Proof of Concept (PoC) steps or script to reproduce.
 - Any suggested mitigations.

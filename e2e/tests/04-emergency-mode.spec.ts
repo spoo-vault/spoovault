@@ -3,10 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { JsonRpcProvider, Wallet, Contract } from "ethers";
-import {
-  ANVIL_RPC_URL,
-  privateKeyForIndex,
-} from "../wallets";
+import { ANVIL_RPC_URL, privateKeyForIndex } from "../wallets";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
@@ -47,7 +44,7 @@ function loadContractAddress(): string {
   const match = text.match(/VITE_CONTRACT_ADDRESS=(0x[0-9a-fA-F]+)/);
   if (!match) {
     throw new Error(
-      "e2e/.env.e2e not found. Run `node e2e/scripts/deploy-anvil.mjs` first.",
+      "e2e/.env.e2e not found. Run `node e2e/scripts/deploy-anvil.mjs` first."
     );
   }
   return match[1];
@@ -56,7 +53,7 @@ function loadContractAddress(): string {
 async function extractEventId(
   receipt: any,
   contract: Contract,
-  eventName: string,
+  eventName: string
 ): Promise<bigint | undefined> {
   for (const log of receipt.logs) {
     try {
@@ -93,10 +90,14 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
       "Emergency E2E Vault",
       "emergency mode release flow",
       [guardian.address],
-      1,
+      1
     );
     const createReceipt = await createTx.wait();
-    const vaultId = await extractEventId(createReceipt, contract, "VaultCreated");
+    const vaultId = await extractEventId(
+      createReceipt,
+      contract,
+      "VaultCreated"
+    );
     expect(vaultId).toBeDefined();
     expect(vaultId).toBeGreaterThan(0);
 
@@ -106,7 +107,11 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
 
     // 3) Guardian mints an access token for the beneficiary (required to request documents).
     await (
-      await guardianContract.mintAccessToken(vaultId, beneficiary.address, "e2e-emergency-uri")
+      await guardianContract.mintAccessToken(
+        vaultId,
+        beneficiary.address,
+        "e2e-emergency-uri"
+      )
     ).wait();
 
     // 4) Guardian adds a document gated behind EMERGENCY_ONLY release condition.
@@ -115,15 +120,21 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
       "encrypted-meta",
       "ipfs://e2e-emergency-document",
       0,
-      ReleaseCondition.EMERGENCY_ONLY,
+      ReleaseCondition.EMERGENCY_ONLY
     );
     const docReceipt = await docTx.wait();
-    const documentId = await extractEventId(docReceipt, contract, "DocumentAdded");
+    const documentId = await extractEventId(
+      docReceipt,
+      contract,
+      "DocumentAdded"
+    );
     expect(documentId).toBeDefined();
     expect(documentId).toBeGreaterThan(0);
 
     // 5) Beneficiary cannot request access while emergency mode is OFF (ReleaseConditionLocked).
-    await expect(beneficiaryContract.requestAccess(documentId)).rejects.toThrow();
+    await expect(
+      beneficiaryContract.requestAccess(documentId)
+    ).rejects.toThrow();
 
     // 6) Creator triggers emergency mode.
     const emergTx = await contract.setEmergencyMode(vaultId, true);
@@ -134,14 +145,20 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
     // 7) Beneficiary can now request access and the guardian approves.
     const reqTx = await beneficiaryContract.requestAccess(documentId);
     const reqReceipt = await reqTx.wait();
-    const requestId = await extractEventId(reqReceipt, contract, "AccessRequested");
+    const requestId = await extractEventId(
+      reqReceipt,
+      contract,
+      "AccessRequested"
+    );
     expect(requestId).toBeDefined();
     expect(requestId).toBeGreaterThan(0);
 
     await (await guardianContract.approveAccess(requestId)).wait();
 
     // 8) Beneficiary now has active access.
-    expect(await contract.hasActiveAccess(documentId, beneficiary.address)).toBe(true);
+    expect(
+      await contract.hasActiveAccess(documentId, beneficiary.address)
+    ).toBe(true);
   });
 
   test("post-death release unlocks POST_DEATH_ONLY documents after inactivity period", async () => {
@@ -160,10 +177,14 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
       "PostDeath E2E Vault",
       "post-death release flow",
       [guardian.address],
-      1,
+      1
     );
     const createReceipt = await createTx.wait();
-    const vaultId = await extractEventId(createReceipt, contract, "VaultCreated");
+    const vaultId = await extractEventId(
+      createReceipt,
+      contract,
+      "VaultCreated"
+    );
     expect(vaultId).toBeDefined();
 
     // 2) Configure a 1-day inactivity period (minimum allowed by the contract).
@@ -177,7 +198,11 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
     expect(await contract.isGuardian(vaultId, guardian.address)).toBe(true);
 
     await (
-      await guardianContract.mintAccessToken(vaultId, beneficiary.address, "e2e-postdeath-uri")
+      await guardianContract.mintAccessToken(
+        vaultId,
+        beneficiary.address,
+        "e2e-postdeath-uri"
+      )
     ).wait();
 
     const docTx = await guardianContract.addDocumentWithReleaseCondition(
@@ -185,14 +210,20 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
       "encrypted-meta",
       "ipfs://e2e-postdeath-document",
       0,
-      ReleaseCondition.POST_DEATH_ONLY,
+      ReleaseCondition.POST_DEATH_ONLY
     );
     const docReceipt = await docTx.wait();
-    const documentId = await extractEventId(docReceipt, contract, "DocumentAdded");
+    const documentId = await extractEventId(
+      docReceipt,
+      contract,
+      "DocumentAdded"
+    );
     expect(documentId).toBeDefined();
 
     // 4) Beneficiary cannot request access while not post-death.
-    await expect(beneficiaryContract.requestAccess(documentId)).rejects.toThrow();
+    await expect(
+      beneficiaryContract.requestAccess(documentId)
+    ).rejects.toThrow();
 
     // 5) Simulate time passing beyond the inactivity window.
     await increaseTime(provider, DAY * 2);
@@ -204,13 +235,19 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
     // 7) Beneficiary requests access; guardian approves.
     const reqTx = await beneficiaryContract.requestAccess(documentId);
     const reqReceipt = await reqTx.wait();
-    const requestId = await extractEventId(reqReceipt, contract, "AccessRequested");
+    const requestId = await extractEventId(
+      reqReceipt,
+      contract,
+      "AccessRequested"
+    );
     expect(requestId).toBeDefined();
 
     await (await guardianContract.approveAccess(requestId)).wait();
 
     // 8) Beneficiary has active access.
-    expect(await contract.hasActiveAccess(documentId, beneficiary.address)).toBe(true);
+    expect(
+      await contract.hasActiveAccess(documentId, beneficiary.address)
+    ).toBe(true);
   });
 
   test("creator can record proof of life to keep vault in live mode", async () => {
@@ -227,10 +264,14 @@ test.describe("SpooVault — emergency mode & post-death document release (EVM c
       "Heartbeat E2E Vault",
       "proof-of-life flow",
       [guardian.address],
-      1,
+      1
     );
     const createReceipt = await createTx.wait();
-    const vaultId = await extractEventId(createReceipt, contract, "VaultCreated");
+    const vaultId = await extractEventId(
+      createReceipt,
+      contract,
+      "VaultCreated"
+    );
     expect(vaultId).toBeDefined();
 
     // 2) Creator records proof of life.

@@ -3,6 +3,7 @@
 Ensure the following tools are installed to run SpooVault locally.
 
 ## Development Toolkit
+
 - **Node.js**: Version 18+ and npm.
 - **Rust Compiler**: Required for compiling Soroban contracts:
   ```bash

@@ -134,7 +134,8 @@ h6 {
 
 .app-btn {
   border-radius: 14px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease,
+    background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .app-btn:hover:not(:disabled) {
@@ -156,7 +157,9 @@ select {
   border-color: rgba(75, 85, 99, 0.75);
 }
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"])::placeholder,
+input:not([type="checkbox"]):not([type="radio"]):not(
+    [type="range"]
+  )::placeholder,
 textarea::placeholder {
   color: rgba(156, 163, 175, 0.95);
 }
@@ -253,23 +256,41 @@ input[type="file"]::file-selector-button:hover {
 
 /* Animations */
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 @keyframes golden-orbit-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes golden-button-orbit-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes golden-button-line-orbit {
@@ -548,10 +569,14 @@ input[type="file"]::file-selector-button:hover {
   border-radius: 1.1rem;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.2), rgba(228, 65, 66, 0.1) 44%, rgba(9, 9, 13, 0.82) 100%);
+  background: radial-gradient(
+    circle at 32% 26%,
+    rgba(255, 255, 255, 0.2),
+    rgba(228, 65, 66, 0.1) 44%,
+    rgba(9, 9, 13, 0.82) 100%
+  );
   border: 1px solid rgba(233, 120, 108, 0.38);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset,
     0 20px 36px -24px rgba(228, 65, 66, 0.62);
   animation: avax-loader-pulse 1.8s ease-in-out infinite;
 }
@@ -576,7 +601,11 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .landing-splash.landing-variant-02 .landing-splash__blur--top {
-  background: radial-gradient(circle, rgba(83, 170, 255, 0.24), rgba(45, 118, 216, 0));
+  background: radial-gradient(
+    circle,
+    rgba(83, 170, 255, 0.24),
+    rgba(45, 118, 216, 0)
+  );
 }
 
 .landing-splash.landing-variant-02 .landing-splash__blur--left {
@@ -603,10 +632,14 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .landing-splash.landing-variant-02 .landing-splash__logo-shell {
-  background: radial-gradient(circle at 32% 26%, rgba(236, 246, 255, 0.2), rgba(70, 148, 236, 0.12) 44%, rgba(8, 12, 26, 0.84) 100%);
+  background: radial-gradient(
+    circle at 32% 26%,
+    rgba(236, 246, 255, 0.2),
+    rgba(70, 148, 236, 0.12) 44%,
+    rgba(8, 12, 26, 0.84) 100%
+  );
   border: 1px solid rgba(120, 186, 255, 0.34);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset,
     0 20px 36px -24px rgba(64, 149, 255, 0.52);
 }
 
@@ -628,8 +661,7 @@ input[type="file"]::file-selector-button:hover {
 
 .landing-fixed-top.is-elevated .landing-desktop-nav {
   border-color: rgba(103, 128, 176, 0.62) !important;
-  box-shadow:
-    0 34px 48px -30px rgba(0, 0, 0, 0.96),
+  box-shadow: 0 34px 48px -30px rgba(0, 0, 0, 0.96),
     0 0 0 1px rgba(255, 255, 255, 0.06) inset !important;
 }
 
@@ -654,8 +686,11 @@ input[type="file"]::file-selector-button:hover {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 76% 14%, rgba(34, 116, 224, 0.16), transparent 34%),
+  background: radial-gradient(
+      circle at 76% 14%,
+      rgba(34, 116, 224, 0.16),
+      transparent 34%
+    ),
     radial-gradient(circle at 14% 28%, rgba(224, 71, 86, 0.15), transparent 40%),
     radial-gradient(circle at 50% 70%, rgba(13, 23, 49, 0.42), transparent 55%);
   z-index: -1;
@@ -666,7 +701,10 @@ input[type="file"]::file-selector-button:hover {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 0.45px, transparent 0.45px);
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.08) 0.45px,
+    transparent 0.45px
+  );
   background-size: 3px 3px;
   opacity: 0.08;
   z-index: -1;
@@ -677,7 +715,11 @@ input[type="file"]::file-selector-button:hover {
   position: absolute;
   inset: -6px;
   border-radius: 1.25rem;
-  background: linear-gradient(130deg, rgba(65, 98, 154, 0.2), rgba(201, 50, 64, 0.22));
+  background: linear-gradient(
+    130deg,
+    rgba(65, 98, 154, 0.2),
+    rgba(201, 50, 64, 0.22)
+  );
   opacity: 0.5;
   filter: blur(16px);
   z-index: -1;
@@ -685,21 +727,31 @@ input[type="file"]::file-selector-button:hover {
 
 .landing-desktop-nav {
   border-color: rgba(83, 106, 150, 0.45) !important;
-  background: linear-gradient(120deg, rgba(8, 12, 23, 0.92), rgba(11, 17, 31, 0.86)) !important;
-  box-shadow:
-    0 28px 38px -34px rgba(3, 5, 11, 0.95),
+  background: linear-gradient(
+    120deg,
+    rgba(8, 12, 23, 0.92),
+    rgba(11, 17, 31, 0.86)
+  ) !important;
+  box-shadow: 0 28px 38px -34px rgba(3, 5, 11, 0.95),
     0 0 0 1px rgba(255, 255, 255, 0.03) inset !important;
 }
 
 .landing-grid-overlay {
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(90, 108, 146, 0.16) 1px, transparent 1px),
+  background-image: linear-gradient(
+      rgba(90, 108, 146, 0.16) 1px,
+      transparent 1px
+    ),
     linear-gradient(90deg, rgba(90, 108, 146, 0.16) 1px, transparent 1px);
   background-size: 52px 52px;
   opacity: 0.12;
-  mask-image: linear-gradient(to bottom, #000 10%, rgba(0, 0, 0, 0.24) 74%, transparent 100%);
+  mask-image: linear-gradient(
+    to bottom,
+    #000 10%,
+    rgba(0, 0, 0, 0.24) 74%,
+    transparent 100%
+  );
   animation: landing-grid-drift 19s linear infinite;
 }
 
@@ -738,18 +790,33 @@ input[type="file"]::file-selector-button:hover {
 
 .landing-web3-aurora--top {
   top: -8rem;
-  background: linear-gradient(90deg, rgba(225, 63, 65, 0.08), rgba(42, 76, 138, 0.15), rgba(225, 63, 65, 0.09));
+  background: linear-gradient(
+    90deg,
+    rgba(225, 63, 65, 0.08),
+    rgba(42, 76, 138, 0.15),
+    rgba(225, 63, 65, 0.09)
+  );
 }
 
 .landing-web3-aurora--mid {
   top: 30vh;
-  background: linear-gradient(90deg, rgba(24, 60, 120, 0.08), rgba(180, 38, 49, 0.12), rgba(25, 66, 133, 0.08));
+  background: linear-gradient(
+    90deg,
+    rgba(24, 60, 120, 0.08),
+    rgba(180, 38, 49, 0.12),
+    rgba(25, 66, 133, 0.08)
+  );
   animation-duration: 14s;
 }
 
 .landing-web3-aurora--bottom {
   bottom: -10rem;
-  background: linear-gradient(90deg, rgba(173, 33, 42, 0.1), rgba(48, 77, 136, 0.11), rgba(173, 33, 42, 0.1));
+  background: linear-gradient(
+    90deg,
+    rgba(173, 33, 42, 0.1),
+    rgba(48, 77, 136, 0.11),
+    rgba(173, 33, 42, 0.1)
+  );
   animation-duration: 18s;
 }
 
@@ -773,8 +840,7 @@ input[type="file"]::file-selector-button:hover {
   inset: 0;
   border-radius: 9999px;
   border: 1px solid rgba(248, 170, 102, 0.34);
-  box-shadow:
-    0 0 0 1px rgba(242, 132, 77, 0.18) inset,
+  box-shadow: 0 0 0 1px rgba(242, 132, 77, 0.18) inset,
     0 0 30px rgba(237, 126, 69, 0.2);
 }
 
@@ -801,13 +867,24 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .landing-variant-01 .landing-flow-panel {
-  background: linear-gradient(150deg, rgba(8, 16, 32, 0.96), rgba(7, 13, 24, 0.9)) !important;
+  background: linear-gradient(
+    150deg,
+    rgba(8, 16, 32, 0.96),
+    rgba(7, 13, 24, 0.9)
+  ) !important;
 }
 
 .landing-variant-02::before {
-  background:
-    radial-gradient(circle at 78% 10%, rgba(32, 125, 244, 0.26), transparent 34%),
-    radial-gradient(circle at 16% 22%, rgba(61, 109, 202, 0.18), transparent 44%),
+  background: radial-gradient(
+      circle at 78% 10%,
+      rgba(32, 125, 244, 0.26),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 16% 22%,
+      rgba(61, 109, 202, 0.18),
+      transparent 44%
+    ),
     radial-gradient(circle at 52% 72%, rgba(11, 23, 53, 0.5), transparent 58%);
 }
 
@@ -817,22 +894,39 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .landing-variant-02 .landing-grid-overlay {
-  background-image:
-    linear-gradient(rgba(73, 126, 202, 0.15) 1px, transparent 1px),
+  background-image: linear-gradient(
+      rgba(73, 126, 202, 0.15) 1px,
+      transparent 1px
+    ),
     linear-gradient(90deg, rgba(73, 126, 202, 0.15) 1px, transparent 1px);
   opacity: 0.1;
 }
 
 .landing-variant-02 .landing-web3-aurora--top {
-  background: linear-gradient(90deg, rgba(40, 103, 204, 0.14), rgba(58, 140, 248, 0.24), rgba(34, 76, 150, 0.14));
+  background: linear-gradient(
+    90deg,
+    rgba(40, 103, 204, 0.14),
+    rgba(58, 140, 248, 0.24),
+    rgba(34, 76, 150, 0.14)
+  );
 }
 
 .landing-variant-02 .landing-web3-aurora--mid {
-  background: linear-gradient(90deg, rgba(28, 82, 173, 0.15), rgba(31, 140, 242, 0.22), rgba(28, 82, 173, 0.15));
+  background: linear-gradient(
+    90deg,
+    rgba(28, 82, 173, 0.15),
+    rgba(31, 140, 242, 0.22),
+    rgba(28, 82, 173, 0.15)
+  );
 }
 
 .landing-variant-02 .landing-web3-aurora--bottom {
-  background: linear-gradient(90deg, rgba(22, 67, 141, 0.14), rgba(45, 119, 228, 0.2), rgba(22, 67, 141, 0.14));
+  background: linear-gradient(
+    90deg,
+    rgba(22, 67, 141, 0.14),
+    rgba(45, 119, 228, 0.2),
+    rgba(22, 67, 141, 0.14)
+  );
 }
 
 .landing-variant-02 .landing-hero-stage {
@@ -854,7 +948,12 @@ input[type="file"]::file-selector-button:hover {
   width: 42%;
   right: 14%;
   top: -45%;
-  background: linear-gradient(180deg, rgba(93, 182, 255, 0.34), rgba(35, 132, 242, 0.18), rgba(93, 182, 255, 0.08));
+  background: linear-gradient(
+    180deg,
+    rgba(93, 182, 255, 0.34),
+    rgba(35, 132, 242, 0.18),
+    rgba(93, 182, 255, 0.08)
+  );
 }
 
 .landing-variant-02 .landing-hero-meta {
@@ -871,8 +970,11 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .landing-variant-03::before {
-  background:
-    radial-gradient(circle at 78% 8%, rgba(255, 170, 72, 0.18), transparent 34%),
+  background: radial-gradient(
+      circle at 78% 8%,
+      rgba(255, 170, 72, 0.18),
+      transparent 34%
+    ),
     radial-gradient(circle at 12% 22%, rgba(213, 53, 71, 0.22), transparent 42%),
     radial-gradient(circle at 50% 70%, rgba(32, 20, 20, 0.58), transparent 58%);
 }
@@ -883,22 +985,39 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .landing-variant-03 .landing-grid-overlay {
-  background-image:
-    linear-gradient(rgba(181, 110, 57, 0.15) 1px, transparent 1px),
+  background-image: linear-gradient(
+      rgba(181, 110, 57, 0.15) 1px,
+      transparent 1px
+    ),
     linear-gradient(90deg, rgba(181, 110, 57, 0.15) 1px, transparent 1px);
   opacity: 0.09;
 }
 
 .landing-variant-03 .landing-web3-aurora--top {
-  background: linear-gradient(90deg, rgba(168, 86, 38, 0.17), rgba(227, 160, 77, 0.24), rgba(168, 86, 38, 0.17));
+  background: linear-gradient(
+    90deg,
+    rgba(168, 86, 38, 0.17),
+    rgba(227, 160, 77, 0.24),
+    rgba(168, 86, 38, 0.17)
+  );
 }
 
 .landing-variant-03 .landing-web3-aurora--mid {
-  background: linear-gradient(90deg, rgba(125, 44, 34, 0.16), rgba(220, 133, 64, 0.2), rgba(125, 44, 34, 0.16));
+  background: linear-gradient(
+    90deg,
+    rgba(125, 44, 34, 0.16),
+    rgba(220, 133, 64, 0.2),
+    rgba(125, 44, 34, 0.16)
+  );
 }
 
 .landing-variant-03 .landing-web3-aurora--bottom {
-  background: linear-gradient(90deg, rgba(143, 57, 43, 0.17), rgba(201, 130, 66, 0.2), rgba(143, 57, 43, 0.17));
+  background: linear-gradient(
+    90deg,
+    rgba(143, 57, 43, 0.17),
+    rgba(201, 130, 66, 0.2),
+    rgba(143, 57, 43, 0.17)
+  );
 }
 
 .landing-variant-03 .landing-hero-stage {
@@ -908,8 +1027,7 @@ input[type="file"]::file-selector-button:hover {
 
 .landing-variant-03 .landing-hero-edge::before {
   border-color: rgba(238, 156, 88, 0.38);
-  box-shadow:
-    0 0 0 1px rgba(235, 129, 77, 0.2) inset,
+  box-shadow: 0 0 0 1px rgba(235, 129, 77, 0.2) inset,
     0 0 30px rgba(245, 158, 95, 0.24);
 }
 
@@ -918,7 +1036,12 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .landing-variant-03 .landing-hero-beam {
-  background: linear-gradient(180deg, rgba(244, 177, 86, 0.34), rgba(204, 77, 52, 0.2), rgba(244, 177, 86, 0.08));
+  background: linear-gradient(
+    180deg,
+    rgba(244, 177, 86, 0.34),
+    rgba(204, 77, 52, 0.2),
+    rgba(244, 177, 86, 0.08)
+  );
 }
 
 .landing-variant-03 .landing-hero-meta {
@@ -974,7 +1097,12 @@ input[type="file"]::file-selector-button:hover {
   height: 170%;
   right: 22%;
   top: -38%;
-  background: linear-gradient(180deg, rgba(62, 110, 196, 0.26), rgba(220, 57, 73, 0.16), rgba(62, 110, 196, 0.09));
+  background: linear-gradient(
+    180deg,
+    rgba(62, 110, 196, 0.26),
+    rgba(220, 57, 73, 0.16),
+    rgba(62, 110, 196, 0.09)
+  );
   filter: blur(42px);
   animation: hero-beam-pan 12s ease-in-out infinite;
   pointer-events: none;
@@ -993,7 +1121,11 @@ input[type="file"]::file-selector-button:hover {
   left: -8rem;
   top: -6rem;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(255, 199, 122, 0.2), transparent 66%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 199, 122, 0.2),
+    transparent 66%
+  );
   filter: blur(30px);
   animation: landing-orb-pulse 8s ease-in-out infinite;
   pointer-events: none;
@@ -1020,8 +1152,11 @@ input[type="file"]::file-selector-button:hover {
 
 .landing-flow-panel {
   border-color: rgba(73, 99, 142, 0.58) !important;
-  background:
-    linear-gradient(150deg, rgba(11, 21, 38, 0.9), rgba(8, 13, 24, 0.86)) !important;
+  background: linear-gradient(
+    150deg,
+    rgba(11, 21, 38, 0.9),
+    rgba(8, 13, 24, 0.86)
+  ) !important;
 }
 
 .landing-flow-step {
@@ -1041,7 +1176,11 @@ input[type="file"]::file-selector-button:hover {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at 78% 24%, rgba(75, 116, 182, 0.14), transparent 48%);
+  background: radial-gradient(
+    circle at 78% 24%,
+    rgba(75, 116, 182, 0.14),
+    transparent 48%
+  );
 }
 
 .landing-feature-card {
@@ -1058,21 +1197,31 @@ input[type="file"]::file-selector-button:hover {
 
 .landing-cta-panel {
   border-color: rgba(76, 106, 158, 0.58) !important;
-  background:
-    radial-gradient(circle at 20% -30%, rgba(55, 112, 214, 0.2), transparent 58%),
-    radial-gradient(circle at 85% 120%, rgba(219, 55, 71, 0.16), transparent 60%),
+  background: radial-gradient(
+      circle at 20% -30%,
+      rgba(55, 112, 214, 0.2),
+      transparent 58%
+    ),
+    radial-gradient(
+      circle at 85% 120%,
+      rgba(219, 55, 71, 0.16),
+      transparent 60%
+    ),
     linear-gradient(130deg, rgba(8, 14, 26, 0.95), rgba(12, 19, 33, 0.86)) !important;
 }
 
 .landing-footer {
-  background: linear-gradient(180deg, rgba(8, 12, 22, 0), rgba(8, 12, 22, 0.72));
+  background: linear-gradient(
+    180deg,
+    rgba(8, 12, 22, 0),
+    rgba(8, 12, 22, 0.72)
+  );
 }
 
 .reveal-on-scroll {
   opacity: 0;
   transform: translate3d(0, 22px, 0) scale(0.985);
-  transition:
-    opacity 0.7s cubic-bezier(0.22, 0.82, 0.22, 1),
+  transition: opacity 0.7s cubic-bezier(0.22, 0.82, 0.22, 1),
     transform 0.7s cubic-bezier(0.22, 0.82, 0.22, 1);
   transition-delay: var(--reveal-delay, 0ms);
 }
@@ -1085,10 +1234,13 @@ input[type="file"]::file-selector-button:hover {
 .landing-card {
   position: relative;
   overflow: hidden;
-  background-image: linear-gradient(155deg, rgba(21, 34, 60, 0.46), rgba(11, 15, 27, 0.76)) !important;
+  background-image: linear-gradient(
+    155deg,
+    rgba(21, 34, 60, 0.46),
+    rgba(11, 15, 27, 0.76)
+  ) !important;
   border-color: rgba(51, 71, 110, 0.52) !important;
-  box-shadow:
-    0 22px 40px -34px rgba(0, 0, 0, 0.95),
+  box-shadow: 0 22px 40px -34px rgba(0, 0, 0, 0.95),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
@@ -1216,7 +1368,8 @@ input[type="file"]::file-selector-button:hover {
   border-radius: 9999px !important;
   font-weight: 600 !important;
   letter-spacing: 0.01em;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease,
+    background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .app-btn-sm {
@@ -1309,13 +1462,19 @@ input[type="file"]::file-selector-button:hover {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 78% 10%, rgba(32, 125, 244, 0.2), transparent 36%),
-    radial-gradient(circle at 16% 24%, rgba(61, 109, 202, 0.14), transparent 45%),
+  background: radial-gradient(
+      circle at 78% 10%,
+      rgba(32, 125, 244, 0.2),
+      transparent 36%
+    ),
+    radial-gradient(
+      circle at 16% 24%,
+      rgba(61, 109, 202, 0.14),
+      transparent 45%
+    ),
     radial-gradient(circle at 55% 72%, rgba(11, 23, 53, 0.42), transparent 60%);
   z-index: -1;
 }
-
 
 .button-curve {
   position: relative;
@@ -1364,7 +1523,8 @@ input[type="file"]::file-selector-button:hover {
   top: 0%;
   transform: translate(-50%, -50%) rotate(0deg);
   animation: golden-button-line-orbit 2.6s linear infinite;
-  box-shadow: 0 0 10px rgba(248, 199, 90, 0.56), 0 0 2px rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 10px rgba(248, 199, 90, 0.56),
+    0 0 2px rgba(255, 255, 255, 0.85);
   pointer-events: none;
   z-index: 0;
 }
@@ -1461,7 +1621,6 @@ input[type="file"]::file-selector-button:hover {
     top: -2rem;
     filter: blur(24px);
   }
-
 }
 
 @media (max-width: 767px) {
@@ -1545,10 +1704,10 @@ input[type="file"]::file-selector-button:hover {
     max-width: 10.6ch;
   }
 
-.landing-hero-line--accent {
-  margin-top: 0.08rem;
-  min-height: 2.26em;
-}
+  .landing-hero-line--accent {
+    margin-top: 0.08rem;
+    min-height: 2.26em;
+  }
 
   .landing-hero-meta {
     margin-top: 0.62rem !important;
@@ -1623,10 +1782,7 @@ input[type="file"]::file-selector-button:hover {
     min-width: calc(88% - 0.12rem) !important;
     max-width: calc(88% - 0.12rem);
     scroll-snap-align: start;
-    transition:
-      transform 0.3s ease,
-      opacity 0.3s ease,
-      border-color 0.3s ease,
+    transition: transform 0.3s ease, opacity 0.3s ease, border-color 0.3s ease,
       box-shadow 0.3s ease;
   }
 
@@ -1641,10 +1797,7 @@ input[type="file"]::file-selector-button:hover {
     min-width: calc(90% - 0.2rem) !important;
     max-width: calc(90% - 0.2rem);
     scroll-snap-align: start;
-    transition:
-      transform 0.3s ease,
-      opacity 0.3s ease,
-      border-color 0.3s ease,
+    transition: transform 0.3s ease, opacity 0.3s ease, border-color 0.3s ease,
       box-shadow 0.3s ease;
   }
 
@@ -1671,8 +1824,7 @@ input[type="file"]::file-selector-button:hover {
     opacity: 1;
     transform: scale(1);
     border-color: rgba(226, 78, 85, 0.54) !important;
-    box-shadow:
-      0 24px 34px -28px rgba(2, 6, 12, 0.96),
+    box-shadow: 0 24px 34px -28px rgba(2, 6, 12, 0.96),
       inset 0 0 0 1px rgba(229, 87, 92, 0.2);
   }
 
@@ -1696,9 +1848,7 @@ input[type="file"]::file-selector-button:hover {
     height: 0.34rem;
     border-radius: 9999px;
     background: rgba(148, 163, 184, 0.44);
-    transition:
-      width 0.24s ease,
-      background-color 0.24s ease,
+    transition: width 0.24s ease, background-color 0.24s ease,
       box-shadow 0.24s ease;
   }
 
@@ -1711,7 +1861,11 @@ input[type="file"]::file-selector-button:hover {
 
   .mobile-slider-dot.is-active {
     width: 1rem;
-    background: linear-gradient(90deg, rgba(227, 74, 77, 0.96), rgba(85, 131, 214, 0.88));
+    background: linear-gradient(
+      90deg,
+      rgba(227, 74, 77, 0.96),
+      rgba(85, 131, 214, 0.88)
+    );
     box-shadow: 0 0 10px rgba(227, 74, 77, 0.36);
   }
 
@@ -1828,13 +1982,15 @@ input[type="file"]::file-selector-button:hover {
   position: absolute;
   border-radius: 20px;
   border: 2px solid rgba(255, 255, 255, 0.16);
-  background: linear-gradient(135deg, rgba(26, 12, 34, 0.82) 0%, rgba(10, 5, 16, 0.94) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(26, 12, 34, 0.82) 0%,
+    rgba(10, 5, 16, 0.94) 100%
+  );
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow:
-    0 30px 60px -15px rgba(0, 0, 0, 0.9),
-    0 0 30px rgba(126, 34, 206, 0.25),
-    inset 0 1px 2px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.9),
+    0 0 30px rgba(126, 34, 206, 0.25), inset 0 1px 2px rgba(255, 255, 255, 0.35);
   transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.6s ease;
   overflow: hidden;
 }
@@ -1873,10 +2029,8 @@ input[type="file"]::file-selector-button:hover {
 
 .slab-glass-card--front:hover {
   transform: rotateY(0deg) rotateX(0deg) translateZ(60px) scale(1.02);
-  box-shadow:
-    0 40px 80px -20px rgba(0, 0, 0, 0.95),
-    0 0 45px rgba(225, 29, 72, 0.4),
-    inset 0 1px 3px rgba(255, 255, 255, 0.5);
+  box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.95),
+    0 0 45px rgba(225, 29, 72, 0.4), inset 0 1px 3px rgba(255, 255, 255, 0.5);
 }
 
 @keyframes slab-float {
@@ -2022,13 +2176,15 @@ input[type="file"]::file-selector-button:hover {
   position: absolute;
   border-radius: 20px;
   border: 2px solid rgba(255, 255, 255, 0.16);
-  background: linear-gradient(135deg, rgba(26, 12, 34, 0.82) 0%, rgba(10, 5, 16, 0.94) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(26, 12, 34, 0.82) 0%,
+    rgba(10, 5, 16, 0.94) 100%
+  );
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow:
-    0 30px 60px -15px rgba(0, 0, 0, 0.9),
-    0 0 30px rgba(126, 34, 206, 0.25),
-    inset 0 1px 2px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.9),
+    0 0 30px rgba(126, 34, 206, 0.25), inset 0 1px 2px rgba(255, 255, 255, 0.35);
   transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.6s ease;
   overflow: hidden;
 }
@@ -2067,10 +2223,8 @@ input[type="file"]::file-selector-button:hover {
 
 .slab-glass-card--front:hover {
   transform: rotateY(0deg) rotateX(0deg) translateZ(60px) scale(1.02);
-  box-shadow:
-    0 40px 80px -20px rgba(0, 0, 0, 0.95),
-    0 0 45px rgba(225, 29, 72, 0.4),
-    inset 0 1px 3px rgba(255, 255, 255, 0.5);
+  box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.95),
+    0 0 45px rgba(225, 29, 72, 0.4), inset 0 1px 3px rgba(255, 255, 255, 0.5);
 }
 
 @keyframes slab-float {
@@ -2138,11 +2292,20 @@ input[type="file"]::file-selector-button:hover {
   border-radius: 50%;
   pointer-events: none;
   z-index: 0;
-  background:
-    radial-gradient(circle at 35% 35%, rgba(139, 92, 246, 0.22) 0%, rgba(225, 29, 72, 0.14) 35%, rgba(59, 130, 246, 0.08) 60%, transparent 80%),
-    radial-gradient(circle at 65% 65%, rgba(56, 189, 248, 0.18) 0%, rgba(168, 85, 247, 0.12) 40%, transparent 75%);
-  box-shadow:
-    0 0 90px rgba(139, 92, 246, 0.18),
+  background: radial-gradient(
+      circle at 35% 35%,
+      rgba(139, 92, 246, 0.22) 0%,
+      rgba(225, 29, 72, 0.14) 35%,
+      rgba(59, 130, 246, 0.08) 60%,
+      transparent 80%
+    ),
+    radial-gradient(
+      circle at 65% 65%,
+      rgba(56, 189, 248, 0.18) 0%,
+      rgba(168, 85, 247, 0.12) 40%,
+      transparent 75%
+    );
+  box-shadow: 0 0 90px rgba(139, 92, 246, 0.18),
     inset 0 0 60px rgba(225, 29, 72, 0.12);
   backdrop-filter: blur(20px);
   animation: hero-world-rotate 40s linear infinite;
@@ -2164,7 +2327,11 @@ input[type="file"]::file-selector-button:hover {
   inset: 22%;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.08), transparent 70%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(139, 92, 246, 0.08),
+    transparent 70%
+  );
   filter: blur(6px);
 }
 

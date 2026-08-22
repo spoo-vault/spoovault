@@ -64,7 +64,9 @@ try {
   process.exit(0);
 }
 
-await assertStep("Contract address checksum", async () => ethers.getAddress(address));
+await assertStep("Contract address checksum", async () =>
+  ethers.getAddress(address)
+);
 
 await assertStep("Contract code exists", async () => {
   const code = await provider.getCode(address);
@@ -85,7 +87,9 @@ if (deployBlock > 0) {
   await assertStep("Deploy block sanity", async () => {
     const latest = latestBlock ?? (await provider.getBlockNumber());
     if (deployBlock > latest) {
-      throw new Error(`deploy block ${deployBlock} is above latest block ${latest}`);
+      throw new Error(
+        `deploy block ${deployBlock} is above latest block ${latest}`
+      );
     }
     return `${deployBlock}`;
   });

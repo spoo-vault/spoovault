@@ -20,9 +20,15 @@ import {
 const localStorageStore: Record<string, string> = {};
 const localStorageMock = {
   getItem: (key: string) => localStorageStore[key] ?? null,
-  setItem: (key: string, value: string) => { localStorageStore[key] = value; },
-  removeItem: (key: string) => { delete localStorageStore[key]; },
-  clear: () => { Object.keys(localStorageStore).forEach((k) => delete localStorageStore[k]); },
+  setItem: (key: string, value: string) => {
+    localStorageStore[key] = value;
+  },
+  removeItem: (key: string) => {
+    delete localStorageStore[key];
+  },
+  clear: () => {
+    Object.keys(localStorageStore).forEach((k) => delete localStorageStore[k]);
+  },
 };
 
 Object.defineProperty(globalThis, "localStorage", {
@@ -284,18 +290,22 @@ describe("IpfsGatewayService", () => {
   it("fetch streams from the winning gateway", async () => {
     const cid = "QmFetchCID";
     // Probe (HEAD) response
-    fetchSpy.mockImplementation((_url: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "HEAD") {
+    fetchSpy.mockImplementation(
+      (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "HEAD") {
+          return Promise.resolve(
+            new Response(null, {
+              status: 200,
+              headers: { "access-control-allow-origin": "*" },
+            })
+          );
+        }
+        // GET response
         return Promise.resolve(
-          new Response(null, {
-            status: 200,
-            headers: { "access-control-allow-origin": "*" },
-          })
+          new Response("document-content", { status: 200 })
         );
       }
-      // GET response
-      return Promise.resolve(new Response("document-content", { status: 200 }));
-    });
+    );
 
     const res = await service.fetch(cid);
     expect(res.ok).toBe(true);
@@ -304,17 +314,19 @@ describe("IpfsGatewayService", () => {
   });
 
   it("fetch throws when gateway returns non-2xx on GET", async () => {
-    fetchSpy.mockImplementation((_url: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "HEAD") {
-        return Promise.resolve(
-          new Response(null, {
-            status: 200,
-            headers: { "access-control-allow-origin": "*" },
-          })
-        );
+    fetchSpy.mockImplementation(
+      (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "HEAD") {
+          return Promise.resolve(
+            new Response(null, {
+              status: 200,
+              headers: { "access-control-allow-origin": "*" },
+            })
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 500 }));
       }
-      return Promise.resolve(new Response(null, { status: 500 }));
-    });
+    );
 
     await expect(service.fetch("QmServerError")).rejects.toThrow(/HTTP 500/);
   });

@@ -11,11 +11,13 @@ This PR implements multi-signature admin governance functions to enable dynamic 
 ## Problem Statement
 
 ### Operational Risk
+
 - **No Guardian Rotation:** If a guardian loses access or a key is compromised, vault owners cannot remove them
 - **Deadlock Scenario:** If enough guardians become inactive/compromised, the vault becomes permanently locked
 - **Inflexible Thresholds:** Approval thresholds cannot be adjusted to maintain operational security
 
 ### Impact
+
 - Vaults become permanently unusable if guardian consensus cannot be achieved
 - Compromised keys cannot be revoked, exposing vault contents
 - No recovery path for multi-sig failure scenarios
@@ -33,7 +35,7 @@ proposeGuardianRemoval(uint256 vaultId, address guardianToRemove)
 // Approve guardian removal proposal (must reach majority consensus)
 approveGuardianRemoval(uint256 vaultId, address guardianToRemove)
 
-// Propose threshold updates with 7-day expiration window  
+// Propose threshold updates with 7-day expiration window
 proposeThresholdUpdate(uint256 vaultId, uint256 newThreshold)
 
 // Approve threshold update proposal (must reach majority consensus)
@@ -46,11 +48,13 @@ executeVaultReconfiguration(uint256 vaultId, address guardianToRemove, uint256 n
 ### Governance Model
 
 **Majority Consensus Requirement:**
+
 - Required approvals: `(guardianCount / 2) + 1`
 - For 4-guardian vault: 3 approvals needed
 - For 5-guardian vault: 3 approvals needed
 
 **Proposal Lifecycle:**
+
 1. **Propose Phase** - Any guardian initiates proposal (7-day expiration)
 2. **Approval Phase** - Guardians cast votes, tracked atomically
 3. **Execution Phase** - Anyone can trigger after majority votes collected
@@ -58,14 +62,14 @@ executeVaultReconfiguration(uint256 vaultId, address guardianToRemove, uint256 n
 
 ### Safety Guarantees
 
-| Constraint | Rationale |
-|-----------|-----------|
-| Majority consensus required | Prevents single-actor abuse |
-| 7-day proposal expiration | Prevents stale proposal pollution |
-| Atomic execution | Both removal + threshold applied together or not at all |
-| Cannot remove all guardians | Vault must remain operational |
-| Threshold ≤ guardian count | Prevents impossible thresholds |
-| No duplicate approvals | Single vote per guardian per proposal |
+| Constraint                  | Rationale                                               |
+| --------------------------- | ------------------------------------------------------- |
+| Majority consensus required | Prevents single-actor abuse                             |
+| 7-day proposal expiration   | Prevents stale proposal pollution                       |
+| Atomic execution            | Both removal + threshold applied together or not at all |
+| Cannot remove all guardians | Vault must remain operational                           |
+| Threshold ≤ guardian count  | Prevents impossible thresholds                          |
+| No duplicate approvals      | Single vote per guardian per proposal                   |
 
 ---
 
@@ -101,7 +105,7 @@ struct ThresholdUpdateProposal {
 // vaultId => guardianAddress => proposal
 mapping(uint256 => mapping(address => GuardianRemovalProposal)) public guardianRemovalProposals;
 
-// vaultId => newThreshold => proposal  
+// vaultId => newThreshold => proposal
 mapping(uint256 => mapping(uint256 => ThresholdUpdateProposal)) public thresholdUpdateProposals;
 
 // Track individual approvals: vaultId => guardianToRemove => approver => hasApproved
@@ -120,6 +124,7 @@ mapping(uint256 => mapping(uint256 => mapping(address => bool))) public hasAppro
 ## Test Coverage
 
 ### Test Statistics
+
 - **Total Tests:** 24 passing
 - **Guardian Rotation Tests:** 18 new tests
 - **Coverage Areas:**
@@ -205,14 +210,14 @@ SpooVault EVM Contract Unit Tests
 
 ### ✅ All Checks Passing
 
-| Check | Status | Details |
-|-------|--------|---------|
-| **Solidity Compilation** | ✅ PASS | Compiled 16 files successfully (0.8.24, viaIR: false) |
-| **Hardhat Tests** | ✅ PASS | 24/24 tests passing in 4s |
-| **TypeScript Build** | ✅ PASS | No type errors, clean build |
-| **Vite Production Build** | ✅ PASS | 487 KB bundle, all modules transformed |
-| **Smoke Tests** | ✅ PASS | Contract deployment, RPC, integration validated |
-| **Gas Usage** | ✅ Optimal | Proposal: 146-148K gas, Approval: 84-101K gas, Execute: 64-105K gas |
+| Check                     | Status     | Details                                                             |
+| ------------------------- | ---------- | ------------------------------------------------------------------- |
+| **Solidity Compilation**  | ✅ PASS    | Compiled 16 files successfully (0.8.24, viaIR: false)               |
+| **Hardhat Tests**         | ✅ PASS    | 24/24 tests passing in 4s                                           |
+| **TypeScript Build**      | ✅ PASS    | No type errors, clean build                                         |
+| **Vite Production Build** | ✅ PASS    | 487 KB bundle, all modules transformed                              |
+| **Smoke Tests**           | ✅ PASS    | Contract deployment, RPC, integration validated                     |
+| **Gas Usage**             | ✅ Optimal | Proposal: 146-148K gas, Approval: 84-101K gas, Execute: 64-105K gas |
 
 ### Code Quality
 
@@ -297,6 +302,7 @@ event VaultReconfigurationExecuted(
 ## Files Modified
 
 ### Primary Changes
+
 - **`contracts/SpooVault.sol`** (+~450 lines)
   - 2 new structs (GuardianRemovalProposal, ThresholdUpdateProposal)
   - 6 new custom errors
@@ -306,12 +312,14 @@ event VaultReconfigurationExecuted(
   - 7 new events
 
 ### Test Coverage
+
 - **`test/GuardianRotation.test.cjs`** (new, 267 lines)
   - 18 comprehensive tests covering all scenarios
   - Edge case validation
   - Access control verification
 
 ### Documentation
+
 - **This PR description** - Architectural overview
 - Inline code comments throughout implementation
 - Event documentation for off-chain integration
@@ -321,14 +329,17 @@ event VaultReconfigurationExecuted(
 ## Acceptance Criteria Verification
 
 ✅ **Vault creator and guardians can rotate compromised guardian keys via threshold consensus**
+
 - Implementation allows multi-guardian vote to remove compromised keys
 - Majority consensus model ensures collaborative security decision-making
 
 ✅ **Deadlocked vaults can recover through authorized guardian rotation**
+
 - Guardian removal enables threshold adjustments to operational levels
 - Prevents permanent vault lockout from key loss
 
 ✅ **No out-of-scope features added**
+
 - Focused only on guardian rotation and threshold adjustment
 - No changes to document access or encryption logic
 - No modifications to inheritance/release mechanisms
@@ -337,14 +348,14 @@ event VaultReconfigurationExecuted(
 
 ## Risk Mitigation
 
-| Risk | Mitigation |
-|------|-----------|
-| Malicious guardian removal | Requires majority consensus, single actor cannot force removal |
-| Threshold manipulation | Requires separate majority approval for threshold changes |
-| Proposal spam | 7-day expiration, only one active proposal per guardian/threshold |
-| Double-execution | Proposals marked executed, cannot be run twice |
-| Guardian count underflow | Cannot remove all guardians, validation prevents empty sets |
-| Invalid thresholds | Validation ensures threshold ≤ guardian count at all times |
+| Risk                       | Mitigation                                                        |
+| -------------------------- | ----------------------------------------------------------------- |
+| Malicious guardian removal | Requires majority consensus, single actor cannot force removal    |
+| Threshold manipulation     | Requires separate majority approval for threshold changes         |
+| Proposal spam              | 7-day expiration, only one active proposal per guardian/threshold |
+| Double-execution           | Proposals marked executed, cannot be run twice                    |
+| Guardian count underflow   | Cannot remove all guardians, validation prevents empty sets       |
+| Invalid thresholds         | Validation ensures threshold ≤ guardian count at all times        |
 
 ---
 
@@ -362,6 +373,7 @@ Memory-efficient with O(1) operations for approval checks and O(n) only for guar
 ## Future Enhancements
 
 Possible follow-up work (out of scope for this PR):
+
 - Time-locked reconfiguration delays
 - Guardian rotation with replacement in single transaction
 - Tiered governance for different proposal types

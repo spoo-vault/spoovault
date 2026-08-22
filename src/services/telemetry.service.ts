@@ -13,7 +13,9 @@ const STORAGE_KEY = "spoovault-telemetry-log";
 const MAX_STORED_EVENTS = 120;
 
 const getWebhookUrl = (): string => {
-  return (import.meta.env.VITE_TELEMETRY_WEBHOOK as string | undefined)?.trim() || "";
+  return (
+    (import.meta.env.VITE_TELEMETRY_WEBHOOK as string | undefined)?.trim() || ""
+  );
 };
 
 const sanitize = (value: unknown): unknown => {
@@ -51,7 +53,10 @@ const readStored = (): TelemetryEntry[] => {
 
 const writeStored = (entries: TelemetryEntry[]) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(-MAX_STORED_EVENTS)));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(entries.slice(-MAX_STORED_EVENTS))
+    );
   } catch {
     // ignore storage errors
   }
@@ -85,9 +90,11 @@ export const captureTelemetry = (
     context,
     message: toMessage(message),
     timestamp: new Date().toISOString(),
-    metadata: metadata ? (Object.fromEntries(
-      Object.entries(metadata).map(([key, value]) => [key, sanitize(value)])
-    ) as Record<string, unknown>) : undefined,
+    metadata: metadata
+      ? (Object.fromEntries(
+          Object.entries(metadata).map(([key, value]) => [key, sanitize(value)])
+        ) as Record<string, unknown>)
+      : undefined,
   };
 
   const current = readStored();
@@ -107,4 +114,3 @@ export const captureError = (
 export const getTelemetryEntries = (): TelemetryEntry[] => {
   return readStored();
 };
-

@@ -46,14 +46,15 @@ const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
 if (!PRIVATE_KEY) {
   console.error(
     "\n❌ DEPLOYER_PRIVATE_KEY is not set in .env\n" +
-    "   Add: DEPLOYER_PRIVATE_KEY=0x<your_private_key>\n" +
-    "   ⚠️  Never commit your private key. Use a throwaway wallet for testnet.\n"
+      "   Add: DEPLOYER_PRIVATE_KEY=0x<your_private_key>\n" +
+      "   ⚠️  Never commit your private key. Use a throwaway wallet for testnet.\n"
   );
   process.exit(1);
 }
 
 const RPC_URL =
-  process.env.VITE_AVALANCHE_RPC || "https://api.avax-test.network/ext/bc/C/rpc";
+  process.env.VITE_AVALANCHE_RPC ||
+  "https://api.avax-test.network/ext/bc/C/rpc";
 
 // Hardhat artifacts path (run `npx hardhat compile` first)
 const ARTIFACT_PATH = resolve(
@@ -63,9 +64,11 @@ const ARTIFACT_PATH = resolve(
 
 if (!existsSync(ARTIFACT_PATH)) {
   console.error(
-    "\n❌ Contract artifact not found at:\n   " + ARTIFACT_PATH + "\n\n" +
-    "   Run: npx hardhat compile\n" +
-    "   (Install Hardhat first: npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox)\n"
+    "\n❌ Contract artifact not found at:\n   " +
+      ARTIFACT_PATH +
+      "\n\n" +
+      "   Run: npx hardhat compile\n" +
+      "   (Install Hardhat first: npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox)\n"
   );
   process.exit(1);
 }
@@ -91,7 +94,7 @@ async function main() {
   if (balance === 0n) {
     console.warn(
       "\n⚠️  Deployer balance is 0 AVAX. Get testnet AVAX from:\n" +
-      "   https://core.app/tools/testnet-faucet/\n"
+        "   https://core.app/tools/testnet-faucet/\n"
     );
   }
 

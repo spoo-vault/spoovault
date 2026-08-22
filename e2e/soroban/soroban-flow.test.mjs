@@ -30,7 +30,8 @@ const STELLAR_CRATE = resolve(repoRoot, "contracts-stellar");
 
 const RPC_URL = process.env.SOROBAN_RPC_URL || "http://localhost:8000";
 const NETWORK_PASSPHRASE =
-  process.env.SOROBAN_NETWORK_PASSPHRASE || "Standalone Network ; February 2017";
+  process.env.SOROBAN_NETWORK_PASSPHRASE ||
+  "Standalone Network ; February 2017";
 const NETWORK = "spoovault-e2e";
 
 function runStellar(args, opts = {}) {
@@ -47,7 +48,9 @@ function runStellar(args, opts = {}) {
   } catch (err) {
     if (opts.allowFail) return "";
     throw new Error(
-      `stellar ${args.join(" ")} failed:\n${err.stdout || ""}\n${err.stderr || err.message}`,
+      `stellar ${args.join(" ")} failed:\n${err.stdout || ""}\n${
+        err.stderr || err.message
+      }`
     );
   }
 }
@@ -63,7 +66,7 @@ function ensureNetwork() {
       "--network-passphrase",
       NETWORK_PASSPHRASE,
     ],
-    { allowFail: true },
+    { allowFail: true }
   );
 }
 
@@ -82,7 +85,9 @@ before(async () => {
     runStellar(["keys", "generate", name, "--network", NETWORK], {
       allowFail: true,
     });
-    runStellar(["keys", "fund", name, "--network", NETWORK], { allowFail: true });
+    runStellar(["keys", "fund", name, "--network", NETWORK], {
+      allowFail: true,
+    });
     return runStellar(["keys", "secret", name]);
   };
 
@@ -96,7 +101,7 @@ before(async () => {
   runStellar(["contract", "build"], { cwd: STELLAR_CRATE });
   const wasm = resolve(
     STELLAR_CRATE,
-    "target/wasm32-unknown-unknown/release/spoovault_stellar.wasm",
+    "target/wasm32-unknown-unknown/release/spoovault_stellar.wasm"
   );
 
   // Deploy.
@@ -110,7 +115,10 @@ before(async () => {
     "--network",
     NETWORK,
   ]);
-  assert.ok(contractId.startsWith("C"), `unexpected contract id: ${contractId}`);
+  assert.ok(
+    contractId.startsWith("C"),
+    `unexpected contract id: ${contractId}`
+  );
 });
 
 test("create_vault + guardian invite + document + access approval", () => {
@@ -203,7 +211,10 @@ test("create_vault + guardian invite + document + access approval", () => {
     "--document_id",
     docId,
   ]);
-  assert.ok(Number(requestId) > 0, `request id should be > 0, got ${requestId}`);
+  assert.ok(
+    Number(requestId) > 0,
+    `request id should be > 0, got ${requestId}`
+  );
 
   // Guardian approves the request (no beneficiary share supplied -> null).
   runStellar([

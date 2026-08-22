@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 import { ethers } from "ethers";
 import { toast } from "react-hot-toast";
 import { contractService } from "../services/contract.service";
@@ -6,7 +13,7 @@ import {
   stellarService,
   type StellarWalletChangeEvent,
 } from "../services/stellar.service";
-import { sorobanEventIndexer } from "../services/sorobanEventIndexer.service";
+import { sorobanEventWatcher } from "../services/sorobanEventWatcher.service";
 
 const CONTRACT_ABI = [
   "function createVault(string name, string description, address[] guardians, uint256 approvalThreshold) external returns (uint256)",
@@ -57,13 +64,15 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [stellarNetwork, setStellarNetwork] = useState<string | null>(null);
 
-  const [ecosystem, setEcosystemState] = useState<"avalanche" | "stellar">(() => {
-    if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem("spoovault-ecosystem");
-      if (stored === "stellar") return "stellar";
+  const [ecosystem, setEcosystemState] = useState<"avalanche" | "stellar">(
+    () => {
+      if (typeof window !== "undefined") {
+        const stored = window.localStorage.getItem("spoovault-ecosystem");
+        if (stored === "stellar") return "stellar";
+      }
+      return "avalanche";
     }
-    return "avalanche";
-  });
+  );
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -115,20 +124,27 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     window.open("https://metamask.io/download/", "_blank");
   };
 
-  const initContract = useCallback((signerOrProvider: ethers.Signer | ethers.Provider) => {
-    if (!CONTRACT_ADDRESS) {
-      toast.error("Contract address not configured");
-      return null;
-    }
+  const initContract = useCallback(
+    (signerOrProvider: ethers.Signer | ethers.Provider) => {
+      if (!CONTRACT_ADDRESS) {
+        toast.error("Contract address not configured");
+        return null;
+      }
 
-    try {
-      return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signerOrProvider);
-    } catch (error) {
-      console.error("Failed to initialize contract:", error);
-      toast.error("Failed to initialize contract");
-      return null;
-    }
-  }, [CONTRACT_ADDRESS]);
+      try {
+        return new ethers.Contract(
+          CONTRACT_ADDRESS,
+          CONTRACT_ABI,
+          signerOrProvider
+        );
+      } catch (error) {
+        console.error("Failed to initialize contract:", error);
+        toast.error("Failed to initialize contract");
+        return null;
+      }
+    },
+    [CONTRACT_ADDRESS]
+  );
 
   const checkConnection = useCallback(async () => {
     if (ecosystem === "stellar") {
@@ -153,7 +169,9 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+      const accounts = await window.ethereum.request({
+        method: "eth_accounts",
+      });
 
       if (accounts.length > 0) {
         const ethersProvider = new ethers.BrowserProvider(window.ethereum);
@@ -206,7 +224,10 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
       return () => {
         if (window.ethereum) {
-          window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+          window.ethereum.removeListener(
+            "accountsChanged",
+            handleAccountsChanged
+          );
           window.ethereum.removeListener("chainChanged", handleChainChanged);
         }
       };
@@ -226,7 +247,10 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
       if (event.account) {
         setAccount(event.account);
         toast.success(
-          `Connected Freighter: ${event.account.slice(0, 6)}...${event.account.slice(-4)}`
+          `Connected Freighter: ${event.account.slice(
+            0,
+            6
+          )}...${event.account.slice(-4)}`
         );
       }
       if (event.network) {
@@ -235,7 +259,8 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    const unsubscribe = stellarService.subscribeToWalletChanges(handleWalletChange);
+    const unsubscribe =
+      stellarService.subscribeToWalletChanges(handleWalletChange);
 
     // Validate the currently active network on subscription (environment check).
     void stellarService
@@ -259,7 +284,10 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
       try {
         const address = await stellarService.connectWallet();
         setAccount(address);
-        sorobanEventIndexer.start(stellarService.getRpcUrl(), stellarService.getContractId());
+        sorobanEventWatcher.start(
+          stellarService.getRpcUrl(),
+          stellarService.getContractId()
+        );
         setProvider(null);
         setSigner(null);
         setChainId(null);
@@ -269,7 +297,9 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
           setStellarNetwork(network);
           validateStellarNetwork(network);
         }
-        toast.success(`Connected Freighter: ${address.slice(0, 6)}...${address.slice(-4)}`);
+        toast.success(
+          `Connected Freighter: ${address.slice(0, 6)}...${address.slice(-4)}`
+        );
       } catch (error: any) {
         toast.error(error.message || "Failed to connect Freighter wallet");
       } finally {
@@ -304,9 +334,13 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
       contractService.initialize(ethersProvider, signer);
 
       if (Number(network.chainId) !== FUJI_CHAIN_ID) {
-        toast.error("Connected to wrong network. Please switch to Avalanche Fuji.");
+        toast.error(
+          "Connected to wrong network. Please switch to Avalanche Fuji."
+        );
       } else {
-        toast.success(`Connected to ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`);
+        toast.success(
+          `Connected to ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`
+        );
       }
     } catch (error: any) {
       if (error.code === 4001) {
@@ -319,29 +353,32 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const disconnect = useCallback((options?: { notify?: boolean }) => {
-    if (isDisconnecting) return;
-    const notify = options?.notify ?? true;
-    const hadSession = Boolean(provider || signer || account || contract);
-    if (!hadSession) return;
+  const disconnect = useCallback(
+    (options?: { notify?: boolean }) => {
+      if (isDisconnecting) return;
+      const notify = options?.notify ?? true;
+      const hadSession = Boolean(provider || signer || account || contract);
+      if (!hadSession) return;
 
-    setIsDisconnecting(true);
-    if (ecosystem === "stellar") {
-      stellarService.clear();
-      sorobanEventIndexer.stop();
-    }
-    setProvider(null);
-    setSigner(null);
-    setAccount(null);
-    setChainId(null);
-    setContract(null);
-    setStellarNetwork(null);
-    contractService.clear();
-    if (notify) {
-      toast.success("Disconnected");
-    }
-    window.setTimeout(() => setIsDisconnecting(false), 300);
-  }, [account, contract, isDisconnecting, provider, signer, ecosystem]);
+      setIsDisconnecting(true);
+      if (ecosystem === "stellar") {
+        stellarService.clear();
+        sorobanEventWatcher.stop();
+      }
+      setProvider(null);
+      setSigner(null);
+      setAccount(null);
+      setChainId(null);
+      setContract(null);
+      setStellarNetwork(null);
+      contractService.clear();
+      if (notify) {
+        toast.success("Disconnected");
+      }
+      window.setTimeout(() => setIsDisconnecting(false), 300);
+    },
+    [account, contract, isDisconnecting, provider, signer, ecosystem]
+  );
 
   const switchToFuji = async () => {
     if (ecosystem === "stellar") return;
@@ -421,4 +458,3 @@ declare global {
     ethereum: any;
   }
 }
-

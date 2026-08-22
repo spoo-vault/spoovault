@@ -177,7 +177,10 @@ export class GatewayHealthScorer {
     h.successRate = h.totalSuccesses / h.totalRequests;
     h.lastUpdatedAt = Date.now();
 
-    if (h.consecutiveFailures >= FAILURE_THRESHOLD && (h.circuitState === "CLOSED" || h.circuitState === "HALF_OPEN")) {
+    if (
+      h.consecutiveFailures >= FAILURE_THRESHOLD &&
+      (h.circuitState === "CLOSED" || h.circuitState === "HALF_OPEN")
+    ) {
       h.circuitState = "OPEN";
       h.trippedAt = Date.now();
       // backoff doubles on each successive trip, capped at MAX_BACKOFF_MS
@@ -284,7 +287,10 @@ export class IpfsGatewayService {
 
       if (!response.ok) {
         this._scorer.recordFailure(
-          this._baseUrl(winner, candidates.map((c) => c.url))
+          this._baseUrl(
+            winner,
+            candidates.map((c) => c.url)
+          )
         );
         throw new Error(`Gateway returned HTTP ${response.status}: ${winner}`);
       }
@@ -293,7 +299,10 @@ export class IpfsGatewayService {
     } catch (err) {
       clearTimeout(timeoutId);
       this._scorer.recordFailure(
-        this._baseUrl(winner, candidates.map((c) => c.url))
+        this._baseUrl(
+          winner,
+          candidates.map((c) => c.url)
+        )
       );
       throw err;
     }
@@ -319,7 +328,10 @@ export class IpfsGatewayService {
       for (const candidate of candidates) {
         const url = `${candidate.url}${cid}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          PROBE_TIMEOUT_MS
+        );
         const start = Date.now();
 
         globalThis

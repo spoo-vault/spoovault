@@ -1,6 +1,10 @@
 import { useState } from "react";
 
-const SpooVaultFallback = ({ className = "w-6 h-6" }: { className?: string }) => (
+const SpooVaultFallback = ({
+  className = "w-6 h-6",
+}: {
+  className?: string;
+}) => (
   <svg viewBox="0 0 512 512" className={className} aria-hidden="true">
     <defs>
       <linearGradient id="sv-fb-purple" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -48,7 +52,13 @@ const SpooVaultFallback = ({ className = "w-6 h-6" }: { className?: string }) =>
   </svg>
 );
 
-const BrandLogo = ({ className = "w-6 h-6", alt = "SpooVault logo" }: { className?: string; alt?: string }) => {
+const BrandLogo = ({
+  className = "w-6 h-6",
+  alt = "SpooVault logo",
+}: {
+  className?: string;
+  alt?: string;
+}) => {
   const [src, setSrc] = useState("/spoovault-logo.png");
   const [useFallback, setUseFallback] = useState(false);
 

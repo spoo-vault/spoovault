@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock('../services/stellar.service', () => ({
+vi.mock("../services/stellar.service", () => ({
   stellarService: {
     initialize: vi.fn(),
     clear: vi.fn(),
@@ -24,11 +24,11 @@ vi.mock('../services/stellar.service', () => ({
   },
 }));
 
-import { stellarService } from '../services/stellar.service';
-import { contractService } from '../services/contract.service';
+import { stellarService } from "../services/stellar.service";
+import { contractService } from "../services/contract.service";
 
-const ACCOUNT = '0x4444444444444444444444444444444444444444';
-const OTHER = '0x5555555555555555555555555555555555555555';
+const ACCOUNT = "0x4444444444444444444444444444444444444444";
+const OTHER = "0x5555555555555555555555555555555555555555";
 const DOC_ID = 101;
 const VAULT_ID = 55;
 
@@ -54,7 +54,7 @@ class MemoryStorage {
 // here needs a DOM, only `window.localStorage` and bare `localStorage`.
 beforeEach(() => {
   const storage = new MemoryStorage();
-  storage.setItem('spoovault-ecosystem', 'stellar');
+  storage.setItem("spoovault-ecosystem", "stellar");
   (globalThis as any).localStorage = storage;
   (globalThis as any).window = { localStorage: storage };
 
@@ -64,8 +64,8 @@ beforeEach(() => {
     {
       id: VAULT_ID,
       creator: OTHER,
-      name: 'Vault',
-      description: '',
+      name: "Vault",
+      description: "",
       guardians: [],
       approvalThreshold: 1,
       isActive: true,
@@ -76,8 +76,8 @@ beforeEach(() => {
     {
       id: DOC_ID,
       vaultId: VAULT_ID,
-      encryptedMetadata: '',
-      ipfsHash: '',
+      encryptedMetadata: "",
+      ipfsHash: "",
       uploadedBy: OTHER,
       uploadedAt: 0,
       requiredAccess: 0,
@@ -91,15 +91,15 @@ afterEach(() => {
   delete (globalThis as any).localStorage;
 });
 
-describe('Stellar-ecosystem access cache', () => {
-  it('caches the composed hasActiveAccess result within the TTL window', async () => {
+describe("Stellar-ecosystem access cache", () => {
+  it("caches the composed hasActiveAccess result within the TTL window", async () => {
     await contractService.hasActiveAccess(DOC_ID, ACCOUNT);
     await contractService.hasActiveAccess(DOC_ID, ACCOUNT);
 
     expect(stellarService.fetchVaultsForAccount).toHaveBeenCalledTimes(1);
   });
 
-  it('approveAccess (Stellar) invalidates the access cache since approval can grant access', async () => {
+  it("approveAccess (Stellar) invalidates the access cache since approval can grant access", async () => {
     await contractService.hasActiveAccess(DOC_ID, ACCOUNT);
     expect(stellarService.fetchVaultsForAccount).toHaveBeenCalledTimes(1);
 
@@ -110,7 +110,7 @@ describe('Stellar-ecosystem access cache', () => {
     expect(stellarService.fetchVaultsForAccount).toHaveBeenCalledTimes(2);
   });
 
-  it('acceptGuardianInvite (Stellar) invalidates the access cache since Stellar guardians get implicit document access', async () => {
+  it("acceptGuardianInvite (Stellar) invalidates the access cache since Stellar guardians get implicit document access", async () => {
     await contractService.hasActiveAccess(DOC_ID, ACCOUNT);
     expect(stellarService.fetchVaultsForAccount).toHaveBeenCalledTimes(1);
 
@@ -121,7 +121,7 @@ describe('Stellar-ecosystem access cache', () => {
     expect(stellarService.fetchVaultsForAccount).toHaveBeenCalledTimes(2);
   });
 
-  it('returns false when no document matches the given documentId', async () => {
+  it("returns false when no document matches the given documentId", async () => {
     vi.mocked(stellarService.fetchDocumentsForVaults).mockResolvedValue([]);
 
     const result = await contractService.hasActiveAccess(9001, ACCOUNT);
@@ -129,13 +129,13 @@ describe('Stellar-ecosystem access cache', () => {
     expect(result).toBe(false);
   });
 
-  it('returns true when the account is the document uploader', async () => {
+  it("returns true when the account is the document uploader", async () => {
     vi.mocked(stellarService.fetchDocumentsForVaults).mockResolvedValue([
       {
         id: 9002,
         vaultId: VAULT_ID,
-        encryptedMetadata: '',
-        ipfsHash: '',
+        encryptedMetadata: "",
+        ipfsHash: "",
         uploadedBy: ACCOUNT,
         uploadedAt: 0,
         requiredAccess: 0,
@@ -147,13 +147,13 @@ describe('Stellar-ecosystem access cache', () => {
     expect(result).toBe(true);
   });
 
-  it('returns true when the account is a guardian of the document\'s vault', async () => {
+  it("returns true when the account is a guardian of the document's vault", async () => {
     vi.mocked(stellarService.fetchVaultsForAccount).mockResolvedValue([
       {
         id: VAULT_ID,
         creator: OTHER,
-        name: 'Vault',
-        description: '',
+        name: "Vault",
+        description: "",
         guardians: [ACCOUNT],
         approvalThreshold: 1,
         isActive: true,
@@ -164,8 +164,8 @@ describe('Stellar-ecosystem access cache', () => {
       {
         id: 9003,
         vaultId: VAULT_ID,
-        encryptedMetadata: '',
-        ipfsHash: '',
+        encryptedMetadata: "",
+        ipfsHash: "",
         uploadedBy: OTHER,
         uploadedAt: 0,
         requiredAccess: 0,
@@ -177,20 +177,20 @@ describe('Stellar-ecosystem access cache', () => {
     expect(result).toBe(true);
   });
 
-  it('returns true when a locally-stored mock request shows an approved (status 1) request for the account', async () => {
+  it("returns true when a locally-stored mock request shows an approved (status 1) request for the account", async () => {
     vi.mocked(stellarService.fetchDocumentsForVaults).mockResolvedValue([
       {
         id: 9004,
         vaultId: VAULT_ID,
-        encryptedMetadata: '',
-        ipfsHash: '',
+        encryptedMetadata: "",
+        ipfsHash: "",
         uploadedBy: OTHER,
         uploadedAt: 0,
         requiredAccess: 0,
       },
     ]);
     (globalThis as any).localStorage.setItem(
-      'spoovault-stellar-mock-requests',
+      "spoovault-stellar-mock-requests",
       JSON.stringify([{ documentId: 9004, requester: ACCOUNT, status: 1 }])
     );
 

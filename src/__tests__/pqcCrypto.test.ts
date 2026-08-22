@@ -35,7 +35,9 @@ describe("Post-Quantum Hybrid Dual Encapsulation (ML-KEM-768 + ECDH)", () => {
 
     it("encapsulates and decapsulates to the same shared secret", async () => {
       const kp = await generateMlKem768KeyPairBase64();
-      const { ciphertext, sharedSecret } = await mlKem768Encapsulate(kp.publicKey);
+      const { ciphertext, sharedSecret } = await mlKem768Encapsulate(
+        kp.publicKey
+      );
       expect(ciphertext.length).toBe(ML_KEM_768_CIPHERTEXT_BYTES);
       expect(sharedSecret.length).toBe(ML_KEM_768_SHARED_SECRET_BYTES);
 
@@ -168,7 +170,10 @@ describe("Post-Quantum Hybrid Dual Encapsulation (ML-KEM-768 + ECDH)", () => {
       for (let i = 0; i < rounds; i++) {
         const classical = await generateECIESKeyPairBase64();
         const t0 = performance.now();
-        const cSealed = await encryptWithPublicKey(message, classical.publicKey);
+        const cSealed = await encryptWithPublicKey(
+          message,
+          classical.publicKey
+        );
         await decryptWithPrivateKey(cSealed, classical.privateKey);
         classicalTimes.push(performance.now() - t0);
         classicalPayloadBytes = cSealed.length;
@@ -205,7 +210,9 @@ describe("Post-Quantum Hybrid Dual Encapsulation (ML-KEM-768 + ECDH)", () => {
       // eslint-disable-next-line no-console
       console.log("[PQC hybrid benchmark]", report);
 
-      expect(report.hybridPayloadChars).toBeGreaterThan(report.classicalPayloadChars);
+      expect(report.hybridPayloadChars).toBeGreaterThan(
+        report.classicalPayloadChars
+      );
       expect(report.hybridAvgMs).toBeGreaterThan(0);
       expect(report.classicalAvgMs).toBeGreaterThan(0);
     });

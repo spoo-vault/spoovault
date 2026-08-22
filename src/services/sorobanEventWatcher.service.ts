@@ -19,7 +19,7 @@ class SorobanEventWatcher {
   private contractId: string = "";
   private lastCursor: string | undefined = undefined;
   private listeners: Record<string, SorobanEventHandler[]> = {};
-  
+
   // Standard polling interval: 5 seconds (Stellar ledger time)
   private readonly POLLING_INTERVAL_MS = 5000;
 
@@ -39,7 +39,7 @@ class SorobanEventWatcher {
     this.rpcUrl = rpcUrl;
     this.contractId = contractId;
     this.isRunning = true;
-    
+
     // Start polling loop
     this.poll();
   }
@@ -70,7 +70,9 @@ class SorobanEventWatcher {
    */
   public off(topicName: string, handler: SorobanEventHandler) {
     if (!this.listeners[topicName]) return;
-    this.listeners[topicName] = this.listeners[topicName].filter(h => h !== handler);
+    this.listeners[topicName] = this.listeners[topicName].filter(
+      (h) => h !== handler
+    );
   }
 
   private async poll() {
@@ -84,7 +86,10 @@ class SorobanEventWatcher {
 
     // Schedule next poll if still running
     if (this.isRunning) {
-      this.intervalId = window.setTimeout(() => this.poll(), this.POLLING_INTERVAL_MS);
+      this.intervalId = window.setTimeout(
+        () => this.poll(),
+        this.POLLING_INTERVAL_MS
+      );
     }
   }
 
@@ -102,19 +107,21 @@ class SorobanEventWatcher {
         filters: [
           {
             type: "contract",
-            contractIds: [this.contractId]
-          }
+            contractIds: [this.contractId],
+          },
         ],
-        pagination: this.lastCursor ? { cursor: this.lastCursor, limit: 100 } : { limit: 100 }
-      }
+        pagination: this.lastCursor
+          ? { cursor: this.lastCursor, limit: 100 }
+          : { limit: 100 },
+      },
     };
 
-    if (payload.params.startLedger === 0) return; 
+    if (payload.params.startLedger === 0) return;
 
     const response = await fetch(this.rpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -127,19 +134,19 @@ class SorobanEventWatcher {
     }
 
     const events: SorobanEvent[] = data.result?.events || [];
-    
+
     for (const event of events) {
       // Update cursor
       this.lastCursor = event.pagingToken;
-      
+
       this.dispatchEvent("SorobanEvent", event);
-      
+
       // Dispatch generic refresh events for standard topics
       this.dispatchEvent("VaultCreated", event);
       this.dispatchEvent("DocumentAdded", event);
     }
   }
-  
+
   private async getLatestLedger(): Promise<number> {
     try {
       const response = await fetch(this.rpcUrl, {
@@ -148,8 +155,8 @@ class SorobanEventWatcher {
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
-          method: "getLatestLedger"
-        })
+          method: "getLatestLedger",
+        }),
       });
       const data = await response.json();
       return data.result?.sequence || 0;
@@ -160,7 +167,7 @@ class SorobanEventWatcher {
 
   private dispatchEvent(topicName: string, event: SorobanEvent) {
     const handlers = this.listeners[topicName] || [];
-    handlers.forEach(handler => {
+    handlers.forEach((handler) => {
       try {
         handler(event);
       } catch (e) {
@@ -170,7 +177,9 @@ class SorobanEventWatcher {
 
     // Also dispatch to window for global listeners
     try {
-      const customEvent = new CustomEvent(`spoovault:stellar:${topicName}`, { detail: event });
+      const customEvent = new CustomEvent(`spoovault:stellar:${topicName}`, {
+        detail: event,
+      });
       window.dispatchEvent(customEvent);
     } catch (e) {
       // Ignore

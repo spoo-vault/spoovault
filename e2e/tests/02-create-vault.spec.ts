@@ -9,7 +9,10 @@ test.describe("SpooVault — vault creation flow (EVM / MetaMask)", () => {
     await page.goto("/vaults");
 
     // Connect MetaMask and select the local Anvil (Fuji-equivalent) network.
-    await page.getByRole("button", { name: /Connect Wallet/i }).first().click();
+    await page
+      .getByRole("button", { name: /Connect Wallet/i })
+      .first()
+      .click();
     await metamask.connectToDapp();
     await metamask.switchNetwork(E2E_CHAIN_NAME, true);
     await expect(page.getByText(/Avalanche Fuji Online/i)).toBeVisible({
@@ -18,9 +21,9 @@ test.describe("SpooVault — vault creation flow (EVM / MetaMask)", () => {
 
     // Open the create-vault modal directly via the deep link the app listens for.
     await page.goto("/vaults?create=true");
-    await expect(
-      page.getByPlaceholder(/Family Estate Records/i),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByPlaceholder(/Family Estate Records/i)).toBeVisible({
+      timeout: 15_000,
+    });
 
     const vaultName = `E2E Vault ${Date.now()}`;
     await page.getByPlaceholder(/Family Estate Records/i).fill(vaultName);

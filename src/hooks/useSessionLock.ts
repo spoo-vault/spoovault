@@ -19,7 +19,11 @@ export function useSessionLock(idleTimeoutMs?: number) {
     managerRef.current = new SessionLockManager({
       idleTimeoutMs,
       accountsProvider: () =>
-        account ? (clientKeyringService.isUnlocked(account) ? [account] : []) : [],
+        account
+          ? clientKeyringService.isUnlocked(account)
+            ? [account]
+            : []
+          : [],
       onLock: (accounts) => {
         setLockedAccounts(accounts);
         setLocked(true);
@@ -39,7 +43,11 @@ export function useSessionLock(idleTimeoutMs?: number) {
 
   const handleUnlock = useCallback(
     async (pin: string) => {
-      const accounts = lockedAccounts.length ? lockedAccounts : account ? [account] : [];
+      const accounts = lockedAccounts.length
+        ? lockedAccounts
+        : account
+        ? [account]
+        : [];
       if (accounts.length === 0) {
         throw new Error("No active account to unlock");
       }

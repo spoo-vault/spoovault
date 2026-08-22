@@ -21,7 +21,10 @@ self.onmessage = (event: MessageEvent<CryptoWorkerRequest>) => {
 
   try {
     if (type === "ENCRYPT") {
-      const encrypted = CryptoJS.AES.encrypt(payload.data, payload.key).toString();
+      const encrypted = CryptoJS.AES.encrypt(
+        payload.data,
+        payload.key
+      ).toString();
       const response: CryptoWorkerResponse = {
         id,
         type: "ENCRYPT_SUCCESS",

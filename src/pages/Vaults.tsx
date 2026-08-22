@@ -41,9 +41,17 @@ import {
   VaultData,
   VaultReleaseState,
 } from "../services/contract.service";
-import { shortenAddress, isValidMultiChainAddress, formatDate, getVaultGID, buildVaultDocumentCounts, keyRecordByVaultGID } from "../utils/helpers";
 import { identityService } from "../services/identity.service";
 import { toast } from "react-hot-toast";
+import {
+  shortenAddress,
+  isValidAddress,
+  isValidStellarAddress,
+  formatDate,
+  getVaultGID,
+  buildVaultDocumentCounts,
+  keyRecordByVaultGID,
+} from "../utils/helpers";
 import { buttonClasses } from "../utils/buttonClasses";
 
 interface Vault extends VaultData {
@@ -54,16 +62,33 @@ interface Vault extends VaultData {
 const Vaults = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "mine" | "inactive">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "mine" | "inactive">(
+    "all"
+  );
   const [searchParams] = useSearchParams();
-  const { account, isConnected, connect, provider, signer, isFujiNetwork, ecosystem, chainId } = useWeb3();
+  const {
+    account,
+    isConnected,
+    connect,
+    provider,
+    signer,
+    isFujiNetwork,
+    ecosystem,
+    chainId,
+  } = useWeb3();
 
   const [vaults, setVaults] = useState<Vault[]>([]);
-  const [releaseStatesByVault, setReleaseStatesByVault] = useState<Record<string, VaultReleaseState>>({});
+  const [releaseStatesByVault, setReleaseStatesByVault] = useState<
+    Record<string, VaultReleaseState>
+  >({});
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [togglingEmergencyVaultId, setTogglingEmergencyVaultId] = useState<number | null>(null);
-  const [provingLifeVaultId, setProvingLifeVaultId] = useState<number | null>(null);
+  const [togglingEmergencyVaultId, setTogglingEmergencyVaultId] = useState<
+    number | null
+  >(null);
+  const [provingLifeVaultId, setProvingLifeVaultId] = useState<number | null>(
+    null
+  );
 
   const [formData, setFormData] = useState({
     name: "",
@@ -86,9 +111,11 @@ const Vaults = () => {
     setLoading(true);
   }, [ecosystem]);
 
-
   useEffect(() => {
-    if (isConnected && ((provider && signer && isFujiNetwork) || ecosystem === "stellar")) {
+    if (
+      isConnected &&
+      ((provider && signer && isFujiNetwork) || ecosystem === "stellar")
+    ) {
       if (provider && signer) {
         contractService.initialize(provider, signer);
       }
@@ -98,7 +125,15 @@ const Vaults = () => {
       setVaults([]);
       setReleaseStatesByVault({});
     }
-  }, [account, isConnected, provider, signer, isFujiNetwork, ecosystem, chainId]);
+  }, [
+    account,
+    isConnected,
+    provider,
+    signer,
+    isFujiNetwork,
+    ecosystem,
+    chainId,
+  ]);
 
   const loadVaults = async (options?: { silent?: boolean }) => {
     if (!account) {
@@ -117,7 +152,12 @@ const Vaults = () => {
 
       const visibleVaults = vaultsData;
 
-      const docCounts = buildVaultDocumentCounts(ecosystem, chainId, visibleVaults, docsData);
+      const docCounts = buildVaultDocumentCounts(
+        ecosystem,
+        chainId,
+        visibleVaults,
+        docsData
+      );
 
       const enriched: Vault[] = visibleVaults.map((vault) => {
         const gid = getVaultGID(ecosystem, chainId, vault.id);
@@ -132,10 +172,13 @@ const Vaults = () => {
       const releaseStates = await contractService.fetchVaultReleaseStates(
         visibleVaults.map((vault) => vault.id)
       );
-      setReleaseStatesByVault(keyRecordByVaultGID(ecosystem, chainId, releaseStates));
+      setReleaseStatesByVault(
+        keyRecordByVaultGID(ecosystem, chainId, releaseStates)
+      );
     } catch (error) {
       console.error("Error loading vaults:", error);
-      const message = error instanceof Error ? error.message : "Failed to load vaults";
+      const message =
+        error instanceof Error ? error.message : "Failed to load vaults";
       toast.error(message);
       setReleaseStatesByVault({});
     } finally {
@@ -152,8 +195,16 @@ const Vaults = () => {
       return;
     }
 
-    if (!isValidMultiChainAddress(rawInput)) {
-      toast.error("Invalid address format. Enter an EVM address (0x...) or Stellar address (G...).");
+    if (
+      ecosystem === "stellar"
+        ? !isValidStellarAddress(formData.newGuardian)
+        : !isValidAddress(formData.newGuardian, "avalanche")
+    ) {
+      toast.error(
+        ecosystem === "stellar"
+          ? "Invalid Stellar address"
+          : "Invalid Ethereum address"
+      );
       return;
     }
 
@@ -255,7 +306,9 @@ const Vaults = () => {
           documentCount: 0,
         };
         setVaults((prev: Vault[]) => {
-          const existingIndex = prev.findIndex((vault: Vault) => vault.gid === gid);
+          const existingIndex = prev.findIndex(
+            (vault: Vault) => vault.gid === gid
+          );
           if (existingIndex >= 0) {
             const copy = [...prev];
             copy[existingIndex] = optimisticVault;
@@ -271,14 +324,15 @@ const Vaults = () => {
             lastProofOfLife: nowTs,
             postDeathUnlocked: false,
           },
-          
         }));
         try {
           await contractService.configureVaultRelease(
             vaultId,
             draftForm.inactivityDays * 24 * 60 * 60
           );
-          toast.success(`Post-death timer set to ${draftForm.inactivityDays} days`);
+          toast.success(
+            `Post-death timer set to ${draftForm.inactivityDays} days`
+          );
         } catch (policyError) {
           const policyMessage =
             policyError instanceof Error
@@ -306,11 +360,16 @@ const Vaults = () => {
     }
   };
 
-  const handleToggleEmergencyMode = async (vaultId: number, enabled: boolean) => {
+  const handleToggleEmergencyMode = async (
+    vaultId: number,
+    enabled: boolean
+  ) => {
     setTogglingEmergencyVaultId(vaultId);
     try {
       await contractService.setEmergencyMode(vaultId, enabled);
-      toast.success(enabled ? "Emergency mode enabled" : "Emergency mode disabled");
+      toast.success(
+        enabled ? "Emergency mode enabled" : "Emergency mode disabled"
+      );
       await loadVaults();
     } catch (error: any) {
       toast.error(error.message || "Failed to update emergency mode");
@@ -333,32 +392,41 @@ const Vaults = () => {
   };
 
   const filteredVaults = vaults
-    .filter((vault: Vault) =>
-      vault.name.toLowerCase().includes(search.toLowerCase()) ||
-      vault.description.toLowerCase().includes(search.toLowerCase()) ||
-      vault.creator.toLowerCase().includes(search.toLowerCase())
+    .filter(
+      (vault: Vault) =>
+        vault.name.toLowerCase().includes(search.toLowerCase()) ||
+        vault.description.toLowerCase().includes(search.toLowerCase()) ||
+        vault.creator.toLowerCase().includes(search.toLowerCase())
     )
     .filter((vault: Vault) => {
       if (filter === "active") return vault.isActive;
       if (filter === "inactive") return !vault.isActive;
-      if (filter === "mine") return vault.creator.toLowerCase() === account?.toLowerCase();
+      if (filter === "mine")
+        return vault.creator.toLowerCase() === account?.toLowerCase();
       return true;
     });
 
-  const getRoleBadge = (isCreator: boolean, isGuardian: boolean): { roleLabel: string; roleColor: "danger" | "success" | "default" } => {
+  const getRoleBadge = (
+    isCreator: boolean,
+    isGuardian: boolean
+  ): { roleLabel: string; roleColor: "danger" | "success" | "default" } => {
     if (isCreator) return { roleLabel: "Owner", roleColor: "danger" };
     if (isGuardian) return { roleLabel: "Guardian", roleColor: "success" };
     return { roleLabel: "Beneficiary", roleColor: "default" };
   };
 
-  const stepChipClass = "bg-brand-700/12 text-brand-300 border border-brand-700/35";
+  const stepChipClass =
+    "bg-brand-700/12 text-brand-300 border border-brand-700/35";
   const modalInputClassNames = {
-    inputWrapper: "bg-gray-900/75 border border-gray-700/80 shadow-none data-[hover=true]:border-gray-600",
+    inputWrapper:
+      "bg-gray-900/75 border border-gray-700/80 shadow-none data-[hover=true]:border-gray-600",
     input: "text-sm text-gray-100",
   };
   const modalTextareaClassNames = {
-    inputWrapper: "bg-gray-900/75 border border-gray-700/80 shadow-none data-[hover=true]:border-gray-600 min-h-[8.75rem]",
-    input: "text-sm text-gray-100 leading-relaxed whitespace-pre-wrap break-words",
+    inputWrapper:
+      "bg-gray-900/75 border border-gray-700/80 shadow-none data-[hover=true]:border-gray-600 min-h-[8.75rem]",
+    input:
+      "text-sm text-gray-100 leading-relaxed whitespace-pre-wrap break-words",
     innerWrapper: "items-start",
   };
   const filterSelectClass =
@@ -385,7 +453,8 @@ const Vaults = () => {
           </div>
           <h1 className="text-3xl font-bold mb-4">Connect Your Wallet</h1>
           <p className="text-gray-400 mb-8 max-w-2xl mx-auto">
-            Connect your wallet to create and manage access vaults for daily, emergency, and inheritance document release on Avalanche.
+            Connect your wallet to create and manage access vaults for daily,
+            emergency, and inheritance document release on Avalanche.
           </p>
           <Button
             size="lg"
@@ -414,10 +483,13 @@ const Vaults = () => {
           <Button
             size="lg"
             className={buttonClasses.warningLg}
-            onPress={() => window.ethereum && window.ethereum.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0xA869" }]
-            })}
+            onPress={() =>
+              window.ethereum &&
+              window.ethereum.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: "0xA869" }],
+              })
+            }
           >
             Switch to Fuji Network
           </Button>
@@ -432,12 +504,15 @@ const Vaults = () => {
         <div>
           <h1 className="text-3xl font-bold mb-2">Your Access Vaults</h1>
           <p className="text-gray-400">
-            Set up guardian-controlled vaults for living access, emergencies, and inheritance delivery.
+            Set up guardian-controlled vaults for living access, emergencies,
+            and inheritance delivery.
           </p>
         </div>
         <Button
           className={`${buttonClasses.primaryMd} group`}
-          startContent={<FiPlus className="group-hover:rotate-90 transition-transform" />}
+          startContent={
+            <FiPlus className="group-hover:rotate-90 transition-transform" />
+          }
           onPress={onOpen}
         >
           Create Access Vault
@@ -456,7 +531,9 @@ const Vaults = () => {
           <FiFilter className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <select
             value={filter}
-            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setFilter(event.target.value as typeof filter)}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
+              setFilter(event.target.value as typeof filter)
+            }
             className={filterSelectClass}
           >
             <option value="all">All Access Vaults</option>
@@ -506,7 +583,9 @@ const Vaults = () => {
           </div>
           <h3 className="text-xl font-bold mb-2">No access vaults found</h3>
           <p className="text-gray-400 mb-6">
-            {search ? "Try a different search term" : "Create your first access vault to get started"}
+            {search
+              ? "Try a different search term"
+              : "Create your first access vault to get started"}
           </p>
           <Button
             className={buttonClasses.primaryMd}
@@ -525,12 +604,20 @@ const Vaults = () => {
               lastProofOfLife: vault.createdAt,
               postDeathUnlocked: false,
             };
-            const inactivityDays = Math.max(1, Math.round(releaseState.inactivityPeriod / 86400));
-            const isCreator = vault.creator.toLowerCase() === account?.toLowerCase();
-            const isGuardian = vault.guardians.some(
-              (guardian: string) => guardian.toLowerCase() === account?.toLowerCase()
+            const inactivityDays = Math.max(
+              1,
+              Math.round(releaseState.inactivityPeriod / 86400)
             );
-            const { roleLabel, roleColor } = getRoleBadge(isCreator, isGuardian);
+            const isCreator =
+              vault.creator.toLowerCase() === account?.toLowerCase();
+            const isGuardian = vault.guardians.some(
+              (guardian: string) =>
+                guardian.toLowerCase() === account?.toLowerCase()
+            );
+            const { roleLabel, roleColor } = getRoleBadge(
+              isCreator,
+              isGuardian
+            );
 
             return (
               <Card
@@ -560,7 +647,9 @@ const Vaults = () => {
                   </div>
                 </CardHeader>
                 <CardBody>
-                  <p className="text-gray-400 text-sm mb-4">{vault.description}</p>
+                  <p className="text-gray-400 text-sm mb-4">
+                    {vault.description}
+                  </p>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2 text-gray-400">
@@ -585,35 +674,53 @@ const Vaults = () => {
                         <FiLock />
                         <span>Approval</span>
                       </div>
-                      <span className="font-medium">{vault.approvalThreshold}/{vault.guardians.length}</span>
+                      <span className="font-medium">
+                        {vault.approvalThreshold}/{vault.guardians.length}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400">Creator</span>
-                      <span className="font-mono text-xs">{shortenAddress(vault.creator)}</span>
+                      <span className="font-mono text-xs">
+                        {shortenAddress(vault.creator)}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400">Vault GID</span>
-                      <span className="font-mono text-xs font-semibold text-brand-400">{vault.gid || `#${vault.id}`}</span>
+                      <span className="font-mono text-xs font-semibold text-brand-400">
+                        {vault.gid || `#${vault.id}`}
+                      </span>
                     </div>
                   </div>
 
                   <div className="mt-4 rounded-xl border border-gray-700/80 bg-gray-900/60 p-3 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-gray-300">Release Policy</p>
+                      <p className="text-xs font-medium text-gray-300">
+                        Release Policy
+                      </p>
                       <div className="flex gap-1.5">
                         <Chip
                           size="sm"
                           variant="flat"
-                          color={releaseState.emergencyMode ? "warning" : "default"}
+                          color={
+                            releaseState.emergencyMode ? "warning" : "default"
+                          }
                         >
-                          {releaseState.emergencyMode ? "Emergency ON" : "Emergency OFF"}
+                          {releaseState.emergencyMode
+                            ? "Emergency ON"
+                            : "Emergency OFF"}
                         </Chip>
                         <Chip
                           size="sm"
                           variant="flat"
-                          color={releaseState.postDeathUnlocked ? "danger" : "success"}
+                          color={
+                            releaseState.postDeathUnlocked
+                              ? "danger"
+                              : "success"
+                          }
                         >
-                          {releaseState.postDeathUnlocked ? "Post-Death Unlocked" : "Live Mode"}
+                          {releaseState.postDeathUnlocked
+                            ? "Post-Death Unlocked"
+                            : "Live Mode"}
                         </Chip>
                       </div>
                     </div>
@@ -636,22 +743,37 @@ const Vaults = () => {
                           className={buttonClasses.ghostSm}
                           startContent={<FiClock />}
                           isLoading={provingLifeVaultId === vault.id}
-                          isDisabled={provingLifeVaultId !== null || togglingEmergencyVaultId !== null}
+                          isDisabled={
+                            provingLifeVaultId !== null ||
+                            togglingEmergencyVaultId !== null
+                          }
                           onPress={() => handleProveLife(vault.id)}
                         >
                           Prove Life
                         </Button>
                         <Button
                           size="sm"
-                          className={releaseState.emergencyMode ? buttonClasses.outlineSm : buttonClasses.primarySm}
+                          className={
+                            releaseState.emergencyMode
+                              ? buttonClasses.outlineSm
+                              : buttonClasses.primarySm
+                          }
                           startContent={<FiAlertTriangle />}
                           isLoading={togglingEmergencyVaultId === vault.id}
-                          isDisabled={togglingEmergencyVaultId !== null || provingLifeVaultId !== null}
+                          isDisabled={
+                            togglingEmergencyVaultId !== null ||
+                            provingLifeVaultId !== null
+                          }
                           onPress={() =>
-                            handleToggleEmergencyMode(vault.id, !releaseState.emergencyMode)
+                            handleToggleEmergencyMode(
+                              vault.id,
+                              !releaseState.emergencyMode
+                            )
                           }
                         >
-                          {releaseState.emergencyMode ? "Disable Emergency" : "Enable Emergency"}
+                          {releaseState.emergencyMode
+                            ? "Disable Emergency"
+                            : "Enable Emergency"}
                         </Button>
                       </div>
                     )}
@@ -683,7 +805,9 @@ const Vaults = () => {
               </div>
               <div>
                 <h2 className="text-xl font-bold">Create Access Vault</h2>
-                <p className="text-sm text-gray-400">Owner + guardian controlled release security</p>
+                <p className="text-sm text-gray-400">
+                  Owner + guardian controlled release security
+                </p>
               </div>
             </div>
           </ModalHeader>
@@ -693,26 +817,36 @@ const Vaults = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold">Access Vault Details</p>
-                    <p className="text-xs text-gray-400">Name and describe the vault</p>
+                    <p className="text-xs text-gray-400">
+                      Name and describe the vault
+                    </p>
                   </div>
                   <Chip size="sm" variant="flat" className={stepChipClass}>
                     Step 1
                   </Chip>
                 </div>
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-300 font-medium">Vault Name</p>
+                  <p className="text-xs text-gray-300 font-medium">
+                    Vault Name
+                  </p>
                   <Input
                     placeholder="e.g., Family Estate Records, Insurance Files"
                     value={formData.name}
-                    onValueChange={(value: string) => setFormData({ ...formData, name: value })}
+                    onValueChange={(value: string) =>
+                      setFormData({ ...formData, name: value })
+                    }
                     isRequired
                     classNames={modalInputClassNames}
                   />
-                  <p className="text-xs text-gray-300 font-medium">Description</p>
+                  <p className="text-xs text-gray-300 font-medium">
+                    Description
+                  </p>
                   <Textarea
                     placeholder="Describe which files this vault should protect for living, emergency, or inheritance access..."
                     value={formData.description}
-                    onValueChange={(value: string) => setFormData({ ...formData, description: value })}
+                    onValueChange={(value: string) =>
+                      setFormData({ ...formData, description: value })
+                    }
                     minRows={4}
                     maxRows={6}
                     maxLength={650}
@@ -728,7 +862,10 @@ const Vaults = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold">Guardians</p>
-                    <p className="text-xs text-gray-400">Add trusted guardians or executors for emergency and inheritance approvals</p>
+                    <p className="text-xs text-gray-400">
+                      Add trusted guardians or executors for emergency and
+                      inheritance approvals
+                    </p>
                   </div>
                   <Chip size="sm" variant="flat" className={stepChipClass}>
                     Step 2
@@ -736,13 +873,21 @@ const Vaults = () => {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 sm:gap-3 items-end">
                   <div className="space-y-1">
-                    <p className="text-xs text-gray-300 font-medium">Guardian Address</p>
-                  <Input
-                    placeholder={ecosystem === "stellar" ? "Enter guardian's Stellar address" : "Enter guardian's Ethereum address"}
-                    value={formData.newGuardian}
-                    onValueChange={(value: string) => setFormData({ ...formData, newGuardian: value })}
-                    classNames={modalInputClassNames}
-                  />
+                    <p className="text-xs text-gray-300 font-medium">
+                      Guardian Address
+                    </p>
+                    <Input
+                      placeholder={
+                        ecosystem === "stellar"
+                          ? "Enter guardian's Stellar address"
+                          : "Enter guardian's Ethereum address"
+                      }
+                      value={formData.newGuardian}
+                      onValueChange={(value: string) =>
+                        setFormData({ ...formData, newGuardian: value })
+                      }
+                      classNames={modalInputClassNames}
+                    />
                   </div>
                   <Button
                     className={`${buttonClasses.primaryMd} w-full sm:w-auto sm:mb-[2px]`}
@@ -756,33 +901,41 @@ const Vaults = () => {
 
                 {formData.guardians.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-sm text-gray-400">Guardians ({formData.guardians.length})</p>
+                    <p className="text-sm text-gray-400">
+                      Guardians ({formData.guardians.length})
+                    </p>
                     <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                      {formData.guardians.map((address: string, index: number) => (
-                        <div
-                          key={address}
-                          className="flex items-center justify-between p-3 bg-gray-900/65 border border-gray-700/70 rounded-xl"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Avatar
-                              className="w-8 h-8 bg-gray-700"
-                              name={(index + 1).toString()}
-                            />
-                            <div>
-                              <p className="font-mono text-sm">{shortenAddress(address, 6)}</p>
-                              <p className="text-xs text-gray-400">Guardian #{index + 1}</p>
-                            </div>
-                          </div>
-                          <Button
-                            isIconOnly
-                            variant="light"
-                            size="sm"
-                            onPress={() => handleRemoveGuardian(address)}
+                      {formData.guardians.map(
+                        (address: string, index: number) => (
+                          <div
+                            key={address}
+                            className="flex items-center justify-between p-3 bg-gray-900/65 border border-gray-700/70 rounded-xl"
                           >
-                            <FiX className="text-gray-400" />
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="flex items-center gap-3">
+                              <Avatar
+                                className="w-8 h-8 bg-gray-700"
+                                name={(index + 1).toString()}
+                              />
+                              <div>
+                                <p className="font-mono text-sm">
+                                  {shortenAddress(address, 6)}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  Guardian #{index + 1}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              isIconOnly
+                              variant="light"
+                              size="sm"
+                              onPress={() => handleRemoveGuardian(address)}
+                            >
+                              <FiX className="text-gray-400" />
+                            </Button>
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
                 )}
@@ -791,8 +944,12 @@ const Vaults = () => {
                   <div className="flex items-center gap-3">
                     <FiCheck className="text-brand-500" />
                     <div>
-                      <p className="text-sm font-medium">You will be the first guardian</p>
-                      <p className="text-xs text-gray-400">Creators are automatically added</p>
+                      <p className="text-sm font-medium">
+                        You will be the first guardian
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Creators are automatically added
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -802,7 +959,10 @@ const Vaults = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold">Approval Threshold</p>
-                    <p className="text-xs text-gray-400">Required guardian approvals for emergency or inheritance release</p>
+                    <p className="text-xs text-gray-400">
+                      Required guardian approvals for emergency or inheritance
+                      release
+                    </p>
                   </div>
                   <Chip size="sm" variant="flat" className={stepChipClass}>
                     Step 3
@@ -822,10 +982,15 @@ const Vaults = () => {
                       max={maxApprovalThreshold}
                       step={1}
                       value={formData.approvalThreshold}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                      onChange={(
+                        event: React.ChangeEvent<HTMLInputElement>
+                      ) => {
                         const raw = Number(event.target.value);
                         if (Number.isNaN(raw)) return;
-                        const next = Math.min(maxApprovalThreshold, Math.max(1, raw));
+                        const next = Math.min(
+                          maxApprovalThreshold,
+                          Math.max(1, raw)
+                        );
                         setFormData({
                           ...formData,
                           approvalThreshold: next,
@@ -852,9 +1017,11 @@ const Vaults = () => {
                     <span>Less Secure</span>
                     <span>More Secure</span>
                   </div>
-                  {formData.approvalThreshold >= formData.guardians.length + 1 && (
+                  {formData.approvalThreshold >=
+                    formData.guardians.length + 1 && (
                     <p className="mt-2 text-xs text-yellow-400">
-                      Requiring everyone can lock this vault if any guardian invite expires or is not accepted.
+                      Requiring everyone can lock this vault if any guardian
+                      invite expires or is not accepted.
                     </p>
                   )}
                 </div>
@@ -865,7 +1032,8 @@ const Vaults = () => {
                   <div>
                     <p className="font-semibold">Post-Death Unlock Timer</p>
                     <p className="text-xs text-gray-400">
-                      If owner inactivity passes this window, post-death release becomes available.
+                      If owner inactivity passes this window, post-death release
+                      becomes available.
                     </p>
                   </div>
                   <Chip size="sm" variant="flat" className={stepChipClass}>
@@ -875,7 +1043,9 @@ const Vaults = () => {
                 <div>
                   <div className="flex justify-between mb-2">
                     <span className="text-sm text-gray-400">Current</span>
-                    <span className="font-semibold">{formData.inactivityDays} days</span>
+                    <span className="font-semibold">
+                      {formData.inactivityDays} days
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -900,14 +1070,19 @@ const Vaults = () => {
 
               <div className="p-4 bg-brand-700/10 border border-brand-700/20 rounded-2xl">
                 <p className="text-sm">
-                  <span className="font-medium">Note:</span> Creating a vault requires a blockchain
-                  transaction and will incur gas fees on Avalanche Fuji.
+                  <span className="font-medium">Note:</span> Creating a vault
+                  requires a blockchain transaction and will incur gas fees on
+                  Avalanche Fuji.
                 </p>
               </div>
             </div>
           </ModalBody>
           <ModalFooter className="border-t border-gray-800/80 px-4 sm:px-6 py-3 flex-col-reverse sm:flex-row gap-2">
-            <Button className={`${buttonClasses.ghostMd} w-full sm:w-auto`} onPress={onClose} isDisabled={creating}>
+            <Button
+              className={`${buttonClasses.ghostMd} w-full sm:w-auto`}
+              onPress={onClose}
+              isDisabled={creating}
+            >
               Cancel
             </Button>
             <Button
@@ -926,4 +1101,3 @@ const Vaults = () => {
 };
 
 export default Vaults;
-

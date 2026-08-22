@@ -12,7 +12,10 @@ test.describe("SpooVault — wallet connection (EVM / MetaMask)", () => {
     await expect(page.getByText("Wallet Disconnected")).toBeVisible();
 
     // Trigger the in-app connect flow (shows the MetaMask connection prompt).
-    await page.getByRole("button", { name: /Connect Wallet/i }).first().click();
+    await page
+      .getByRole("button", { name: /Connect Wallet/i })
+      .first()
+      .click();
 
     // Approve the connection request inside the MetaMask extension.
     await metamask.connectToDapp();
@@ -25,7 +28,7 @@ test.describe("SpooVault — wallet connection (EVM / MetaMask)", () => {
       timeout: 30_000,
     });
     await expect(
-      page.getByText(/0x[a-fA-F0-9]{4}\.\.\.[a-fA-F0-9]{4}/),
+      page.getByText(/0x[a-fA-F0-9]{4}\.\.\.[a-fA-F0-9]{4}/)
     ).toBeVisible();
   });
 });

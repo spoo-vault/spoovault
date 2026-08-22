@@ -14,7 +14,8 @@ describe("SpooVault Self-Approval Guard", function () {
   let outsider;
 
   beforeEach(async function () {
-    [owner, guardian1, guardian2, beneficiary, outsider] = await ethers.getSigners();
+    [owner, guardian1, guardian2, beneficiary, outsider] =
+      await ethers.getSigners();
 
     const SpooVault = await ethers.getContractFactory("SpooVault");
     spooVault = await SpooVault.deploy();
@@ -22,12 +23,14 @@ describe("SpooVault Self-Approval Guard", function () {
   });
 
   async function createVault(threshold, guardians) {
-    const tx = await spooVault.connect(owner).createVault(
-      "Self-Approval Test Vault",
-      "Multi-custody vault",
-      guardians,
-      threshold
-    );
+    const tx = await spooVault
+      .connect(owner)
+      .createVault(
+        "Self-Approval Test Vault",
+        "Multi-custody vault",
+        guardians,
+        threshold
+      );
     await tx.wait();
     return 1;
   }
@@ -48,7 +51,9 @@ describe("SpooVault Self-Approval Guard", function () {
   }
 
   async function mintToken(vaultId, to) {
-    const tx = await spooVault.connect(owner).mintAccessToken(vaultId, to, "https://token.uri");
+    const tx = await spooVault
+      .connect(owner)
+      .mintAccessToken(vaultId, to, "https://token.uri");
     const receipt = await tx.wait();
     const evt = receipt.logs
       .map((log) => {
@@ -97,7 +102,9 @@ describe("SpooVault Self-Approval Guard", function () {
 
       const request = await spooVault.accessRequests(requestId);
       expect(request[3]).to.equal(0); // RequestStatus.PENDING
-      expect(await spooVault.hasActiveAccess(1, guardian1.address)).to.equal(true); // guardian blanket access
+      expect(await spooVault.hasActiveAccess(1, guardian1.address)).to.equal(
+        true
+      ); // guardian blanket access
     });
 
     it("blocks self-approval via the share-submission overload", async function () {
@@ -111,14 +118,22 @@ describe("SpooVault Self-Approval Guard", function () {
       await expect(
         spooVault
           .connect(guardian1)
-          ["approveAccess(uint256,string)"](requestId, "encrypted-share-for-self")
+          ["approveAccess(uint256,string)"](
+            requestId,
+            "encrypted-share-for-self"
+          )
       ).to.be.revertedWithCustomError(spooVault, "CannotSelfApproveAccess");
 
-      expect(await spooVault.getBeneficiaryKeyShare(requestId, guardian1.address)).to.equal("");
+      expect(
+        await spooVault.getBeneficiaryKeyShare(requestId, guardian1.address)
+      ).to.equal("");
     });
 
     it("requires quorum from approvals distinct from the requester (threshold=2)", async function () {
-      const vaultId = await createVault(2, [guardian1.address, guardian2.address]);
+      const vaultId = await createVault(2, [
+        guardian1.address,
+        guardian2.address,
+      ]);
       await addDocument(vaultId);
       await mintToken(vaultId, guardian1.address);
 
@@ -130,7 +145,9 @@ describe("SpooVault Self-Approval Guard", function () {
       await spooVault.connect(owner).approveAccess(requestId);
       let request = await spooVault.accessRequests(requestId);
       expect(request[3]).to.equal(0); // still PENDING
-      expect(await spooVault.hasApprovedRequest(requestId, owner.address)).to.equal(true);
+      expect(
+        await spooVault.hasApprovedRequest(requestId, owner.address)
+      ).to.equal(true);
 
       // Second distinct approval (guardian2) reaches quorum: both != requester
       await expect(spooVault.connect(guardian2).approveAccess(requestId))
@@ -139,11 +156,19 @@ describe("SpooVault Self-Approval Guard", function () {
 
       request = await spooVault.accessRequests(requestId);
       expect(request[3]).to.equal(1); // RequestStatus.APPROVED
-      expect(await spooVault.hasApprovedRequest(requestId, owner.address)).to.equal(true);
-      expect(await spooVault.hasApprovedRequest(requestId, guardian2.address)).to.equal(true);
+      expect(
+        await spooVault.hasApprovedRequest(requestId, owner.address)
+      ).to.equal(true);
+      expect(
+        await spooVault.hasApprovedRequest(requestId, guardian2.address)
+      ).to.equal(true);
       // The requester's self-vote never counted toward quorum
-      expect(await spooVault.hasApprovedRequest(requestId, guardian1.address)).to.equal(false);
-      expect(await spooVault.hasActiveAccess(1, guardian1.address)).to.equal(true);
+      expect(
+        await spooVault.hasApprovedRequest(requestId, guardian1.address)
+      ).to.equal(false);
+      expect(await spooVault.hasActiveAccess(1, guardian1.address)).to.equal(
+        true
+      );
     });
   });
 
@@ -164,7 +189,9 @@ describe("SpooVault Self-Approval Guard", function () {
 
       const request = await spooVault.accessRequests(requestId);
       expect(request[3]).to.equal(1); // RequestStatus.APPROVED
-      expect(await spooVault.hasActiveAccess(1, beneficiary.address)).to.equal(true);
+      expect(await spooVault.hasActiveAccess(1, beneficiary.address)).to.equal(
+        true
+      );
     });
 
     it("lets the creator approve another user's request (ban is self-only)", async function () {
@@ -204,7 +231,10 @@ describe("SpooVault Self-Approval Guard", function () {
 
   describe("Approval Integrity Regressions", function () {
     it("reverts when the same guardian approves twice", async function () {
-      const vaultId = await createVault(2, [guardian1.address, guardian2.address]);
+      const vaultId = await createVault(2, [
+        guardian1.address,
+        guardian2.address,
+      ]);
       await acceptInvites(vaultId, [guardian1, guardian2]);
       await addDocument(vaultId);
       await mintToken(vaultId, beneficiary.address);
@@ -279,7 +309,9 @@ describe("SpooVault Self-Approval Guard", function () {
 
       const request = await spooVault.accessRequests(requestId);
       expect(request[3]).to.equal(2); // RequestStatus.REJECTED
-      expect(await spooVault.hasActiveAccess(1, beneficiary.address)).to.equal(false);
+      expect(await spooVault.hasActiveAccess(1, beneficiary.address)).to.equal(
+        false
+      );
     });
 
     it("prevents guardians from filing requests (blanket guardian access)", async function () {

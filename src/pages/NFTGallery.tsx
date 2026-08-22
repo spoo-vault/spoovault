@@ -28,10 +28,18 @@ import {
   VaultData,
 } from "../services/contract.service";
 import { toast } from "react-hot-toast";
-import { fetchFromIPFS, getIPFSURL, isValidAddress, shortenAddress } from "../utils/helpers";
+import {
+  fetchFromIPFS,
+  getIPFSURL,
+  isValidAddress,
+  shortenAddress,
+} from "../utils/helpers";
 import { buttonClasses } from "../utils/buttonClasses";
 import { captureError } from "../services/telemetry.service";
-import { getExplorerBaseUrl as getSharedExplorerBaseUrl, getExplorerTokenUrl as getSharedExplorerTokenUrl } from "../utils/explorer";
+import {
+  getExplorerBaseUrl as getSharedExplorerBaseUrl,
+  getExplorerTokenUrl as getSharedExplorerTokenUrl,
+} from "../utils/explorer";
 import { VirtualizedNftGrid } from "../components/nft/VirtualizedNftGrid";
 
 const getNftColumnsForWidth = (width: number): number => {
@@ -59,7 +67,9 @@ const buildDefaultTokenURI = (vaultId: number, recipient: string): string => {
 type TokenMetadata = Record<string, unknown>;
 
 const getExplorerTokenUrl = (tokenId: number): string => {
-  const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS as string | undefined;
+  const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS as
+    | string
+    | undefined;
   if (!contractAddress) {
     return getSharedExplorerBaseUrl("avalanche");
   }
@@ -104,7 +114,9 @@ const isWalletAuthorizationError = (error: any): boolean => {
     error?.info?.error?.code ??
     error?.data?.originalError?.code ??
     null;
-  const message = `${error?.shortMessage || ""} ${error?.message || ""}`.toLowerCase();
+  const message = `${error?.shortMessage || ""} ${
+    error?.message || ""
+  }`.toLowerCase();
   return (
     code === 4100 ||
     message.includes("not been authorized") ||
@@ -121,7 +133,8 @@ const NFTGallery = () => {
     onOpen: onViewModalOpen,
     onClose: onViewModalClose,
   } = useDisclosure();
-  const { account, isConnected, connect, provider, signer, isFujiNetwork } = useWeb3();
+  const { account, isConnected, connect, provider, signer, isFujiNetwork } =
+    useWeb3();
 
   const [tokens, setTokens] = useState<TokenData[]>([]);
   const [vaults, setVaults] = useState<VaultData[]>([]);
@@ -142,7 +155,8 @@ const NFTGallery = () => {
     tokenURI: "",
   });
   const modalInputClassNames = {
-    inputWrapper: "bg-gray-900/75 border border-gray-700/80 shadow-none data-[hover=true]:border-gray-600",
+    inputWrapper:
+      "bg-gray-900/75 border border-gray-700/80 shadow-none data-[hover=true]:border-gray-600",
     input: "text-sm text-gray-100",
   };
   const modalSelectClassName =
@@ -181,7 +195,9 @@ const NFTGallery = () => {
       const accountLower = account.toLowerCase();
       const visibleVaults = vaultData;
       const guardianVaults = visibleVaults.filter((vault) =>
-        vault.guardians.some((guardian) => guardian.toLowerCase() === accountLower)
+        vault.guardians.some(
+          (guardian) => guardian.toLowerCase() === accountLower
+        )
       );
 
       setTokens(tokenData);
@@ -191,7 +207,8 @@ const NFTGallery = () => {
     } catch (error) {
       console.error("Error loading tokens:", error);
       captureError("nftGallery.loadTokens", error, { account: account || "" });
-      const message = error instanceof Error ? error.message : "Failed to load tokens";
+      const message =
+        error instanceof Error ? error.message : "Failed to load tokens";
       toast.error(message);
     } finally {
       setLoading(false);
@@ -223,9 +240,13 @@ const NFTGallery = () => {
       toast.error("Vault ID is required");
       return;
     }
-    const canMintForVault = mintableVaults.some((vault) => vault.id === vaultId);
+    const canMintForVault = mintableVaults.some(
+      (vault) => vault.id === vaultId
+    );
     if (!canMintForVault) {
-      toast.error("You can only mint for vaults where your wallet is an active guardian.");
+      toast.error(
+        "You can only mint for vaults where your wallet is an active guardian."
+      );
       return;
     }
 
@@ -236,7 +257,8 @@ const NFTGallery = () => {
 
     setMinting(true);
     try {
-      const tokenURIValue = form.tokenURI.trim() || buildDefaultTokenURI(vaultId, form.recipient);
+      const tokenURIValue =
+        form.tokenURI.trim() || buildDefaultTokenURI(vaultId, form.recipient);
       const tokenId = await contractService.mintAccessToken(
         vaultId,
         form.recipient,
@@ -253,12 +275,17 @@ const NFTGallery = () => {
       onClose();
       loadTokens();
     } catch (error: any) {
-      captureError("nftGallery.mint", error, { vaultId: form.vaultId, recipient: form.recipient });
+      captureError("nftGallery.mint", error, {
+        vaultId: form.vaultId,
+        recipient: form.recipient,
+      });
       if (isWalletAuthorizationError(error)) {
         toast.custom((t) => (
           <div className="rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-100 shadow-xl">
             <p className="font-medium">Wallet authorization required.</p>
-            <p className="text-xs text-gray-400 mt-0.5">Reconnect wallet, then retry mint.</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Reconnect wallet, then retry mint.
+            </p>
             <Button
               size="sm"
               className={`${buttonClasses.primarySm} mt-2`}
@@ -291,7 +318,9 @@ const NFTGallery = () => {
     if (!rawUri) {
       setViewMetadata(buildFallbackMetadata(token));
       setViewMetadataSource(getExplorerTokenUrl(token.tokenId));
-      setViewNotice("No token URI was set for this token. Showing fallback details.");
+      setViewNotice(
+        "No token URI was set for this token. Showing fallback details."
+      );
       setViewLoading(false);
       return;
     }
@@ -325,7 +354,9 @@ const NFTGallery = () => {
         ...buildFallbackMetadata(token),
         tokenURI: rawUri,
       });
-      setViewNotice("Could not parse metadata from URI. Showing fallback details.");
+      setViewNotice(
+        "Could not parse metadata from URI. Showing fallback details."
+      );
     } finally {
       setViewLoading(false);
     }
@@ -348,7 +379,8 @@ const NFTGallery = () => {
 
   const handleOpenMetadataSource = () => {
     if (!viewingToken) return;
-    const target = viewMetadataSource || getExplorerTokenUrl(viewingToken.tokenId);
+    const target =
+      viewMetadataSource || getExplorerTokenUrl(viewingToken.tokenId);
     window.open(target, "_blank", "noopener,noreferrer");
   };
 
@@ -371,7 +403,9 @@ const NFTGallery = () => {
         toast.custom((t) => (
           <div className="rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-100 shadow-xl">
             <p className="font-medium">Wallet authorization expired.</p>
-            <p className="text-xs text-gray-400 mt-0.5">Reconnect wallet to continue burning passes.</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Reconnect wallet to continue burning passes.
+            </p>
             <Button
               size="sm"
               className={`${buttonClasses.primarySm} mt-2`}
@@ -415,7 +449,8 @@ const NFTGallery = () => {
   );
 
   useEffect(() => {
-    const updateColumns = () => setNftColumns(getNftColumnsForWidth(window.innerWidth));
+    const updateColumns = () =>
+      setNftColumns(getNftColumnsForWidth(window.innerWidth));
     updateColumns();
     window.addEventListener("resize", updateColumns);
     return () => window.removeEventListener("resize", updateColumns);
@@ -459,10 +494,13 @@ const NFTGallery = () => {
           <Button
             size="lg"
             className={buttonClasses.warningLg}
-            onPress={() => window.ethereum && window.ethereum.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0xA869" }]
-            })}
+            onPress={() =>
+              window.ethereum &&
+              window.ethereum.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: "0xA869" }],
+              })
+            }
           >
             Switch to Fuji Network
           </Button>
@@ -540,7 +578,8 @@ const NFTGallery = () => {
           </div>
           <h3 className="text-xl font-bold mb-2">No passes found</h3>
           <p className="text-gray-400 mb-6">
-            Mint your first access pass to define who can request or receive protected files.
+            Mint your first access pass to define who can request or receive
+            protected files.
           </p>
           <Button
             className={buttonClasses.primaryMd}
@@ -587,14 +626,19 @@ const NFTGallery = () => {
             ) : (
               <>
                 <div className="rounded-xl border border-gray-800/80 bg-gray-900/60 p-3 space-y-1">
-                  <p className="text-sm font-semibold">Access Pass #{viewingToken.tokenId}</p>
+                  <p className="text-sm font-semibold">
+                    Access Pass #{viewingToken.tokenId}
+                  </p>
                   <p className="text-xs text-gray-400">
                     Vault:{" "}
                     {viewingToken.vaultId !== null
-                      ? vaultNameById[viewingToken.vaultId] || `Vault #${viewingToken.vaultId}`
+                      ? vaultNameById[viewingToken.vaultId] ||
+                        `Vault #${viewingToken.vaultId}`
                       : "Unknown"}
                   </p>
-                  <p className="text-xs text-gray-500">Owner: {shortenAddress(viewingToken.owner)}</p>
+                  <p className="text-xs text-gray-500">
+                    Owner: {shortenAddress(viewingToken.owner)}
+                  </p>
                 </div>
 
                 {viewNotice && (
@@ -607,14 +651,17 @@ const NFTGallery = () => {
                   <p className="text-sm text-gray-400">Loading metadata...</p>
                 ) : (
                   <pre className="rounded-xl border border-gray-800/85 bg-black/35 p-3 text-xs text-gray-200 overflow-auto whitespace-pre-wrap break-all">
-{JSON.stringify(viewMetadata ?? {}, null, 2)}
+                    {JSON.stringify(viewMetadata ?? {}, null, 2)}
                   </pre>
                 )}
               </>
             )}
           </ModalBody>
           <ModalFooter className="border-t border-gray-800/80 px-4 sm:px-6 py-3 flex-col-reverse sm:flex-row gap-2">
-            <Button className={`${buttonClasses.ghostMd} w-full sm:w-auto`} onPress={onViewModalClose}>
+            <Button
+              className={`${buttonClasses.ghostMd} w-full sm:w-auto`}
+              onPress={onViewModalClose}
+            >
               Close
             </Button>
             <Button
@@ -650,34 +697,48 @@ const NFTGallery = () => {
         placement="center"
       >
         <ModalContent className="bg-gray-950 w-[94vw] max-w-xl max-h-[82vh] overflow-hidden border border-gray-800/90 shadow-2xl">
-          <ModalHeader className="border-b border-gray-800/80 px-4 sm:px-6 py-4">Mint Access Pass</ModalHeader>
+          <ModalHeader className="border-b border-gray-800/80 px-4 sm:px-6 py-4">
+            Mint Access Pass
+          </ModalHeader>
           <ModalBody className="modal-scroll max-h-[70vh] overflow-y-auto px-4 sm:px-6 py-4">
             <div className="space-y-4">
               <div className="space-y-1">
-                <p className="text-xs text-gray-300 font-medium">Recipient Address</p>
+                <p className="text-xs text-gray-300 font-medium">
+                  Recipient Address
+                </p>
                 <Input
                   placeholder="0x..."
                   value={form.recipient}
-                  onValueChange={(value) => setForm({ ...form, recipient: value })}
+                  onValueChange={(value) =>
+                    setForm({ ...form, recipient: value })
+                  }
                   classNames={modalInputClassNames}
                 />
               </div>
               <div className="space-y-1">
-                <p className="text-xs text-gray-300 font-medium">Token URI (optional)</p>
+                <p className="text-xs text-gray-300 font-medium">
+                  Token URI (optional)
+                </p>
                 <Input
                   placeholder="https://..."
                   value={form.tokenURI}
-                  onValueChange={(value) => setForm({ ...form, tokenURI: value })}
+                  onValueChange={(value) =>
+                    setForm({ ...form, tokenURI: value })
+                  }
                   classNames={modalInputClassNames}
                 />
               </div>
 
               <div className="space-y-1">
-                <p className="text-xs text-gray-300 font-medium">Select Vault</p>
+                <p className="text-xs text-gray-300 font-medium">
+                  Select Vault
+                </p>
                 <div className="relative">
                   <select
                     value={form.vaultId}
-                    onChange={(event) => setForm({ ...form, vaultId: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, vaultId: event.target.value })
+                    }
                     className={modalSelectClassName}
                   >
                     <option value="">Select Vault</option>
@@ -691,20 +752,26 @@ const NFTGallery = () => {
                 </div>
                 {mintableVaults.length === 0 && (
                   <p className="text-sm text-yellow-400">
-                    No guardian vaults available for this wallet. Accept invite first.
+                    No guardian vaults available for this wallet. Accept invite
+                    first.
                   </p>
                 )}
               </div>
 
               <div className="p-4 bg-brand-700/10 border border-brand-700/20 rounded-lg">
                 <p className="text-sm">
-                  <span className="font-medium">Note:</span> Only vault guardians can mint access passes.
+                  <span className="font-medium">Note:</span> Only vault
+                  guardians can mint access passes.
                 </p>
               </div>
             </div>
           </ModalBody>
           <ModalFooter className="border-t border-gray-800/80 px-4 sm:px-6 py-3 flex-col-reverse sm:flex-row gap-2">
-            <Button className={`${buttonClasses.ghostMd} w-full sm:w-auto`} onPress={onClose} isDisabled={minting}>
+            <Button
+              className={`${buttonClasses.ghostMd} w-full sm:w-auto`}
+              onPress={onClose}
+              isDisabled={minting}
+            >
               Cancel
             </Button>
             <Button
@@ -723,4 +790,3 @@ const NFTGallery = () => {
 };
 
 export default NFTGallery;
-

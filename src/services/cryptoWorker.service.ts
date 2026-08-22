@@ -1,5 +1,8 @@
 import CryptoJS from "crypto-js";
-import { CryptoWorkerRequest, CryptoWorkerResponse } from "../workers/crypto.worker";
+import {
+  CryptoWorkerRequest,
+  CryptoWorkerResponse,
+} from "../workers/crypto.worker";
 
 class CryptoWorkerService {
   private worker: Worker | null = null;
@@ -29,7 +32,9 @@ class CryptoWorkerService {
           this.pendingRequests.delete(id);
 
           if (type === "ERROR" || error) {
-            promiseCallbacks.reject(new Error(error || "Worker encryption failed"));
+            promiseCallbacks.reject(
+              new Error(error || "Worker encryption failed")
+            );
           } else if (result !== undefined) {
             promiseCallbacks.resolve(result);
           } else {
@@ -41,7 +46,10 @@ class CryptoWorkerService {
           console.error("Crypto worker error event:", err);
         };
       } catch (e) {
-        console.warn("Web Worker initialization failed, falling back to main-thread crypto:", e);
+        console.warn(
+          "Web Worker initialization failed, falling back to main-thread crypto:",
+          e
+        );
         this.worker = null;
       }
     }
@@ -71,7 +79,10 @@ class CryptoWorkerService {
   /**
    * Decrypt payload asynchronously using Web Worker (with main-thread fallback)
    */
-  public async decryptAsync(encryptedData: string, key: string): Promise<string> {
+  public async decryptAsync(
+    encryptedData: string,
+    key: string
+  ): Promise<string> {
     if (!this.worker) {
       // Fallback for environments where Web Worker is unavailable
       try {
@@ -95,7 +106,9 @@ class CryptoWorkerService {
   }
 
   private generateId(): string {
-    return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+    return (
+      Math.random().toString(36).substring(2, 11) + Date.now().toString(36)
+    );
   }
 
   public terminate() {

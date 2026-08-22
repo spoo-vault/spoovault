@@ -4,8 +4,14 @@ declare module "*ipfsProxyGuard.mjs" {
   export const DEFAULT_MAX_SKEW_SEC: number;
   export const DEFAULT_ALLOWED_ORIGINS: string[];
 
-  export function parseAllowedOrigins(raw?: string | null, fallback?: string[]): string[];
-  export function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): boolean;
+  export function parseAllowedOrigins(
+    raw?: string | null,
+    fallback?: string[]
+  ): string[];
+  export function isOriginAllowed(
+    origin: string | undefined,
+    allowedOrigins: string[]
+  ): boolean;
   export function isMultipartContentType(contentType?: string): boolean;
   export function toHex(buffer: BufferSource): string;
   export function sha256Hex(data: string | BufferSource): Promise<string>;
@@ -15,7 +21,10 @@ declare module "*ipfsProxyGuard.mjs" {
     path: string;
     bodyHash: string;
   }): string;
-  export function hmacSha256Hex(secret: string, message: string): Promise<string>;
+  export function hmacSha256Hex(
+    secret: string,
+    message: string
+  ): Promise<string>;
   export function formatSignatureHeader(timestamp: number, hex: string): string;
   export function parseSignatureHeader(
     value: unknown

@@ -32,7 +32,7 @@ wallet-connected flows. The suite drives the dApp against real local chains:
   at each step (guardian activation + `hasActiveAccess`).
 - `e2e/soroban/soroban-flow.test.mjs` — Soroban standalone contract E2E:
   `create_vault → accept_guardian_invite → add_document → request_access →
-  approve_access`, asserting the returned ids/states.
+approve_access`, asserting the returned ids/states.
 - `playwright.config.ts` — Playwright/Synpress config with `video` and `trace`
   set to `retain-on-failure` and HTML reporting.
 - `.github/workflows/e2e.yml` — `e2e-evm` (Foundry/anvil + Playwright + Synpress

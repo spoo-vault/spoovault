@@ -48,10 +48,9 @@ describe("IPFS proxy CORS origin allowlist", () => {
   });
 
   it("parses comma-separated authorized app domains", () => {
-    expect(parseAllowedOrigins("https://app.spoovault.io, https://spoovault.io")).toEqual([
-      "https://app.spoovault.io",
-      "https://spoovault.io",
-    ]);
+    expect(
+      parseAllowedOrigins("https://app.spoovault.io, https://spoovault.io")
+    ).toEqual(["https://app.spoovault.io", "https://spoovault.io"]);
   });
 
   it("allows missing Origin (non-browser) and exact allowlist matches", () => {
@@ -75,7 +74,9 @@ describe("IPFS proxy HMAC signatures", () => {
     expect(await sha256Hex("")).toBe(
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
-    expect(await resolveBodyHash({ unsignedBody: true })).toBe(UNSIGNED_PAYLOAD);
+    expect(await resolveBodyHash({ unsignedBody: true })).toBe(
+      UNSIGNED_PAYLOAD
+    );
     expect(await resolveBodyHash({ body: "" })).toBe(await sha256Hex(""));
     expect(toHex(new Uint8Array([0, 15, 255]))).toBe("000fff");
   });
@@ -88,7 +89,9 @@ describe("IPFS proxy HMAC signatures", () => {
       body: BODY,
       timestamp: 1_700_000_000,
     });
-    expect(signed.headers[SIGNATURE_HEADER]).toMatch(/^t=1700000000,v1=[0-9a-f]+$/);
+    expect(signed.headers[SIGNATURE_HEADER]).toMatch(
+      /^t=1700000000,v1=[0-9a-f]+$/
+    );
 
     const result = await authorize({ signatureHeader: signed.signature });
     expect(result).toEqual({ ok: true });
@@ -108,11 +111,15 @@ describe("IPFS proxy HMAC signatures", () => {
       status: 403,
       error: "Forbidden",
     });
-    await expect(authorize({ signatureHeader: "not-a-signature" })).resolves.toMatchObject({
+    await expect(
+      authorize({ signatureHeader: "not-a-signature" })
+    ).resolves.toMatchObject({
       status: 403,
       error: "Forbidden",
     });
-    await expect(authorize({ signatureHeader: "t=1700000000,v1=" })).resolves.toMatchObject({
+    await expect(
+      authorize({ signatureHeader: "t=1700000000,v1=" })
+    ).resolves.toMatchObject({
       status: 403,
     });
     await expect(
@@ -124,7 +131,9 @@ describe("IPFS proxy HMAC signatures", () => {
         secret: "other-secret",
       })
     ).resolves.toMatchObject({ status: 403 });
-    await expect(authorize({ signatureHeader: signed.signature, secret: "" })).resolves.toMatchObject({
+    await expect(
+      authorize({ signatureHeader: signed.signature, secret: "" })
+    ).resolves.toMatchObject({
       status: 403,
     });
   });
@@ -139,7 +148,10 @@ describe("IPFS proxy HMAC signatures", () => {
     });
 
     await expect(
-      authorize({ signatureHeader: signed.signature, body: '{"pinataContent":{"hello":"nope"}}' })
+      authorize({
+        signatureHeader: signed.signature,
+        body: '{"pinataContent":{"hello":"nope"}}',
+      })
     ).resolves.toMatchObject({ status: 403 });
 
     await expect(
@@ -204,7 +216,9 @@ describe("IPFS proxy HMAC signatures", () => {
       }
     );
     expect(result).toEqual({ ok: true });
-    expect(isMultipartContentType("Multipart/Form-Data; boundary=x")).toBe(true);
+    expect(isMultipartContentType("Multipart/Form-Data; boundary=x")).toBe(
+      true
+    );
     expect(isMultipartContentType("application/json")).toBe(false);
   });
 
@@ -246,10 +260,22 @@ describe("IPFS proxy HMAC signatures", () => {
     expect(parseSignatureHeader(null)).toBeNull();
     expect(parseSignatureHeader(12)).toBeNull();
     expect(parseSignatureHeader("")).toBeNull();
-    expect(parseSignatureHeader("t=1,,v1=aa")).toEqual({ timestamp: 1, v1: "aa" });
-    expect(parseSignatureHeader("t=12,v1=ab")).toEqual({ timestamp: 12, v1: "ab" });
-    expect(parseSignatureHeader("v1=AB, t=12")).toEqual({ timestamp: 12, v1: "ab" });
-    expect(parseSignatureHeader("orphan,t=1,v1=aa")).toEqual({ timestamp: 1, v1: "aa" });
+    expect(parseSignatureHeader("t=1,,v1=aa")).toEqual({
+      timestamp: 1,
+      v1: "aa",
+    });
+    expect(parseSignatureHeader("t=12,v1=ab")).toEqual({
+      timestamp: 12,
+      v1: "ab",
+    });
+    expect(parseSignatureHeader("v1=AB, t=12")).toEqual({
+      timestamp: 12,
+      v1: "ab",
+    });
+    expect(parseSignatureHeader("orphan,t=1,v1=aa")).toEqual({
+      timestamp: 1,
+      v1: "aa",
+    });
     expect(formatSignatureHeader(12, "ab")).toBe("t=12,v1=ab");
     expect(timingSafeEqualHex("aa", "aa")).toBe(true);
     expect(timingSafeEqualHex("aa", "ab")).toBe(false);
@@ -333,5 +359,43 @@ describe("IPFS proxy HMAC signatures", () => {
       })
     );
     expect(fromGuard.signature).toBe(`t=1700000000,v1=${expected}`);
+  });
+
+  it("signs and authorizes DELETE /api/ipfs/unpin/:hash requests", async () => {
+    const unpinPath = "/api/ipfs/unpin/QmUnpinTestCID123";
+    const signed = await signProxyRequest({
+      secret: SECRET,
+      method: "DELETE",
+      path: unpinPath,
+      timestamp: 1_700_000_000,
+    });
+
+    const result = await authorizeProxyRequest({
+      method: "DELETE",
+      path: unpinPath,
+      origin: "https://app.spoovault.io",
+      signatureHeader: signed.signature,
+      secret: SECRET,
+      allowedOrigins: ORIGINS,
+      now: () => 1_700_000_000,
+    });
+
+    expect(result).toEqual({ ok: true });
+
+    const incomingResult = await authorizeIncomingRequest(
+      {
+        method: "DELETE",
+        originalUrl: unpinPath,
+        origin: "https://app.spoovault.io",
+        signatureHeader: signed.signature,
+      },
+      {
+        secret: SECRET,
+        allowedOrigins: ORIGINS,
+        now: () => 1_700_000_000,
+      }
+    );
+
+    expect(incomingResult).toEqual({ ok: true });
   });
 });

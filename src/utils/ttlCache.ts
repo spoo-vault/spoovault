@@ -16,7 +16,8 @@ export class TTLCache<T = any> {
 
   constructor(ttlMsOrSeconds: number = 10) {
     // If <= 1000, treat as seconds; otherwise assume milliseconds
-    this.ttlMs = ttlMsOrSeconds <= 1000 ? ttlMsOrSeconds * 1000 : ttlMsOrSeconds;
+    this.ttlMs =
+      ttlMsOrSeconds <= 1000 ? ttlMsOrSeconds * 1000 : ttlMsOrSeconds;
   }
 
   async fetch<R = T>(key: string, fetchFn: () => Promise<R>): Promise<R> {
@@ -34,7 +35,10 @@ export class TTLCache<T = any> {
 
     const promise = fetchFn()
       .then((data) => {
-        this.cache.set(key, { data: data as unknown as T, timestamp: Date.now() });
+        this.cache.set(key, {
+          data: data as unknown as T,
+          timestamp: Date.now(),
+        });
         return data;
       })
       .finally(() => {

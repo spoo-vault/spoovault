@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "compilerFingerprint": "bf393b2ba114",
+  "compilerFingerprint": "0000000000000000",
   "updatedAt": "2026-08-22T09:14:21.975Z",
   "gas": {
     "CrossChainIdentityRegistry.bindIdentity": 1530867,

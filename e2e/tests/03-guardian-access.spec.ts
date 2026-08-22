@@ -3,10 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { JsonRpcProvider, NonceManager, Wallet, Contract } from "ethers";
-import {
-  ANVIL_RPC_URL,
-  privateKeyForIndex,
-} from "../wallets";
+import { ANVIL_RPC_URL, privateKeyForIndex } from "../wallets";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
@@ -37,7 +34,7 @@ function loadContractAddress(): string {
   const match = text.match(/VITE_CONTRACT_ADDRESS=(0x[0-9a-fA-F]+)/);
   if (!match) {
     throw new Error(
-      "e2e/.env.e2e not found. Run `node e2e/scripts/deploy-anvil.mjs` first.",
+      "e2e/.env.e2e not found. Run `node e2e/scripts/deploy-anvil.mjs` first."
     );
   }
   return match[1];
@@ -73,7 +70,7 @@ test.describe("SpooVault — multi-guardian access approval (EVM contract E2E)",
       "Guardian E2E Vault",
       "multi-guardian approval flow",
       [guardianWallet.address],
-      1,
+      1
     );
     const createReceipt = await createTx.wait();
     let vaultId: bigint | undefined;
@@ -87,19 +84,29 @@ test.describe("SpooVault — multi-guardian access approval (EVM contract E2E)",
       }
     }
     expect(vaultId).toBeDefined();
-    expect(await contract.isGuardian(vaultId, guardianWallet.address)).toBe(false);
+    expect(await contract.isGuardian(vaultId, guardianWallet.address)).toBe(
+      false
+    );
 
     // 2) Guardian accepts the invitation -> becomes an active guardian.
     await (await guardianContract.acceptGuardianInvite(vaultId)).wait();
-    expect(await contract.isGuardian(vaultId, guardianWallet.address)).toBe(true);
+    expect(await contract.isGuardian(vaultId, guardianWallet.address)).toBe(
+      true
+    );
 
     // 3) Guardian mints the beneficiary an access token and uploads a document.
-    await (await guardianContract.mintAccessToken(vaultId, beneficiaryWallet.address, "e2e-uri")).wait();
+    await (
+      await guardianContract.mintAccessToken(
+        vaultId,
+        beneficiaryWallet.address,
+        "e2e-uri"
+      )
+    ).wait();
     const docTx = await guardianContract.addDocument(
       vaultId,
       "encrypted-meta",
       "ipfs://e2e-document",
-      0,
+      0
     );
     const docReceipt = await docTx.wait();
     let documentId: bigint | undefined;
@@ -128,14 +135,14 @@ test.describe("SpooVault — multi-guardian access approval (EVM contract E2E)",
       }
     }
     expect(requestId).toBeDefined();
-    expect(await contract.hasActiveAccess(documentId, beneficiaryWallet.address)).toBe(
-      false,
-    );
+    expect(
+      await contract.hasActiveAccess(documentId, beneficiaryWallet.address)
+    ).toBe(false);
 
     // 5) Guardian approves the request -> beneficiary gains active access.
     await (await guardianContract.approveAccess(requestId)).wait();
-    expect(await contract.hasActiveAccess(documentId, beneficiaryWallet.address)).toBe(
-      true,
-    );
+    expect(
+      await contract.hasActiveAccess(documentId, beneficiaryWallet.address)
+    ).toBe(true);
   });
 });

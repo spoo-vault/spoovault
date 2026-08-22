@@ -35,7 +35,9 @@ class AuditService {
     activities: ActivityEvent[] = []
   ): AuditCertificate {
     const rawCertificateData = {
-      certificateId: `SPV-AUDIT-${vault.id}-${Date.now().toString(36).toUpperCase()}`,
+      certificateId: `SPV-AUDIT-${vault.id}-${Date.now()
+        .toString(36)
+        .toUpperCase()}`,
       generatedAt: new Date().toISOString(),
       vaultId: vault.id,
       vaultName: vault.name,
@@ -58,7 +60,9 @@ class AuditService {
     };
 
     // Calculate SHA-256 digest of the certificate content
-    const sha256Digest = CryptoJS.SHA256(JSON.stringify(rawCertificateData)).toString();
+    const sha256Digest = CryptoJS.SHA256(
+      JSON.stringify(rawCertificateData)
+    ).toString();
 
     return {
       ...rawCertificateData,
@@ -73,7 +77,7 @@ class AuditService {
     const jsonString = JSON.stringify(cert, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    
+
     const a = document.createElement("a");
     a.href = url;
     a.download = `SpooVault_Audit_Certificate_Vault_${cert.vaultId}.json`;
@@ -87,7 +91,13 @@ class AuditService {
    * Export activity logs as CSV
    */
   public downloadActivityCSV(vaultId: number, activities: ActivityEvent[]) {
-    const headers = ["Action", "Actor", "Timestamp", "Formatted Date", "Status"];
+    const headers = [
+      "Action",
+      "Actor",
+      "Timestamp",
+      "Formatted Date",
+      "Status",
+    ];
     const rows = activities.map((act) => [
       act.action,
       act.actor,
@@ -96,7 +106,10 @@ class AuditService {
       act.status,
     ]);
 
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.join(",")),
+    ].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
 
@@ -114,7 +127,9 @@ class AuditService {
    */
   public verifyCertificateIntegrity(cert: AuditCertificate): boolean {
     const { sha256Digest, ...rawContent } = cert;
-    const computedDigest = CryptoJS.SHA256(JSON.stringify(rawContent)).toString();
+    const computedDigest = CryptoJS.SHA256(
+      JSON.stringify(rawContent)
+    ).toString();
     return computedDigest === sha256Digest;
   }
 }

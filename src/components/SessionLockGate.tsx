@@ -8,6 +8,10 @@ import { SessionLockModal } from "./SessionLockModal";
 export function SessionLockGate() {
   const { locked, lockedAccounts, handleUnlock } = useSessionLock();
   return (
-    <SessionLockModal open={locked} accounts={lockedAccounts} onUnlock={handleUnlock} />
+    <SessionLockModal
+      open={locked}
+      accounts={lockedAccounts}
+      onUnlock={handleUnlock}
+    />
   );
 }

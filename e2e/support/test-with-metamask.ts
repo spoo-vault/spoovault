@@ -23,7 +23,7 @@ export const testWithMetaMask = test.extend<{ metamask: MetaMaskType }>({
       context,
       metamaskPage,
       WALLET_PASSWORD,
-      extensionId,
+      extensionId
     );
     await use(metamask);
   },

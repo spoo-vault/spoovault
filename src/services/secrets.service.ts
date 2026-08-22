@@ -64,7 +64,10 @@ function reconstructByte(shares: Array<[number, number]>): number {
       // Formula: Product of (xj / (xj ^ xi))
       const numerator = xj;
       const denominator = xj ^ xi;
-      lagrange = gfMultiply(lagrange, gfMultiply(numerator, gfInverse(denominator)));
+      lagrange = gfMultiply(
+        lagrange,
+        gfMultiply(numerator, gfInverse(denominator))
+      );
     }
 
     secret ^= gfMultiply(yi, lagrange);
@@ -83,8 +86,12 @@ export function setMockCrypto(mock: any) {
  * Q is a 256-bit prime, and P = 2Q + 1 is a safe prime.
  * G generates the unique subgroup of quadratic residues of order Q modulo P.
  */
-export const VSS_Q = BigInt("115792089237316195423570985008687907853269984665640564039457584007913129658411");
-export const VSS_P = BigInt("231584178474632390847141970017375815706539969331281128078915168015826259316823");
+export const VSS_Q = BigInt(
+  "115792089237316195423570985008687907853269984665640564039457584007913129658411"
+);
+export const VSS_P = BigInt(
+  "231584178474632390847141970017375815706539969331281128078915168015826259316823"
+);
 export const VSS_G = 4n;
 
 // Modular arithmetic helpers
@@ -147,7 +154,13 @@ export function splitSecretVSS(
 
   const randomBytes = new Uint8Array(32);
   const cryptoObj =
-    mockCrypto !== null ? mockCrypto : (typeof window !== "undefined" ? window.crypto : (typeof globalThis !== "undefined" ? globalThis.crypto : undefined));
+    mockCrypto !== null
+      ? mockCrypto
+      : typeof window !== "undefined"
+      ? window.crypto
+      : typeof globalThis !== "undefined"
+      ? globalThis.crypto
+      : undefined;
 
   for (let i = 1; i < k; i++) {
     let randVal = 0n;
@@ -161,7 +174,9 @@ export function splitSecretVSS(
     } else {
       let hex = "";
       for (let j = 0; j < 32; j++) {
-        hex += Math.floor(Math.random() * 256).toString(16).padStart(2, "0");
+        hex += Math.floor(Math.random() * 256)
+          .toString(16)
+          .padStart(2, "0");
       }
       randVal = BigInt("0x" + hex) % VSS_Q;
     }
@@ -205,7 +220,10 @@ export function splitSecret(secretHex: string, n: number, k: number): string[] {
 /**
  * Verify a guardian share against VSS commitments.
  */
-export function verifyShare(shareString: string, commitments: string[]): boolean {
+export function verifyShare(
+  shareString: string,
+  commitments: string[]
+): boolean {
   try {
     const parts = shareString.split("-");
     if (parts.length !== 2) return false;
@@ -251,22 +269,23 @@ export function reconstructSecret(shareStrings: string[]): string {
 
   if (!isVSS) {
     // Fallback to legacy SSS reconstruction over GF(256)
-    const parsedShares: Array<{ x: number; bytes: Uint8Array }> = shareStrings.map((s) => {
-      const parts = s.split("-");
-      if (parts.length !== 2) {
-        throw new Error(`Invalid share format: ${s}`);
-      }
-      const x = parseInt(parts[0], 10);
-      const hex = parts[1];
-      if (Number.isNaN(x) || x < 1) {
-        throw new Error(`Invalid x-coordinate in share: ${s}`);
-      }
-      const bytes = new Uint8Array(hex.length / 2);
-      for (let i = 0; i < bytes.length; i++) {
-        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-      }
-      return { x, bytes };
-    });
+    const parsedShares: Array<{ x: number; bytes: Uint8Array }> =
+      shareStrings.map((s) => {
+        const parts = s.split("-");
+        if (parts.length !== 2) {
+          throw new Error(`Invalid share format: ${s}`);
+        }
+        const x = parseInt(parts[0], 10);
+        const hex = parts[1];
+        if (Number.isNaN(x) || x < 1) {
+          throw new Error(`Invalid x-coordinate in share: ${s}`);
+        }
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < bytes.length; i++) {
+          bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+        }
+        return { x, bytes };
+      });
 
     const numBytes = parsedShares[0].bytes.length;
     for (const s of parsedShares) {
@@ -285,7 +304,9 @@ export function reconstructSecret(shareStrings: string[]): string {
       reconstructedBytes[byteIndex] = reconstructByte(coordinates);
     }
 
-    return Array.from(reconstructedBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return Array.from(reconstructedBytes, (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
   }
 
   // VSS reconstruction modulo Q
@@ -383,7 +404,9 @@ const getWebCrypto = (): Crypto => {
     (typeof window !== "undefined" ? window.crypto : undefined) ??
     (typeof globalThis !== "undefined" ? globalThis.crypto : undefined);
   if (!cryptoObj?.subtle) {
-    throw new Error("Web Crypto API (crypto.subtle) is not available in this environment");
+    throw new Error(
+      "Web Crypto API (crypto.subtle) is not available in this environment"
+    );
   }
   return cryptoObj;
 };
@@ -395,7 +418,8 @@ const getRandomBytes = (length: number): Uint8Array => {
 };
 
 const utf8ToBytes = (str: string): Uint8Array => new TextEncoder().encode(str);
-const bytesToUtf8 = (bytes: ArrayBuffer): string => new TextDecoder().decode(bytes);
+const bytesToUtf8 = (bytes: ArrayBuffer): string =>
+  new TextDecoder().decode(bytes);
 
 const base64ToBytes = (base64: string): Uint8Array => {
   const binaryString = atob(base64);
@@ -503,7 +527,11 @@ export async function decryptWithPassphrase(
   const salt = base64ToBytes(payload.salt);
   const iv = base64ToBytes(payload.iv);
   const ciphertext = base64ToBytes(payload.ciphertext);
-  const key = await deriveKeyFromPassphrase(passphrase, salt, payload.iterations);
+  const key = await deriveKeyFromPassphrase(
+    passphrase,
+    salt,
+    payload.iterations
+  );
 
   let plaintextBuffer: ArrayBuffer;
   try {
@@ -513,7 +541,9 @@ export async function decryptWithPassphrase(
       ciphertext as BufferSource
     );
   } catch {
-    throw new Error("Failed to decrypt backup: incorrect passphrase or corrupted data");
+    throw new Error(
+      "Failed to decrypt backup: incorrect passphrase or corrupted data"
+    );
   }
 
   return bytesToUtf8(plaintextBuffer);

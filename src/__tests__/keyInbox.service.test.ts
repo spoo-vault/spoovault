@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import CryptoJS from "crypto-js";
 
-const { postMock, getMock } = vi.hoisted(() => ({
+const { postMock, getMock, deleteMock } = vi.hoisted(() => ({
   postMock: vi.fn(),
   getMock: vi.fn(),
+  deleteMock: vi.fn(),
 }));
 
 vi.mock("axios", () => ({
-  default: { post: postMock, get: getMock },
+  default: { post: postMock, get: getMock, delete: deleteMock },
 }));
 
 const BENEFICIARY = "0x71C838936352937A71E976BBE84e941E79409932";
@@ -52,7 +53,7 @@ const makePayload = () => ({
 
 const makeEnvelopePayload = (
   issuedAt: string,
-  beneficiary = BENEFICIARY.toLowerCase(),
+  beneficiary = BENEFICIARY.toLowerCase()
 ) => ({
   version: 1,
   type: "beneficiary_key_envelope" as const,
@@ -105,24 +106,24 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
     it("is deterministic and case-insensitive on input addresses", async () => {
       const { keyInboxService } = await loadService();
       expect(keyInboxService.hashAddress(BENEFICIARY)).toBe(
-        keyInboxService.hashAddress(BENEFICIARY.toLowerCase()),
+        keyInboxService.hashAddress(BENEFICIARY.toLowerCase())
       );
       expect(
-        keyInboxService.hashAddress(`  ${BENEFICIARY.toUpperCase()}  `),
+        keyInboxService.hashAddress(`  ${BENEFICIARY.toUpperCase()}  `)
       ).toBe(keyInboxService.hashAddress(BENEFICIARY));
     });
 
     it("matches a direct SHA-256 of the normalized address", async () => {
       const { keyInboxService } = await loadService();
       expect(keyInboxService.hashAddress(CONTRACT)).toBe(
-        sha256(CONTRACT.toLowerCase()),
+        sha256(CONTRACT.toLowerCase())
       );
     });
 
     it("produces different digests for different addresses", async () => {
       const { keyInboxService } = await loadService();
       expect(keyInboxService.hashAddress(BENEFICIARY)).not.toBe(
-        keyInboxService.hashAddress(ISSUER),
+        keyInboxService.hashAddress(ISSUER)
       );
     });
   });
@@ -164,7 +165,7 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
     it("rejects and performs no request when IPFS is not configured", async () => {
       const { keyInboxService } = await loadService();
       await expect(
-        keyInboxService.sendKeyEnvelope(makePayload()),
+        keyInboxService.sendKeyEnvelope(makePayload())
       ).rejects.toThrow("IPFS is not configured");
       expect(postMock).not.toHaveBeenCalled();
     });
@@ -192,7 +193,7 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       expect(keyvalues.issuedAt).toBe("2026-08-21T10:00:00.000Z");
 
       const serializedMetadata = JSON.stringify(
-        body.pinataMetadata,
+        body.pinataMetadata
       ).toLowerCase();
       expect(serializedMetadata).not.toContain(BENEFICIARY.toLowerCase());
       expect(serializedMetadata).not.toContain(CONTRACT.toLowerCase());
@@ -233,10 +234,10 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       expect(url).toBe("https://proxy.example.com/api/ipfs/pin-json");
       const body = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
       expect(body.pinataMetadata.keyvalues.beneficiary).toBe(
-        sha256(BENEFICIARY.toLowerCase()),
+        sha256(BENEFICIARY.toLowerCase())
       );
       expect(body.pinataMetadata.keyvalues.issuedBy).toBe(
-        sha256(ISSUER.toLowerCase()),
+        sha256(ISSUER.toLowerCase())
       );
       expect(config.headers["Content-Type"]).toBe("application/json");
       expect(config.headers["X-SpooVault-Signature"]).toBeDefined();
@@ -248,7 +249,7 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       const { keyInboxService } = await loadService();
 
       await expect(
-        keyInboxService.sendKeyEnvelope(makePayload()),
+        keyInboxService.sendKeyEnvelope(makePayload())
       ).rejects.toThrow("Failed to publish key envelope");
     });
   });
@@ -257,7 +258,7 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
     it("rejects when IPFS is not configured", async () => {
       const { keyInboxService } = await loadService();
       await expect(
-        keyInboxService.fetchBeneficiaryInbox(BENEFICIARY),
+        keyInboxService.fetchBeneficiaryInbox(BENEFICIARY)
       ).rejects.toThrow("IPFS is not configured");
       expect(getMock).not.toHaveBeenCalled();
     });
@@ -286,8 +287,9 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       });
       const { keyInboxService } = await loadService();
 
-      const envelopes =
-        await keyInboxService.fetchBeneficiaryInbox(BENEFICIARY);
+      const envelopes = await keyInboxService.fetchBeneficiaryInbox(
+        BENEFICIARY
+      );
 
       expect(envelopes.map((item) => item.issuedAt)).toEqual([
         "2026-06-15T00:00:00.000Z",
@@ -302,7 +304,7 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
             pageLimit: 100,
             pageOffset: 0,
           }),
-        }),
+        })
       );
       expect(getMock).toHaveBeenCalledWith(`${DEFAULT_GATEWAY}QmOlder`, {
         timeout: 30000,
@@ -379,8 +381,9 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       getMock.mockResolvedValue({ data: { rows: [] } });
       const { keyInboxService } = await loadService();
 
-      const envelopes =
-        await keyInboxService.fetchBeneficiaryInbox(BENEFICIARY);
+      const envelopes = await keyInboxService.fetchBeneficiaryInbox(
+        BENEFICIARY
+      );
 
       expect(envelopes).toEqual([]);
       expect(getMock).toHaveBeenCalledTimes(1);
@@ -419,15 +422,16 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       });
       const { keyInboxService } = await loadService();
 
-      const envelopes =
-        await keyInboxService.fetchBeneficiaryInbox(BENEFICIARY);
+      const envelopes = await keyInboxService.fetchBeneficiaryInbox(
+        BENEFICIARY
+      );
 
       expect(listCalls).toBe(3);
       expect(getMock).toHaveBeenCalledWith(
         "https://api.pinata.cloud/data/pinList",
         expect.objectContaining({
           params: expect.objectContaining({ pageOffset: 100 }),
-        }),
+        })
       );
       expect(envelopes).toHaveLength(1);
     });
@@ -446,7 +450,7 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
 
       const envelopes = await keyInboxService.fetchBeneficiaryInbox(
         BENEFICIARY,
-        { limit: 1 },
+        { limit: 1 }
       );
 
       expect(envelopes).toHaveLength(1);
@@ -482,8 +486,9 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       });
       const { keyInboxService } = await loadService();
 
-      const envelopes =
-        await keyInboxService.fetchBeneficiaryInbox(BENEFICIARY);
+      const envelopes = await keyInboxService.fetchBeneficiaryInbox(
+        BENEFICIARY
+      );
 
       expect(envelopes).toHaveLength(1);
       expect(envelopes[0].issuedAt).toBe("2026-05-05T00:00:00.000Z");
@@ -498,14 +503,15 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
         return {
           data: makeEnvelopePayload(
             "2026-05-05T00:00:00.000Z",
-            ISSUER.toLowerCase(),
+            ISSUER.toLowerCase()
           ),
         };
       });
       const { keyInboxService } = await loadService();
 
-      const envelopes =
-        await keyInboxService.fetchBeneficiaryInbox(BENEFICIARY);
+      const envelopes = await keyInboxService.fetchBeneficiaryInbox(
+        BENEFICIARY
+      );
 
       expect(envelopes).toEqual([]);
     });
@@ -534,8 +540,9 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       });
       const { keyInboxService } = await loadService();
 
-      const envelopes =
-        await keyInboxService.fetchBeneficiaryInbox(BENEFICIARY);
+      const envelopes = await keyInboxService.fetchBeneficiaryInbox(
+        BENEFICIARY
+      );
 
       expect(envelopes.map((item) => item.issuedAt)).toEqual([
         "2026-07-07T00:00:00.000Z",
@@ -559,8 +566,9 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
       });
       const { keyInboxService } = await loadService();
 
-      const envelopes =
-        await keyInboxService.fetchBeneficiaryInbox(BENEFICIARY);
+      const envelopes = await keyInboxService.fetchBeneficiaryInbox(
+        BENEFICIARY
+      );
 
       expect(envelopes).toHaveLength(1);
       expect(getMock).toHaveBeenCalledWith(
@@ -569,8 +577,154 @@ describe("KeyInboxService (IPFS key envelope privacy)", () => {
           headers: expect.objectContaining({
             "X-SpooVault-Signature": expect.any(String),
           }),
-        }),
+        })
       );
+    });
+  });
+
+  describe("unpinKeyEnvelope", () => {
+    it("calls ipfsService.unpin directly", async () => {
+      testEnv().VITE_PINATA_JWT = "mock-jwt";
+      deleteMock.mockResolvedValueOnce({ data: "OK", status: 200 });
+
+      const { keyInboxService } = await loadService();
+      const result = await keyInboxService.unpinKeyEnvelope("QmHashToUnpin");
+      expect(result).toBe(true);
+      expect(deleteMock).toHaveBeenCalledWith(
+        "https://api.pinata.cloud/pinning/unpin/QmHashToUnpin",
+        expect.anything()
+      );
+    });
+  });
+
+  describe("listAllKeyEnvelopes", () => {
+    it("throws when IPFS is not configured", async () => {
+      const { keyInboxService } = await loadService();
+      await expect(keyInboxService.listAllKeyEnvelopes()).rejects.toThrow(
+        "IPFS is not configured"
+      );
+    });
+
+    it("lists all key envelopes filtering non-envelope rows", async () => {
+      testEnv().VITE_PINATA_JWT = "mock-jwt";
+      getMock.mockResolvedValueOnce({
+        data: {
+          rows: [
+            makeMatchingRow("QmEnvelope1"),
+            { ipfs_pin_hash: "QmOtherFile", metadata: { name: "other-file" } },
+            makeMatchingRow("QmEnvelope2"),
+          ],
+        },
+      });
+
+      const { keyInboxService } = await loadService();
+      const items = await keyInboxService.listAllKeyEnvelopes();
+      expect(items).toHaveLength(2);
+      expect(items.map((i) => i.hash)).toEqual(["QmEnvelope1", "QmEnvelope2"]);
+    });
+
+    it("lists all key envelopes through proxy when configured", async () => {
+      testEnv().VITE_IPFS_PROXY_URL = "https://proxy.example.com";
+      testEnv().VITE_SPOOVUALT_PROXY_SECRET = "test-secret";
+      getMock.mockResolvedValueOnce({
+        data: {
+          rows: [makeMatchingRow("QmProxyEnvelope")],
+        },
+      });
+
+      const { keyInboxService } = await loadService();
+      const items = await keyInboxService.listAllKeyEnvelopes();
+      expect(items).toHaveLength(1);
+      expect(items[0].hash).toBe("QmProxyEnvelope");
+      expect(getMock).toHaveBeenCalledWith(
+        "https://proxy.example.com/api/ipfs/pin-list?status=pinned&pageLimit=100&pageOffset=0",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "X-SpooVault-Signature": expect.any(String),
+          }),
+        })
+      );
+    });
+  });
+
+  describe("findEnvelopeHashesForBeneficiaryAndDoc & unpinEnvelopesForBeneficiaryAndDoc", () => {
+    it("throws when finding envelopes and IPFS is not configured", async () => {
+      const { keyInboxService } = await loadService();
+      await expect(
+        keyInboxService.findEnvelopeHashesForBeneficiaryAndDoc(BENEFICIARY, 3)
+      ).rejects.toThrow("IPFS is not configured");
+    });
+
+    it("finds envelope hashes matching beneficiary and documentId", async () => {
+      testEnv().VITE_PINATA_JWT = "mock-jwt";
+      getMock.mockResolvedValueOnce({
+        data: {
+          rows: [
+            makeMatchingRow("QmDoc3Match"),
+            {
+              ipfs_pin_hash: "QmDoc4Mismatch",
+              metadata: {
+                name: ENVELOPE_NAME,
+                keyvalues: {
+                  type: "beneficiary_key_envelope",
+                  beneficiary: sha256(BENEFICIARY.toLowerCase()),
+                  documentId: "4",
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      const { keyInboxService } = await loadService();
+      const hashes =
+        await keyInboxService.findEnvelopeHashesForBeneficiaryAndDoc(
+          BENEFICIARY,
+          3
+        );
+      expect(hashes).toEqual(["QmDoc3Match"]);
+    });
+
+    it("unpins matching envelopes for beneficiary and documentId", async () => {
+      testEnv().VITE_PINATA_JWT = "mock-jwt";
+      getMock.mockResolvedValueOnce({
+        data: {
+          rows: [makeMatchingRow("QmToUnpin1"), makeMatchingRow("QmToUnpin2")],
+        },
+      });
+      deleteMock.mockResolvedValue({ data: "OK", status: 200 });
+
+      const { keyInboxService } = await loadService();
+      const result = await keyInboxService.unpinEnvelopesForBeneficiaryAndDoc(
+        BENEFICIARY,
+        3
+      );
+      expect(result.unpinned).toEqual(["QmToUnpin1", "QmToUnpin2"]);
+      expect(result.failed).toEqual([]);
+      expect(deleteMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("records failed unpins gracefully when delete fails", async () => {
+      testEnv().VITE_PINATA_JWT = "mock-jwt";
+      getMock.mockResolvedValueOnce({
+        data: {
+          rows: [makeMatchingRow("QmSuccess"), makeMatchingRow("QmFail")],
+        },
+      });
+      deleteMock.mockImplementation(async (url: string) => {
+        if (url.includes("QmFail")) {
+          throw new Error("Network error");
+        }
+        return { data: "OK", status: 200 };
+      });
+
+      const { keyInboxService } = await loadService();
+      const result = await keyInboxService.unpinEnvelopesForBeneficiaryAndDoc(
+        BENEFICIARY,
+        3
+      );
+      expect(result.unpinned).toEqual(["QmSuccess"]);
+      expect(result.failed).toEqual(["QmFail"]);
     });
   });
 });

@@ -21,7 +21,10 @@ const stubRect = (height: number) => ({
   toJSON: () => ({}),
 });
 
-const buildToken = (id: number, overrides: Partial<TokenData> = {}): TokenData => ({
+const buildToken = (
+  id: number,
+  overrides: Partial<TokenData> = {}
+): TokenData => ({
   tokenId: id,
   owner: "0x2222222222222222222222222222222222222222",
   vaultId: 1,
@@ -54,18 +57,20 @@ const renderGrid = (
   );
 
 const getMountedTokenIds = () =>
-  screen.getAllByTestId("nft-card").map((card: HTMLElement) => card.getAttribute("data-token-id"));
+  screen
+    .getAllByTestId("nft-card")
+    .map((card: HTMLElement) => card.getAttribute("data-token-id"));
 
 describe("VirtualizedNftGrid", () => {
   beforeEach(() => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement
-    ) {
-      if (this.getAttribute("data-testid") === "nft-row") {
-        return stubRect(NFT_ROW_HEIGHT) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        if (this.getAttribute("data-testid") === "nft-row") {
+          return stubRect(NFT_ROW_HEIGHT) as DOMRect;
+        }
+        return stubRect(VIEWPORT_HEIGHT) as DOMRect;
       }
-      return stubRect(VIEWPORT_HEIGHT) as DOMRect;
-    });
+    );
   });
 
   afterEach(() => {
@@ -116,7 +121,9 @@ describe("VirtualizedNftGrid", () => {
 
     const idsAfterScroll = new Set(getMountedTokenIds());
     expect(idsAfterScroll.has("1")).toBe(false);
-    expect([...idsAfterScroll].some((id) => !idsBeforeScroll.has(id as string))).toBe(true);
+    expect(
+      [...idsAfterScroll].some((id) => !idsBeforeScroll.has(id as string))
+    ).toBe(true);
   });
 
   it("invokes onView with the token when View is pressed", () => {
@@ -174,6 +181,8 @@ describe("VirtualizedNftGrid", () => {
   it("renders no cards when given an empty tokens array directly", () => {
     const { container } = renderGrid([]);
     expect(screen.queryAllByTestId("nft-card")).toHaveLength(0);
-    expect(container.querySelector('[data-testid="nft-scroll-container"]')).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-testid="nft-scroll-container"]')
+    ).toBeInTheDocument();
   });
 });

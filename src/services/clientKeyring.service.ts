@@ -96,7 +96,9 @@ const sessionKeyCache = new Map<string, string>();
 const memoryStore = new Map<string, KeyPairRecord>();
 
 const isIndexedDBAvailable = (): boolean => {
-  return typeof window !== "undefined" && typeof window.indexedDB !== "undefined";
+  return (
+    typeof window !== "undefined" && typeof window.indexedDB !== "undefined"
+  );
 };
 
 /**
@@ -111,7 +113,7 @@ const persistKeyPair = async (
   privateKey: string,
   pinOrPassphrase?: string,
   existing?: KeyPairRecord | null
-): Promise<void> => {
+): Promise<KeyPairRecord> => {
   const normalized = account.toLowerCase();
   const { passphrase } = getEffectivePassphrase(normalized, pinOrPassphrase);
 
@@ -133,9 +135,13 @@ const persistKeyPair = async (
 
   await idbPut(record);
   sessionKeyCache.set(normalized, privateKey);
+  return record;
 };
 
-const getEffectivePassphrase = (account: string, pinOrPassphrase?: string): { passphrase: string; isCustomPin: boolean } => {
+const getEffectivePassphrase = (
+  account: string,
+  pinOrPassphrase?: string
+): { passphrase: string; isCustomPin: boolean } => {
   const trimmed = pinOrPassphrase?.trim();
   if (trimmed) {
     return { passphrase: trimmed, isCustomPin: true };
@@ -683,6 +689,7 @@ export const clientKeyringService = {
     const normalized = account.toLowerCase();
     const { publicKey, privateKey } = await generateECIESKeyPairBase64();
 
+
     // Attempt to protect the keyring with a hardware-backed WebAuthn passkey (PRF extension).
     const passkey =
       options.enablePasskey !== false
@@ -697,6 +704,11 @@ export const clientKeyringService = {
       updatedRecord.passkeyCredentialId = passkey.credentialId;
       updatedRecord.passkeyPrfSalt = passkey.prfSalt;
       updatedRecord.passkeyEncryptedPrivateKey = passkey.encryptedPrivateKey;
+      if (!pinOrPassphrase?.trim()) {
+        updatedRecord.encryptedPrivateKey = "";
+        delete updatedRecord.zkpp;
+        delete updatedRecord.oprfKey;
+      }
       await idbPut(updatedRecord);
     }
 
@@ -725,6 +737,7 @@ export const clientKeyringService = {
     await importECIESPrivateKey(privateKey);
 
     const normalized = account.toLowerCase();
+
     const existing = await idbGet(normalized);
     await persistKeyPair(normalized, publicKey, privateKey, pinOrPassphrase, existing);
   },
@@ -843,7 +856,10 @@ export const clientKeyringService = {
     }
 
     const normalized = account.toLowerCase();
-    const privateKey = await this.getDecryptedPrivateKey(normalized, currentPin);
+    const privateKey = await this.getDecryptedPrivateKey(
+      normalized,
+      currentPin
+    );
     const publicKey = (await this.getStoredPublicKey(normalized)) || "";
 
     const encryptedForBackup = await secretsService.encryptWithPassphrase(

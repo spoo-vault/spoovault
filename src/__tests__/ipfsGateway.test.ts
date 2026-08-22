@@ -25,7 +25,10 @@ const jsonResponse = (status: number, body = "encrypted-bytes"): Response =>
 const hangingFetch = (ms = 5_000): FetchFn => {
   return (_input, init) =>
     new Promise((_, reject) => {
-      const timer = setTimeout(() => reject(new Error("hang never aborted")), ms);
+      const timer = setTimeout(
+        () => reject(new Error("hang never aborted")),
+        ms
+      );
       init?.signal?.addEventListener(
         "abort",
         () => {
@@ -37,10 +40,17 @@ const hangingFetch = (ms = 5_000): FetchFn => {
     });
 };
 
-const delayedFetch = (status: number, body: string, delayMs: number): FetchFn => {
+const delayedFetch = (
+  status: number,
+  body: string,
+  delayMs: number
+): FetchFn => {
   return (_input, init) =>
     new Promise((resolve, reject) => {
-      const timer = setTimeout(() => resolve(jsonResponse(status, body)), delayMs);
+      const timer = setTimeout(
+        () => resolve(jsonResponse(status, body)),
+        delayMs
+      );
       init?.signal?.addEventListener(
         "abort",
         () => {
@@ -69,7 +79,9 @@ describe("IPFS CID and gateway URL helpers", () => {
   });
 
   it("extracts a CID from an existing gateway HTTP URL", () => {
-    expect(normalizeIpfsCid(`https://gateway.pinata.cloud/ipfs/${CID}`)).toBe(CID);
+    expect(normalizeIpfsCid(`https://gateway.pinata.cloud/ipfs/${CID}`)).toBe(
+      CID
+    );
     expect(normalizeIpfsCid(`https://example.com/${CID}`)).toBe(CID);
   });
 
@@ -81,7 +93,9 @@ describe("IPFS CID and gateway URL helpers", () => {
 
   it("normalizes gateway bases and joins CID paths", () => {
     expect(normalizeGatewayBase("")).toBe("");
-    expect(normalizeGatewayBase("https://ipfs.io/ipfs")).toBe("https://ipfs.io/ipfs/");
+    expect(normalizeGatewayBase("https://ipfs.io/ipfs")).toBe(
+      "https://ipfs.io/ipfs/"
+    );
     expect(normalizeGatewayBase(PINATA)).toBe(PINATA);
     expect(buildGatewayUrl(PINATA, CID)).toBe(`${PINATA}${CID}`);
   });
@@ -122,7 +136,8 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
   it("failovers when the primary gateway returns HTTP 429", async () => {
     const fetchFn: FetchFn = async (url) => {
       if (url.startsWith(PINATA)) return jsonResponse(429, "rate-limited");
-      if (url.startsWith(CLOUDFLARE)) return jsonResponse(200, "cloudflare-body");
+      if (url.startsWith(CLOUDFLARE))
+        return jsonResponse(200, "cloudflare-body");
       return jsonResponse(503, "down");
     };
     const client = createIpfsGatewayClient({ fetchFn, timeoutMs: 200 });
@@ -173,7 +188,9 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
           "abort",
           () => {
             aborted.add(gateway);
-            reject(new DOMException("The operation was aborted.", "AbortError"));
+            reject(
+              new DOMException("The operation was aborted.", "AbortError")
+            );
           },
           { once: true }
         );
@@ -194,7 +211,11 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
       if (url.startsWith(INFURA)) return jsonResponse(200, "infura-body");
       return jsonResponse(404);
     };
-    const client = createIpfsGatewayClient({ fetchFn, timeoutMs: 200, cooldownMs: 30_000 });
+    const client = createIpfsGatewayClient({
+      fetchFn,
+      timeoutMs: 200,
+      cooldownMs: 30_000,
+    });
 
     await client.fetchFile(CID);
     calls.length = 0;
@@ -210,7 +231,9 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
     let pinataHealthy = false;
     const fetchFn = vi.fn(async (url: string) => {
       if (url.startsWith(PINATA)) {
-        return pinataHealthy ? jsonResponse(200, "recovered") : jsonResponse(429);
+        return pinataHealthy
+          ? jsonResponse(200, "recovered")
+          : jsonResponse(429);
       }
       return jsonResponse(503);
     });
@@ -222,7 +245,9 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
       gateways: [PINATA, INFURA],
     });
 
-    await expect(client.fetchFile(CID)).rejects.toBeInstanceOf(IpfsGatewayFetchError);
+    await expect(client.fetchFile(CID)).rejects.toBeInstanceOf(
+      IpfsGatewayFetchError
+    );
     expect(client.getCircuitState(PINATA)).toBe("open");
 
     now += 1_000;
@@ -245,16 +270,21 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
       gateways: [PINATA, CLOUDFLARE],
     });
 
-    await expect(client.fetchFile(CID)).rejects.toBeInstanceOf(IpfsGatewayFetchError);
+    await expect(client.fetchFile(CID)).rejects.toBeInstanceOf(
+      IpfsGatewayFetchError
+    );
     const firstCalls = fetchFn.mock.calls.length;
-    await expect(client.fetchFile(CID)).rejects.toBeInstanceOf(IpfsGatewayFetchError);
+    await expect(client.fetchFile(CID)).rejects.toBeInstanceOf(
+      IpfsGatewayFetchError
+    );
     expect(fetchFn.mock.calls.length).toBeGreaterThan(firstCalls);
   });
 
   it("does not trip a circuit on HTTP 404 so the gateway stays eligible", async () => {
     const fetchFn: FetchFn = async (url) => {
       if (url.startsWith(PINATA)) return jsonResponse(404);
-      if (url.startsWith(CLOUDFLARE)) return jsonResponse(200, "found-elsewhere");
+      if (url.startsWith(CLOUDFLARE))
+        return jsonResponse(200, "found-elsewhere");
       return jsonResponse(404);
     };
     const client = createIpfsGatewayClient({ fetchFn, timeoutMs: 200 });
@@ -312,24 +342,36 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
   });
 
   it("rejects empty CIDs and already-aborted signals", async () => {
-    const client = createIpfsGatewayClient({ fetchFn: async () => jsonResponse(200) });
-    await expect(client.fetchFile("   ")).rejects.toThrow("IPFS CID is required");
+    const client = createIpfsGatewayClient({
+      fetchFn: async () => jsonResponse(200),
+    });
+    await expect(client.fetchFile("   ")).rejects.toThrow(
+      "IPFS CID is required"
+    );
 
     const aborted = new AbortController();
     aborted.abort();
-    await expect(client.fetchFile(CID, { signal: aborted.signal })).rejects.toSatisfy(
-      (error: unknown) => error instanceof DOMException && error.name === "AbortError"
+    await expect(
+      client.fetchFile(CID, { signal: aborted.signal })
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof DOMException && error.name === "AbortError"
     );
 
     const custom = new AbortController();
     const reason = new Error("user canceled");
     custom.abort(reason);
-    await expect(client.fetchFile(CID, { signal: custom.signal })).rejects.toBe(reason);
+    await expect(client.fetchFile(CID, { signal: custom.signal })).rejects.toBe(
+      reason
+    );
 
     const stringAbort = new AbortController();
     stringAbort.abort("nope");
-    await expect(client.fetchFile(CID, { signal: stringAbort.signal })).rejects.toSatisfy(
-      (error: unknown) => error instanceof DOMException && error.name === "AbortError"
+    await expect(
+      client.fetchFile(CID, { signal: stringAbort.signal })
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof DOMException && error.name === "AbortError"
     );
   });
 
@@ -343,7 +385,8 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
     const pending = client.fetchFile(CID, { signal: controller.signal });
     controller.abort();
     await expect(pending).rejects.toSatisfy(
-      (error: unknown) => error instanceof DOMException && error.name === "AbortError"
+      (error: unknown) =>
+        error instanceof DOMException && error.name === "AbortError"
     );
   });
 
@@ -385,7 +428,9 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
       gateways: [PINATA],
     });
 
-    await client.fetchFile(CID, { headers: { Accept: "application/octet-stream" } });
+    await client.fetchFile(CID, {
+      headers: { Accept: "application/octet-stream" },
+    });
     expect(fetchFn).toHaveBeenCalledWith(
       `${PINATA}${CID}`,
       expect.objectContaining({
@@ -399,7 +444,9 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
       timeoutMs: 50,
       gateways: [PINATA],
     });
-    await expect(failing.fetchFile(CID)).rejects.toBeInstanceOf(IpfsGatewayFetchError);
+    await expect(failing.fetchFile(CID)).rejects.toBeInstanceOf(
+      IpfsGatewayFetchError
+    );
     expect(failing.getCircuitState(PINATA)).toBe("open");
     failing.resetCircuits();
     expect(failing.getCircuitState(PINATA)).toBe("closed");
@@ -413,9 +460,9 @@ describe("createIpfsGatewayClient race fetch and circuit breaker", () => {
       timeoutMs: 30,
       gateways: [PINATA],
     });
-    await expect(client.fetchFile(CID, { signal: controller.signal })).rejects.toSatisfy(
-      (error: unknown) => error instanceof Error
-    );
+    await expect(
+      client.fetchFile(CID, { signal: controller.signal })
+    ).rejects.toSatisfy((error: unknown) => error instanceof Error);
   });
 });
 

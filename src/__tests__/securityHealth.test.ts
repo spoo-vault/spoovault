@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { computeSecurityHealth } from "../utils/securityHealth";
-import type { VaultData, DocumentData, VaultReleaseState } from "../services/contract.service";
+import type {
+  VaultData,
+  DocumentData,
+  VaultReleaseState,
+} from "../services/contract.service";
 
 const NOW = 1_000_000_000;
 
@@ -64,13 +68,17 @@ describe("computeSecurityHealth", () => {
 
   it("scores guardian quorum up to 40 points based on redundancy and thresholds", () => {
     const vaults = [
-      makeVault(1, [
-        "0x1111111111111111111111111111111111111111",
-        "0x2222222222222222222222222222222222222222",
-        "0x3333333333333333333333333333333333333333",
-        "0x4444444444444444444444444444444444444444",
-        "0x5555555555555555555555555555555555555555",
-      ], 3),
+      makeVault(
+        1,
+        [
+          "0x1111111111111111111111111111111111111111",
+          "0x2222222222222222222222222222222222222222",
+          "0x3333333333333333333333333333333333333333",
+          "0x4444444444444444444444444444444444444444",
+          "0x5555555555555555555555555555555555555555",
+        ],
+        3
+      ),
     ];
     const health = computeSecurityHealth(vaults, [], {}, NOW);
 
@@ -78,7 +86,9 @@ describe("computeSecurityHealth", () => {
     // guardianQuorum = 40
     expect(health.guardianQuorum).toBe(40);
     expect(health.score).toBe(40);
-    expect(health.score + health.encryptionStrength + health.heartbeatFreshness).toBe(40);
+    expect(
+      health.score + health.encryptionStrength + health.heartbeatFreshness
+    ).toBe(40);
   });
 
   it("recommends raising single-approver thresholds above 1", () => {
@@ -93,10 +103,14 @@ describe("computeSecurityHealth", () => {
 
   it("recommends lowering deadlock thresholds when threshold equals guardian count", () => {
     const vaults = [
-      makeVault(1, [
-        "0x1111111111111111111111111111111111111111",
-        "0x2222222222222222222222222222222222222222",
-      ], 2),
+      makeVault(
+        1,
+        [
+          "0x1111111111111111111111111111111111111111",
+          "0x2222222222222222222222222222222222222222",
+        ],
+        2
+      ),
     ];
     const health = computeSecurityHealth(vaults, [], {}, NOW);
     expect(health.recommendations).toContain(
@@ -105,11 +119,10 @@ describe("computeSecurityHealth", () => {
   });
 
   it("awards full encryption strength when all documents have VSS commitments", () => {
-    const vaults = [makeVault(1, ["0x1111111111111111111111111111111111111111"])];
-    const docs = [
-      makeDoc(1, 1, VSS_METADATA),
-      makeDoc(2, 1, VSS_METADATA),
+    const vaults = [
+      makeVault(1, ["0x1111111111111111111111111111111111111111"]),
     ];
+    const docs = [makeDoc(1, 1, VSS_METADATA), makeDoc(2, 1, VSS_METADATA)];
     const health = computeSecurityHealth(vaults, docs, {}, NOW);
 
     // 2 docs with VSS → vssCovered=2, multiPartyCovered=0 (requiredAccess=0)
@@ -118,7 +131,9 @@ describe("computeSecurityHealth", () => {
   });
 
   it("penalises documents without VSS commitments", () => {
-    const vaults = [makeVault(1, ["0x1111111111111111111111111111111111111111"])];
+    const vaults = [
+      makeVault(1, ["0x1111111111111111111111111111111111111111"]),
+    ];
     const docs = [
       makeDoc(1, 1, "raw-ciphertext-without-vss"),
       makeDoc(2, 1, "another-raw-ciphertext"),
@@ -156,7 +171,9 @@ describe("computeSecurityHealth", () => {
 
     // elapsed = 29 days, period = 30 days → ratio = 1/30 ≈ 0.033 < 0.25 → stale
     expect(health.heartbeatFreshness).toBe(1);
-    expect(health.recommendations.some((r) => r.includes("heartbeat"))).toBe(true);
+    expect(health.recommendations.some((r) => r.includes("heartbeat"))).toBe(
+      true
+    );
   });
 
   it("counts emergency-mode vaults as stale", () => {
@@ -215,19 +232,28 @@ describe("computeSecurityHealth", () => {
 
     // Strong: score >= 80
     const strongVaults = [
-      makeVault(1, [
-        "0x1111111111111111111111111111111111111111",
-        "0x2222222222222222222222222222222222222222",
-        "0x3333333333333333333333333333333333333333",
-        "0x4444444444444444444444444444444444444444",
-        "0x5555555555555555555555555555555555555555",
-      ], 3),
+      makeVault(
+        1,
+        [
+          "0x1111111111111111111111111111111111111111",
+          "0x2222222222222222222222222222222222222222",
+          "0x3333333333333333333333333333333333333333",
+          "0x4444444444444444444444444444444444444444",
+          "0x5555555555555555555555555555555555555555",
+        ],
+        3
+      ),
     ];
     const strongDocs = [makeDoc(1, 1, VSS_METADATA)];
     const strongReleaseStates: Record<number, VaultReleaseState> = {
       1: makeReleaseState(86400 * 30, NOW),
     };
-    const strong = computeSecurityHealth(strongVaults, strongDocs, strongReleaseStates, NOW);
+    const strong = computeSecurityHealth(
+      strongVaults,
+      strongDocs,
+      strongReleaseStates,
+      NOW
+    );
 
     // guardianQuorum: 5 guardians → 20 + 20 = 40
     // encryptionStrength: 1 doc with VSS, 0 multi-party → 15
@@ -250,7 +276,9 @@ describe("computeSecurityHealth", () => {
   });
 
   it("awards multi-party encryption points when requiredAccess >= 2", () => {
-    const vaults = [makeVault(1, ["0x1111111111111111111111111111111111111111"])];
+    const vaults = [
+      makeVault(1, ["0x1111111111111111111111111111111111111111"]),
+    ];
     const docs = [
       makeDoc(1, 1, VSS_METADATA, 2),
       makeDoc(2, 1, VSS_METADATA, 2),

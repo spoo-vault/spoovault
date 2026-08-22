@@ -24,9 +24,24 @@ vi.mock('@stellar/stellar-sdk', () => {
         toString: () => addr,
       };
     }),
+    Account: vi.fn().mockImplementation(function (accountId: string, sequence: string) {
+      return { accountId, sequence };
+    }),
+    Operation: {
+      invokeContractFunction: vi.fn(() => 'mock-invoke-op'),
+    },
+    StrKey: {
+      isValidEd25519PublicKey: vi.fn((key: string) => typeof key === 'string' && key.startsWith('G') && key.length === 56),
+    },
     xdr: {
       ScVal: {
         scvVoid: vi.fn(() => ({ _type: 'scvVoid' })),
+      },
+      SorobanAuthorizationEntry: {
+        fromXDR: vi.fn(() => ({
+          credentials: vi.fn(),
+          rootInvocation: vi.fn(),
+        })),
       },
     },
     nativeToScVal: vi.fn(() => ({ _type: 'scvMock' })),
@@ -64,6 +79,7 @@ vi.mock('@stellar/stellar-sdk', () => {
 
 vi.mock('@stellar/freighter-api', () => ({
   isConnected: vi.fn().mockResolvedValue(true),
+  getAddress: vi.fn().mockResolvedValue('GABCDEF1234567890ABCDEF1234567890ABCDEF1234567890AB'),
   getPublicKey: vi.fn().mockResolvedValue('GABCDEF1234567890ABCDEF1234567890ABCDEF1234567890AB'),
   signTransaction: vi.fn().mockResolvedValue('signed-xdr'),
 }));
@@ -71,6 +87,8 @@ vi.mock('@stellar/freighter-api', () => ({
 import { stellarService } from '../services/stellar.service';
 import * as freighter from '@stellar/freighter-api';
 import * as sdk from '@stellar/stellar-sdk';
+
+
 
 class MockLocalStorage {
   private store: Record<string, string> = {};
@@ -82,9 +100,9 @@ class MockLocalStorage {
 
 const setupWallet = async (overrides?: Partial<FreighterShim>) => {
   const mock: FreighterShim = {
-    isConnected: vi.fn().mockResolvedValue(true),
-    getAddress: vi.fn().mockResolvedValue('GABCDEF1234567890ABCDEF1234567890ABCDEF1234567890AB'),
-    signTransaction: vi.fn().mockResolvedValue('signed-xdr'),
+    isConnected: vi.fn().mockImplementation(() => (freighter.isConnected as any)()),
+    getAddress: vi.fn().mockImplementation(() => ((freighter as any).getAddress ? (freighter as any).getAddress() : (freighter.getPublicKey as any)())),
+    signTransaction: vi.fn().mockImplementation((xdr, opts) => (freighter.signTransaction as any)(xdr, opts)),
     getNetwork: vi.fn().mockResolvedValue('TESTNET'),
     ...overrides,
   };
@@ -101,10 +119,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
   stellarService.clear();
-  stellarService.setMockFreighter(null as any);
   (freighter.isConnected as any).mockResolvedValue(true);
+  if ((freighter as any).getAddress) {
+    ((freighter as any).getAddress as any).mockResolvedValue('GABCDEF1234567890ABCDEF1234567890ABCDEF1234567890AB');
+  }
   (freighter.getPublicKey as any).mockResolvedValue('GABCDEF1234567890ABCDEF1234567890ABCDEF1234567890AB');
   (freighter.signTransaction as any).mockResolvedValue('signed-xdr');
+  setupWallet();
 
   vi.stubEnv('VITE_STELLAR_CONTRACT_ADDRESS', 'CCTESTCONTRACT1234567890ABCDEF');
 });
@@ -138,7 +159,7 @@ describe('invokeSorobanContract', () => {
 
     await expect(
       stellarService.invokeSorobanContract('create_vault', [])
-    ).rejects.toThrow('User declined');
+    ).rejects.toThrow('Transaction was rejected by user.');
   });
 
   it('should normalize "cancel" error into "Transaction was rejected by user."', async () => {
@@ -146,7 +167,7 @@ describe('invokeSorobanContract', () => {
 
     await expect(
       stellarService.invokeSorobanContract('create_vault', [])
-    ).rejects.toThrow('cancel');
+    ).rejects.toThrow('Transaction was rejected by user.');
   });
 });
 
@@ -342,15 +363,25 @@ describe('stellarService - Cross-Chain Identity Resolution', () => {
     const evmAddress = '0x64128680775Ef626379DeF6E5c815AeA8F4707Ef';
     const pubKey = '0x04bfcab5516089d846985a12';
 
-    await stellarService.registerCrossChainIdentity(stellarAddress, evmAddress, pubKey);
+    await stellarService.registerCrossChainIdentity(
+      stellarAddress,
+      evmAddress,
+      pubKey
+    );
 
-    const resolvedStellar = await stellarService.resolveEvmToStellar(evmAddress);
+    const resolvedStellar = await stellarService.resolveEvmToStellar(
+      evmAddress
+    );
     expect(resolvedStellar).toBe(stellarAddress);
 
-    const resolvedEvm = await stellarService.resolveStellarToEvm(stellarAddress);
+    const resolvedEvm = await stellarService.resolveStellarToEvm(
+      stellarAddress
+    );
     expect(resolvedEvm).toBe(evmAddress.toLowerCase());
 
-    const resolvedPubKey = await stellarService.resolveEvmToPublicKey(evmAddress);
+    const resolvedPubKey = await stellarService.resolveEvmToPublicKey(
+      evmAddress
+    );
     expect(resolvedPubKey).toBe(pubKey);
   });
 

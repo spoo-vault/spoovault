@@ -2,9 +2,9 @@ name: "Security Static Analysis"
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: read
@@ -21,8 +21,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       # The default `npm install` that slither-action would otherwise run itself
       # fails on this repo's HeroUI/Tailwind peer-dependency conflict, so
@@ -43,9 +43,9 @@ jobs:
         uses: crytic/slither-action@v0.4.0
         id: slither
         with:
-          target: '.'
+          target: "."
           ignore-compile: true
-          slither-version: '0.10.4'
+          slither-version: "0.10.4"
           slither-args: --filter-paths "node_modules|contracts-stellar"
           sarif: results.sarif
           node-version: "22"
@@ -66,7 +66,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install Mythril
         run: |

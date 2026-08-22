@@ -11,7 +11,8 @@ const PINATA_API_SECRET = import.meta.env.VITE_PINATA_API_SECRET;
 const IPFS_PROXY_URL =
   (import.meta.env.VITE_IPFS_PROXY_URL as string | undefined)?.trim() || "";
 const PROXY_SECRET =
-  (import.meta.env.VITE_SPOOVUALT_PROXY_SECRET as string | undefined)?.trim() || "";
+  (import.meta.env.VITE_SPOOVUALT_PROXY_SECRET as string | undefined)?.trim() ||
+  "";
 
 const isConfigured = (): boolean => {
   if (IPFS_PROXY_URL) {
@@ -273,6 +274,59 @@ const uploadStream = async (
   }
 };
 
+const unpin = async (hash: string, signal?: AbortSignal): Promise<boolean> => {
+  if (!hash || typeof hash !== "string" || !hash.trim()) {
+    throw new Error("IPFS hash is required for unpinning");
+  }
+
+  if (!isConfigured()) {
+    throw new Error("IPFS is not configured");
+  }
+
+  const cleanHash = hash.trim();
+
+  try {
+    if (IPFS_PROXY_URL) {
+      const path = `/api/ipfs/unpin/${encodeURIComponent(cleanHash)}`;
+      const auth = await signProxyRequest({
+        secret: getProxySecret(),
+        method: "DELETE",
+        path,
+      });
+      await axios.delete(`${IPFS_PROXY_URL}${path}`, {
+        headers: auth.headers,
+        timeout: 30000,
+        signal,
+      });
+    } else {
+      await axios.delete(
+        `${PINATA_API_URL}/pinning/unpin/${encodeURIComponent(cleanHash)}`,
+        {
+          headers: buildAuthHeaders(),
+          timeout: 30000,
+          signal,
+        }
+      );
+    }
+    return true;
+  } catch (error: any) {
+    if (error?.response?.status === 404) {
+      return true;
+    }
+    const isCanceled = error?.code === "ERR_CANCELED";
+    const isTimeout = error?.code === "ECONNABORTED";
+    const message = isCanceled
+      ? "IPFS unpin canceled."
+      : isTimeout
+      ? "IPFS unpin timed out."
+      : error?.response?.data?.error?.reason ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "IPFS unpin failed";
+    throw new Error(message);
+  }
+};
+
 export const ipfsService = {
   isConfigured,
   getURL,
@@ -281,4 +335,5 @@ export const ipfsService = {
   uploadFile,
   uploadStream,
   createMultipartFileStream,
+  unpin,
 };

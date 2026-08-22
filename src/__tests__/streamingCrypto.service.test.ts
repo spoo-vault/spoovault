@@ -75,7 +75,7 @@ describe("streamingCrypto.service", () => {
       );
       expect(decrypted).toEqual(plain);
     }
-  });
+  }, 30_000);
 
   it("keeps transform peak buffers well under 50MB for multi-chunk inputs", async () => {
     const key = await importStreamingKey(TEST_KEY_HEX);

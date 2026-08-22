@@ -52,10 +52,14 @@ try {
 }
 
 const PINATA_JWT = process.env.PINATA_JWT || process.env.VITE_PINATA_JWT || "";
-const PINATA_API_KEY = process.env.PINATA_API_KEY || process.env.VITE_PINATA_API_KEY || "";
-const PINATA_API_SECRET = process.env.PINATA_API_SECRET || process.env.VITE_PINATA_API_SECRET || "";
+const PINATA_API_KEY =
+  process.env.PINATA_API_KEY || process.env.VITE_PINATA_API_KEY || "";
+const PINATA_API_SECRET =
+  process.env.PINATA_API_SECRET || process.env.VITE_PINATA_API_SECRET || "";
 const PROXY_SECRET =
-  process.env.SPOOVUALT_PROXY_SECRET || process.env.VITE_SPOOVUALT_PROXY_SECRET || "";
+  process.env.SPOOVUALT_PROXY_SECRET ||
+  process.env.VITE_SPOOVUALT_PROXY_SECRET ||
+  "";
 const ALLOWED_ORIGINS = parseAllowedOrigins(
   process.env.SPOOVUALT_ALLOWED_ORIGINS || process.env.CORS_ALLOWED_ORIGINS
 );
@@ -64,7 +68,7 @@ const PORT = Number(process.env.PORT) || 3001;
 if (!PINATA_JWT && !(PINATA_API_KEY && PINATA_API_SECRET)) {
   console.error(
     "❌ Pinata credentials not found.\n" +
-    "   Set PINATA_JWT (recommended) or PINATA_API_KEY + PINATA_API_SECRET environment variables.\n"
+      "   Set PINATA_JWT (recommended) or PINATA_API_KEY + PINATA_API_SECRET environment variables.\n"
   );
   process.exit(1);
 }
@@ -72,7 +76,7 @@ if (!PINATA_JWT && !(PINATA_API_KEY && PINATA_API_SECRET)) {
 if (!PROXY_SECRET) {
   console.error(
     "❌ SPOOVUALT_PROXY_SECRET is required so the proxy can reject unsigned pin requests.\n" +
-    "   Set SPOOVUALT_PROXY_SECRET (and VITE_SPOOVUALT_PROXY_SECRET for the frontend).\n"
+      "   Set SPOOVUALT_PROXY_SECRET (and VITE_SPOOVUALT_PROXY_SECRET for the frontend).\n"
   );
   process.exit(1);
 }
@@ -92,7 +96,46 @@ const buildPinataHeaders = (includeContentType = false) => {
 };
 
 const app = express();
-app.use(cors({ origin: "*" }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      callback(null, isOriginAllowed(origin, ALLOWED_ORIGINS));
+    },
+    allowedHeaders: ["Content-Type", "X-SpooVault-Signature"],
+    methods: ["GET", "POST", "DELETE", "OPTIONS"],
+    maxAge: 600,
+  })
+);
+app.use(
+  express.json({
+    limit: "50mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf.toString("utf8");
+    },
+  })
+);
+
+app.use("/api/ipfs", async (req, res, next) => {
+  const result = await authorizeIncomingRequest(
+    {
+      method: req.method,
+      originalUrl: req.originalUrl,
+      origin: req.headers.origin,
+      signatureHeader: req.headers["x-spoovault-signature"],
+      contentType: req.headers["content-type"],
+      rawBody: req.rawBody,
+    },
+    { secret: PROXY_SECRET, allowedOrigins: ALLOWED_ORIGINS }
+  );
+  if (!result.ok) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  return next();
+});
 
 /**
  * POST /api/ipfs/pin-file
@@ -132,7 +175,9 @@ app.post("/api/ipfs/pin-file", async (req, res) => {
     return res.json(data);
   } catch (err) {
     console.error("pin-file error:", err);
-    return res.status(500).json({ error: err.message || "Internal server error" });
+    return res
+      .status(500)
+      .json({ error: err.message || "Internal server error" });
   }
 });
 
@@ -149,7 +194,11 @@ app.post("/api/ipfs/pin-json", express.json({ limit: "50mb" }), async (req, res)
       return res.status(400).json({ error: "pinataContent is required" });
     }
 
-    const body = JSON.stringify({ pinataContent, pinataMetadata, pinataOptions });
+    const body = JSON.stringify({
+      pinataContent,
+      pinataMetadata,
+      pinataOptions,
+    });
     const response = await globalThis.fetch(
       "https://api.pinata.cloud/pinning/pinJSONToIPFS",
       { method: "POST", headers: buildPinataHeaders(true), body }
@@ -162,7 +211,50 @@ app.post("/api/ipfs/pin-json", express.json({ limit: "50mb" }), async (req, res)
     return res.json(data);
   } catch (err) {
     console.error("pin-json error:", err);
-    return res.status(500).json({ error: err.message || "Internal server error" });
+    return res
+      .status(500)
+      .json({ error: err.message || "Internal server error" });
+  }
+});
+
+/**
+ * DELETE /api/ipfs/unpin/:hash
+ * Unpins a file or JSON object by IPFS CID from Pinata.
+ */
+app.delete("/api/ipfs/unpin/:hash", async (req, res) => {
+  try {
+    const hash = req.params.hash;
+    if (!hash || typeof hash !== "string" || !hash.trim()) {
+      return res.status(400).json({ error: "IPFS hash is required" });
+    }
+
+    const url = `https://api.pinata.cloud/pinning/unpin/${encodeURIComponent(
+      hash.trim()
+    )}`;
+    const response = await globalThis.fetch(url, {
+      method: "DELETE",
+      headers: buildPinataHeaders(),
+    });
+
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : { message: "Unpinned successfully" };
+    } catch {
+      data = { message: text || "Unpinned successfully" };
+    }
+
+    if (!response.ok) {
+      return res
+        .status(response.status)
+        .json(typeof data === "object" ? data : { error: data });
+    }
+    return res.json(typeof data === "object" ? data : { message: data, hash });
+  } catch (err) {
+    console.error("unpin error:", err);
+    return res
+      .status(500)
+      .json({ error: err.message || "Internal server error" });
   }
 });
 
@@ -174,8 +266,10 @@ app.get("/api/ipfs/pin-list", async (req, res) => {
   try {
     const queryParams = new URLSearchParams();
     if (req.query.status) queryParams.set("status", String(req.query.status));
-    if (req.query.pageLimit) queryParams.set("pageLimit", String(req.query.pageLimit));
-    if (req.query.pageOffset) queryParams.set("pageOffset", String(req.query.pageOffset));
+    if (req.query.pageLimit)
+      queryParams.set("pageLimit", String(req.query.pageLimit));
+    if (req.query.pageOffset)
+      queryParams.set("pageOffset", String(req.query.pageOffset));
 
     const url = `https://api.pinata.cloud/data/pinList?${queryParams.toString()}`;
     const response = await globalThis.fetch(url, {
@@ -190,7 +284,9 @@ app.get("/api/ipfs/pin-list", async (req, res) => {
     return res.json(data);
   } catch (err) {
     console.error("pin-list error:", err);
-    return res.status(500).json({ error: err.message || "Internal server error" });
+    return res
+      .status(500)
+      .json({ error: err.message || "Internal server error" });
   }
 });
 
@@ -203,8 +299,9 @@ app.listen(PORT, () => {
   console.log("   CORS origins:", ALLOWED_ORIGINS.join(", "));
   console.log("   Auth: X-SpooVault-Signature required on /api/ipfs/*");
   console.log("   Endpoints:");
-  console.log("   POST /api/ipfs/pin-file (streaming passthrough)");
-  console.log("   POST /api/ipfs/pin-json");
-  console.log("   GET  /api/ipfs/pin-list");
-  console.log("   GET  /health\n");
+  console.log("   POST   /api/ipfs/pin-file (streaming passthrough)");
+  console.log("   POST   /api/ipfs/pin-json");
+  console.log("   DELETE /api/ipfs/unpin/:hash");
+  console.log("   GET    /api/ipfs/pin-list");
+  console.log("   GET    /health\n");
 });

@@ -11,7 +11,10 @@ import {
   FiSend,
   FiCopy,
 } from "react-icons/fi";
-import { DocumentData, AccessRequestData } from "../../services/contract.service";
+import {
+  DocumentData,
+  AccessRequestData,
+} from "../../services/contract.service";
 import { buttonClasses } from "../../utils/buttonClasses";
 import { formatDate, shortenAddress } from "../../utils/helpers";
 
@@ -90,7 +93,13 @@ export const VirtualizedDocumentsList = ({
             {loading ? "Loading files..." : "No files found"}
           </div>
         ) : (
-          <div role="rowgroup" style={{ position: "relative", height: rowVirtualizer.getTotalSize() }}>
+          <div
+            role="rowgroup"
+            style={{
+              position: "relative",
+              height: rowVirtualizer.getTotalSize(),
+            }}
+          >
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const item = items[virtualRow.index];
               return (
@@ -179,7 +188,10 @@ export const VirtualizedDocumentsList = ({
                       {releaseConditionLabel(item.releaseCondition)}
                     </Chip>
                   </div>
-                  <div role="cell" className="flex items-center gap-2 flex-wrap">
+                  <div
+                    role="cell"
+                    className="flex items-center gap-2 flex-wrap"
+                  >
                     <Button
                       isIconOnly
                       variant="light"
@@ -207,7 +219,10 @@ export const VirtualizedDocumentsList = ({
                         size="sm"
                         className={buttonClasses.outlineSm}
                         data-testid="document-request-access-button"
-                        isDisabled={item.isRequestPending || requestingDocId === item.doc.id}
+                        isDisabled={
+                          item.isRequestPending ||
+                          requestingDocId === item.doc.id
+                        }
                         isLoading={requestingDocId === item.doc.id}
                         onPress={() => onRequestAccess(item.doc.id)}
                       >

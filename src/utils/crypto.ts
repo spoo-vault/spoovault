@@ -15,7 +15,10 @@ import {
  * Handles standard Base64, URL-safe Base64 (- and _), and missing padding.
  */
 export function base64ToUint8Array(base64: string): Uint8Array {
-  let sanitized = base64.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  let sanitized = base64
+    .replace(/\s+/g, "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
   while (sanitized.length % 4 !== 0) {
     sanitized += "=";
   }
@@ -72,7 +75,6 @@ export function base64ToUtf8(base64: string): string {
 }
 
 export interface EncryptedPayload {
-
   version: string;
   nonce?: string;
   iv?: string;
@@ -114,7 +116,9 @@ const getWebCrypto = (): Crypto => {
     (typeof window !== "undefined" ? window.crypto : undefined) ??
     (typeof globalThis !== "undefined" ? globalThis.crypto : undefined);
   if (!cryptoObj?.subtle) {
-    throw new Error("Web Crypto API (crypto.subtle) is not available in this environment");
+    throw new Error(
+      "Web Crypto API (crypto.subtle) is not available in this environment"
+    );
   }
   return cryptoObj;
 };
@@ -137,7 +141,9 @@ export async function generateECIESKeyPair(): Promise<CryptoKeyPair> {
 /**
  * Export ECDH P-256 Public Key to standard SPKI format Base64 string.
  */
-export async function exportECIESPublicKey(publicKey: CryptoKey): Promise<string> {
+export async function exportECIESPublicKey(
+  publicKey: CryptoKey
+): Promise<string> {
   const subtle = getWebCrypto().subtle;
   const spkiBuffer = await subtle.exportKey("spki", publicKey);
   return uint8ArrayToBase64(new Uint8Array(spkiBuffer));
@@ -146,7 +152,9 @@ export async function exportECIESPublicKey(publicKey: CryptoKey): Promise<string
 /**
  * Export ECDH P-256 Private Key to standard PKCS#8 format Base64 string.
  */
-export async function exportECIESPrivateKey(privateKey: CryptoKey): Promise<string> {
+export async function exportECIESPrivateKey(
+  privateKey: CryptoKey
+): Promise<string> {
   const subtle = getWebCrypto().subtle;
   const pkcs8Buffer = await subtle.exportKey("pkcs8", privateKey);
   return uint8ArrayToBase64(new Uint8Array(pkcs8Buffer));
@@ -155,7 +163,9 @@ export async function exportECIESPrivateKey(privateKey: CryptoKey): Promise<stri
 /**
  * Import ECDH P-256 Public Key from Base64 string (supports both SPKI and raw uncompressed 65-byte formats).
  */
-export async function importECIESPublicKey(pubKeyBase64: string): Promise<CryptoKey> {
+export async function importECIESPublicKey(
+  pubKeyBase64: string
+): Promise<CryptoKey> {
   const subtle = getWebCrypto().subtle;
   const keyBytes = base64ToUint8Array(pubKeyBase64);
 
@@ -189,7 +199,9 @@ export async function importECIESPublicKey(pubKeyBase64: string): Promise<Crypto
 /**
  * Import ECDH P-256 Private Key from PKCS#8 Base64 string.
  */
-export async function importECIESPrivateKey(privKeyBase64: string): Promise<CryptoKey> {
+export async function importECIESPrivateKey(
+  privKeyBase64: string
+): Promise<CryptoKey> {
   const subtle = getWebCrypto().subtle;
   const keyBytes = base64ToUint8Array(privKeyBase64);
   return subtle.importKey(
@@ -260,7 +272,9 @@ export async function encryptWithPublicKey(
     toArrayBuffer(messageBytes)
   );
 
-  const ephemPublicKeyBase64 = await exportECIESPublicKey(ephemKeyPair.publicKey);
+  const ephemPublicKeyBase64 = await exportECIESPublicKey(
+    ephemKeyPair.publicKey
+  );
 
   const payload: EncryptedPayload = {
     version: ECIES_VERSION,
@@ -285,9 +299,14 @@ export async function decryptWithPrivateKey(
       ? JSON.parse(encryptedPayloadJson)
       : encryptedPayloadJson;
 
-  if (payload.version === ECIES_VERSION || payload.version?.startsWith("ecies-")) {
+  if (
+    payload.version === ECIES_VERSION ||
+    payload.version?.startsWith("ecies-")
+  ) {
     const subtle = getWebCrypto().subtle;
-    const receiverPrivateKey = await importECIESPrivateKey(receiverSecretKeyBase64);
+    const receiverPrivateKey = await importECIESPrivateKey(
+      receiverSecretKeyBase64
+    );
     const ephemPublicKey = await importECIESPublicKey(payload.ephemPublicKey);
 
     const aesKey = await subtle.deriveKey(
@@ -461,7 +480,10 @@ export async function decryptHybridWithPrivateKeys(
 
   if (payload.version !== HYBRID_PQC_VERSION) {
     // Fall back to classical decrypt for backwards compatibility
-    return decryptWithPrivateKey(encryptedPayloadJson, keys.classicalPrivateKey);
+    return decryptWithPrivateKey(
+      encryptedPayloadJson,
+      keys.classicalPrivateKey
+    );
   }
 
   if (!payload.pqcCiphertext || !payload.pqcPublicKey) {
@@ -469,10 +491,18 @@ export async function decryptHybridWithPrivateKeys(
   }
 
   const subtle = getWebCrypto().subtle;
-  const receiverPrivateKey = await importECIESPrivateKey(keys.classicalPrivateKey);
+  const receiverPrivateKey = await importECIESPrivateKey(
+    keys.classicalPrivateKey
+  );
   const ephemPublicKey = await importECIESPublicKey(payload.ephemPublicKey);
-  const kEcdh = await deriveEcdhP256SharedBits(receiverPrivateKey, ephemPublicKey);
-  const kMlKem = await mlKem768Decapsulate(payload.pqcCiphertext, keys.pqcPrivateKey);
+  const kEcdh = await deriveEcdhP256SharedBits(
+    receiverPrivateKey,
+    ephemPublicKey
+  );
+  const kMlKem = await mlKem768Decapsulate(
+    payload.pqcCiphertext,
+    keys.pqcPrivateKey
+  );
 
   const aesKey = await deriveHybridAesKey(kEcdh, kMlKem, ["decrypt"]);
   const ivStr = payload.iv || payload.nonce;
@@ -543,7 +573,10 @@ async function decryptHybridX25519(
   }
 
   const kEcdh = nacl.scalarMult(sk, ephemPk);
-  const kMlKem = await mlKem768Decapsulate(payload.pqcCiphertext, keys.pqcPrivateKey);
+  const kMlKem = await mlKem768Decapsulate(
+    payload.pqcCiphertext,
+    keys.pqcPrivateKey
+  );
   const aesKey = await deriveHybridAesKey(kEcdh, kMlKem, ["decrypt"]);
 
   const ivStr = payload.iv || payload.nonce;

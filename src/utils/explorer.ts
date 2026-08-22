@@ -9,7 +9,10 @@ export const getExplorerBaseUrl = (network?: NetworkType): string => {
   return EXPLORER_BASE_URLS[network || "avalanche"];
 };
 
-export const getExplorerTxUrl = (txHash: string, network?: NetworkType): string => {
+export const getExplorerTxUrl = (
+  txHash: string,
+  network?: NetworkType
+): string => {
   const base = getExplorerBaseUrl(network);
   return `${base}/tx/${txHash}`;
 };

@@ -83,7 +83,10 @@ describe("VDF Timelock Encryption Engine", () => {
     it("rejects wrong μ chain", () => {
       const T = 8;
       const proof = provePietrzak(x, T, N);
-      const bad = { ...proof, mus: proof.mus.map((m, i) => (i === 0 ? (m + 1n) % N : m)) };
+      const bad = {
+        ...proof,
+        mus: proof.mus.map((m, i) => (i === 0 ? (m + 1n) % N : m)),
+      };
       expect(verifyPietrzak(x, T, N, bad)).toBe(false);
     });
   });
@@ -111,7 +114,9 @@ describe("VDF Timelock Encryption Engine", () => {
         ...sealed,
         y: ((BigInt("0x" + sealed.y) + 1n) % N).toString(16),
       };
-      await expect(decryptTimelock(forged)).rejects.toThrow(/VDF output mismatch/);
+      await expect(decryptTimelock(forged)).rejects.toThrow(
+        /VDF output mismatch/
+      );
     });
 
     it("cannot decrypt with an invalid Wesolowski proof", async () => {
@@ -120,7 +125,9 @@ describe("VDF Timelock Encryption Engine", () => {
         ...sealed,
         pi: ((BigInt("0x" + sealed.pi) + 1n) % N).toString(16),
       };
-      await expect(decryptTimelock(forged)).rejects.toThrow(/Invalid Wesolowski/);
+      await expect(decryptTimelock(forged)).rejects.toThrow(
+        /Invalid Wesolowski/
+      );
     });
   });
 
@@ -154,14 +161,20 @@ describe("VDF Timelock Encryption Engine", () => {
         const verifyMs = performance.now() - t1;
 
         expect(ok).toBe(true);
-        rows.push({ T, proveMs: Number(proveMs.toFixed(2)), verifyMs: Number(verifyMs.toFixed(2)) });
+        rows.push({
+          T,
+          proveMs: Number(proveMs.toFixed(2)),
+          verifyMs: Number(verifyMs.toFixed(2)),
+        });
       }
 
       // eslint-disable-next-line no-console
       console.log("[VDF benchmark]", rows);
       expect(rows[rows.length - 1].proveMs).toBeGreaterThan(0);
       // Verification is succinct (independent of T cost class vs prove)
-      expect(rows[rows.length - 1].verifyMs).toBeLessThan(rows[rows.length - 1].proveMs + 50);
+      expect(rows[rows.length - 1].verifyMs).toBeLessThan(
+        rows[rows.length - 1].proveMs + 50
+      );
     });
 
     it("benchmarks Pietrzak prove + O(log T) verify", () => {

@@ -49,9 +49,11 @@ SpooVault is an enterprise-grade document custody and secret sharing application
 ## 3. Dual-Chain Smart Contract Layer
 
 ### Avalanche (Solidity `SpooVault.sol`)
+
 - Manages document metadata records, vault configurations, guardian thresholds, and NFT access pass minting on Avalanche Fuji testnet (Chain ID `43113`).
 
 ### Stellar (Soroban Rust Contract)
+
 - Manages document registry, guardian approvals, and key inbox distribution on the Stellar Soroban testnet using native Rust Soroban SDK data structures.
 
 ---
@@ -59,10 +61,22 @@ SpooVault is an enterprise-grade document custody and secret sharing application
 ## 4. IPFS Storage, Gateway Pool & Circuit Breaker
 
 To prevent client-side leaks of Pinata API credentials:
-- Production pin requests route through `scripts/pinata-proxy.mjs`. The Pinata JWT stays on the server.
+
+- Production pin and unpin requests route through `scripts/pinata-proxy.mjs`. The Pinata JWT stays on the server.
 - CORS is restricted to `SPOOVUALT_ALLOWED_ORIGINS` (local Vite URLs by default). Wildcard `Access-Control-Allow-Origin: *` is not used.
-- Every `/api/ipfs/*` pin or list call must present `X-SpooVault-Signature: t=<unix>,v1=<hmac-sha256-hex>`. The HMAC covers timestamp, method, path, and body hash. Unsigned or cross-origin callers receive **403 Forbidden**.
+- Every `/api/ipfs/*` pin, unpin, or list call must present `X-SpooVault-Signature: t=<unix>,v1=<hmac-sha256-hex>`. The HMAC covers timestamp, method, path, and body hash. Unsigned or cross-origin callers receive **403 Forbidden**.
 - The frontend signs with `VITE_SPOOVUALT_PROXY_SECRET` (a dedicated HMAC key, not the Pinata JWT). See `scripts/lib/ipfsProxyGuard.mjs`.
+
+### Key Envelope Unpinning & Garbage Collection Lifecycle
+
+When access requests expire or are rejected, key envelope JSON blobs pinned on Pinata consume unnecessary storage quota. SpooVault implements automated garbage collection for key envelopes:
+
+- **Proxy Unpin Endpoint**: `DELETE /api/ipfs/unpin/:hash` forwards authenticated deletion requests directly to Pinata's unpin API (`https://api.pinata.cloud/pinning/unpin/:hash`).
+- **Unpinning Service (`ipfsService.unpin` & `keyInboxService.unpinKeyEnvelope`)**: Routes unpin calls through the HMAC-guarded proxy in production/configured environments, with direct Pinata API fallback in development.
+- **Automated Garbage Collection (`keyEnvelopeGCService`)**:
+  - Automatically identifies expired (`expiresAt <= now` or `status: 3`) and rejected (`status: 2`) access requests.
+  - Automatically unpins corresponding key envelope blobs from IPFS when access requests are rejected, expired, or scanned during Access Center workflows.
+  - Emits telemetry events (`ipfs.unpin.gc`, `ipfs.unpin.gc.sweep`) for observability.
 
 Document **downloads** no longer depend on a single Pinata URL. `src/services/ipfsGateway.ts` races a public gateway pool and fails over automatically when the primary gateway rate-limits or stalls:
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockContract = {
   interface: { getFunction: vi.fn(() => ({})) },
@@ -21,8 +21,8 @@ const mockProvider = {
   getLogs: vi.fn(),
 };
 
-vi.mock('ethers', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ethers')>();
+vi.mock("ethers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ethers")>();
   // Must be `function`, not an arrow function: these are invoked with `new`,
   // and only a function returning an object can override the constructed `this`.
   const JsonRpcProvider = vi.fn().mockImplementation(function () {
@@ -47,30 +47,30 @@ vi.mock('ethers', async (importOriginal) => {
   };
 });
 
-import { Interface } from 'ethers';
-import { contractService } from '../services/contract.service';
+import { Interface } from "ethers";
+import { contractService } from "../services/contract.service";
 
-const CONTRACT_ADDRESS = '0x1111111111111111111111111111111111111111';
-const USER = '0x2222222222222222222222222222222222222222';
+const CONTRACT_ADDRESS = "0x1111111111111111111111111111111111111111";
+const USER = "0x2222222222222222222222222222222222222222";
 
 const fakeVaultTuple = (id: number) => [
   BigInt(id),
-  '0x3333333333333333333333333333333333333333',
+  "0x3333333333333333333333333333333333333333",
   `Vault ${id}`,
-  'description',
+  "description",
   [] as string[],
   BigInt(1),
   true,
   BigInt(1_700_000_000),
 ];
 
-const receipt = { hash: '0xtxhash', logs: [] as any[] };
+const receipt = { hash: "0xtxhash", logs: [] as any[] };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubEnv('VITE_CONTRACT_ADDRESS', CONTRACT_ADDRESS);
+  vi.stubEnv("VITE_CONTRACT_ADDRESS", CONTRACT_ADDRESS);
 
-  mockProvider.getCode.mockResolvedValue('0xabc123');
+  mockProvider.getCode.mockResolvedValue("0xabc123");
   mockProvider.getBlockNumber.mockResolvedValue(1_000);
   mockProvider.waitForTransaction.mockResolvedValue(receipt);
   mockProvider.getLogs.mockResolvedValue([]);
@@ -79,13 +79,13 @@ beforeEach(() => {
     Promise.resolve(fakeVaultTuple(Number(id)))
   );
   mockContract.hasActiveAccess.mockResolvedValue(true);
-  mockContract.acceptGuardianInvite.mockResolvedValue({ hash: '0xaccept' });
-  mockContract.approveAccess.mockResolvedValue({ hash: '0xapprove' });
-  mockContract.burnAccessToken.mockResolvedValue({ hash: '0xburn' });
-  mockContract.mintAccessToken.mockResolvedValue({ hash: '0xmint' });
-  mockContract.configureVaultRelease.mockResolvedValue({ hash: '0xconfigure' });
-  mockContract.proveLife.mockResolvedValue({ hash: '0xprove' });
-  mockContract.setEmergencyMode.mockResolvedValue({ hash: '0xemergency' });
+  mockContract.acceptGuardianInvite.mockResolvedValue({ hash: "0xaccept" });
+  mockContract.approveAccess.mockResolvedValue({ hash: "0xapprove" });
+  mockContract.burnAccessToken.mockResolvedValue({ hash: "0xburn" });
+  mockContract.mintAccessToken.mockResolvedValue({ hash: "0xmint" });
+  mockContract.configureVaultRelease.mockResolvedValue({ hash: "0xconfigure" });
+  mockContract.proveLife.mockResolvedValue({ hash: "0xprove" });
+  mockContract.setEmergencyMode.mockResolvedValue({ hash: "0xemergency" });
 
   contractService.initialize(mockProvider as any, mockProvider as any);
 });
@@ -95,9 +95,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('contractService read-call TTL cache', () => {
-  it('hasActiveAccess: serves repeated calls within the 10s window from cache, then re-hits RPC after expiry', async () => {
-    const nowSpy = vi.spyOn(Date, 'now');
+describe("contractService read-call TTL cache", () => {
+  it("hasActiveAccess: serves repeated calls within the 10s window from cache, then re-hits RPC after expiry", async () => {
+    const nowSpy = vi.spyOn(Date, "now");
     const start = Date.now();
     nowSpy.mockReturnValue(start);
 
@@ -113,7 +113,7 @@ describe('contractService read-call TTL cache', () => {
     nowSpy.mockRestore();
   });
 
-  it('getActiveAccessMap: a batched Promise.all over many documentIds issues one RPC call per unique id, not per caller', async () => {
+  it("getActiveAccessMap: a batched Promise.all over many documentIds issues one RPC call per unique id, not per caller", async () => {
     const docIds = [1, 2, 3];
 
     await contractService.getActiveAccessMap(USER, docIds);
@@ -123,7 +123,7 @@ describe('contractService read-call TTL cache', () => {
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(3);
   });
 
-  it('getActiveAccessMap and hasActiveAccess share the same cache entries for the same (documentId, user)', async () => {
+  it("getActiveAccessMap and hasActiveAccess share the same cache entries for the same (documentId, user)", async () => {
     await contractService.hasActiveAccess(5, USER);
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(1);
 
@@ -131,8 +131,8 @@ describe('contractService read-call TTL cache', () => {
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(1);
   });
 
-  it('fetchVaultsByIds: caches contract.getVault per vault id across calls within the TTL window', async () => {
-    const nowSpy = vi.spyOn(Date, 'now');
+  it("fetchVaultsByIds: caches contract.getVault per vault id across calls within the TTL window", async () => {
+    const nowSpy = vi.spyOn(Date, "now");
     const start = Date.now();
     nowSpy.mockReturnValue(start);
 
@@ -149,26 +149,26 @@ describe('contractService read-call TTL cache', () => {
     nowSpy.mockRestore();
   });
 
-  it('fetchVaults() shares the getVault cache with fetchVaultsByIds for the same vault id', async () => {
+  it("fetchVaults() shares the getVault cache with fetchVaultsByIds for the same vault id", async () => {
     await contractService.fetchVaultsByIds([1]);
     expect(mockContract.getVault).toHaveBeenCalledTimes(1);
 
     const vaultCreatedIface = new Interface([
-      'event VaultCreated(uint256 indexed vaultId, address indexed creator, string name)',
+      "event VaultCreated(uint256 indexed vaultId, address indexed creator, string name)",
     ]);
     const encoded = vaultCreatedIface.encodeEventLog(
-      vaultCreatedIface.getEvent('VaultCreated')!,
-      [1n, '0x3333333333333333333333333333333333333333', 'Vault 1']
+      vaultCreatedIface.getEvent("VaultCreated")!,
+      [1n, "0x3333333333333333333333333333333333333333", "Vault 1"]
     );
     mockProvider.getLogs.mockResolvedValue([
       {
         address: CONTRACT_ADDRESS,
         blockNumber: 500,
-        blockHash: '0xblock',
+        blockHash: "0xblock",
         data: encoded.data,
         topics: encoded.topics,
         index: 0,
-        transactionHash: '0xtx',
+        transactionHash: "0xtx",
         transactionIndex: 0,
         removed: false,
       },
@@ -181,8 +181,8 @@ describe('contractService read-call TTL cache', () => {
   });
 });
 
-describe('contractService write-path cache invalidation', () => {
-  it('acceptGuardianInvite invalidates the cached getVault entry for that vault (guardians array changed on-chain)', async () => {
+describe("contractService write-path cache invalidation", () => {
+  it("acceptGuardianInvite invalidates the cached getVault entry for that vault (guardians array changed on-chain)", async () => {
     await contractService.fetchVaultsByIds([7]);
     expect(mockContract.getVault).toHaveBeenCalledTimes(1);
 
@@ -192,7 +192,7 @@ describe('contractService write-path cache invalidation', () => {
     expect(mockContract.getVault).toHaveBeenCalledTimes(2);
   });
 
-  it('approveAccess invalidates the hasActiveAccess cache (approval can grant access)', async () => {
+  it("approveAccess invalidates the hasActiveAccess cache (approval can grant access)", async () => {
     await contractService.hasActiveAccess(3, USER);
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(1);
 
@@ -202,7 +202,7 @@ describe('contractService write-path cache invalidation', () => {
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(2);
   });
 
-  it('burnAccessToken invalidates the hasActiveAccess cache (burning revokes all grants for that owner+vault)', async () => {
+  it("burnAccessToken invalidates the hasActiveAccess cache (burning revokes all grants for that owner+vault)", async () => {
     await contractService.hasActiveAccess(4, USER);
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(1);
 
@@ -212,17 +212,17 @@ describe('contractService write-path cache invalidation', () => {
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(2);
   });
 
-  it('mintAccessToken does NOT invalidate hasActiveAccess (minting never retroactively grants document access)', async () => {
+  it("mintAccessToken does NOT invalidate hasActiveAccess (minting never retroactively grants document access)", async () => {
     await contractService.hasActiveAccess(6, USER);
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(1);
 
-    await contractService.mintAccessToken(7, USER, 'ipfs://token');
+    await contractService.mintAccessToken(7, USER, "ipfs://token");
 
     await contractService.hasActiveAccess(6, USER);
     expect(mockContract.hasActiveAccess).toHaveBeenCalledTimes(1);
   });
 
-  it('configureVaultRelease / proveLife / setEmergencyMode do NOT invalidate getVault (they only touch VaultReleaseState, not the getVault tuple)', async () => {
+  it("configureVaultRelease / proveLife / setEmergencyMode do NOT invalidate getVault (they only touch VaultReleaseState, not the getVault tuple)", async () => {
     await contractService.fetchVaultsByIds([8]);
     expect(mockContract.getVault).toHaveBeenCalledTimes(1);
 
@@ -234,7 +234,7 @@ describe('contractService write-path cache invalidation', () => {
     expect(mockContract.getVault).toHaveBeenCalledTimes(1);
   });
 
-  it('contractService.clear() resets both the getVault and hasActiveAccess caches', async () => {
+  it("contractService.clear() resets both the getVault and hasActiveAccess caches", async () => {
     await contractService.fetchVaultsByIds([9]);
     await contractService.hasActiveAccess(9, USER);
     expect(mockContract.getVault).toHaveBeenCalledTimes(1);
@@ -250,8 +250,8 @@ describe('contractService write-path cache invalidation', () => {
   });
 });
 
-describe('RPC volume reduction during Vaults -> Documents -> AccessCenter navigation', () => {
-  it('reduces getVault + hasActiveAccess RPC calls by more than 80% across three navigation loops within the 10s window', async () => {
+describe("RPC volume reduction during Vaults -> Documents -> AccessCenter navigation", () => {
+  it("reduces getVault + hasActiveAccess RPC calls by more than 80% across three navigation loops within the 10s window", async () => {
     const vaultIds = [1, 2, 3, 4, 5];
     const documentIds = [10, 20, 30, 40, 50, 60, 70, 80];
 
@@ -269,14 +269,16 @@ describe('RPC volume reduction during Vaults -> Documents -> AccessCenter naviga
     }
 
     const actualCalls =
-      mockContract.getVault.mock.calls.length + mockContract.hasActiveAccess.mock.calls.length;
+      mockContract.getVault.mock.calls.length +
+      mockContract.hasActiveAccess.mock.calls.length;
 
     // Before this fix there was no cache at all: every one of the 9 fetchVaultsByIds
     // calls issued vaultIds.length real getVault calls, and every one of the 6
     // getActiveAccessMap calls issued documentIds.length real hasActiveAccess calls.
     const baselineCallsBeforeFix = 9 * vaultIds.length + 6 * documentIds.length;
 
-    const reduction = (baselineCallsBeforeFix - actualCalls) / baselineCallsBeforeFix;
+    const reduction =
+      (baselineCallsBeforeFix - actualCalls) / baselineCallsBeforeFix;
 
     expect(actualCalls).toBe(vaultIds.length + documentIds.length); // 5 + 8 = 13: one warm-up each
     expect(baselineCallsBeforeFix).toBe(93); // 9*5 + 6*8

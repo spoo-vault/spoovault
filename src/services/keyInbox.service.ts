@@ -1,6 +1,7 @@
 import axios from "axios";
 import CryptoJS from "crypto-js";
 import { signProxyRequest } from "../utils/ipfsProxySignature";
+import { ipfsService } from "./ipfs.service";
 
 const PINATA_API_URL =
   import.meta.env.VITE_IPFS_API_URL || "https://api.pinata.cloud";
@@ -38,7 +39,8 @@ interface PinRow {
 const IPFS_PROXY_URL =
   (import.meta.env.VITE_IPFS_PROXY_URL as string | undefined)?.trim() || "";
 const PROXY_SECRET =
-  (import.meta.env.VITE_SPOOVUALT_PROXY_SECRET as string | undefined)?.trim() || "";
+  (import.meta.env.VITE_SPOOVUALT_PROXY_SECRET as string | undefined)?.trim() ||
+  "";
 
 const isConfigured = (): boolean => {
   if (IPFS_PROXY_URL) {
@@ -75,7 +77,7 @@ const hashAddress = (value: string): string =>
 const getGatewayUrl = (hash: string): string => `${IPFS_GATEWAY}${hash}`;
 
 const sendKeyEnvelope = async (
-  payload: KeyEnvelopePayload,
+  payload: KeyEnvelopePayload
 ): Promise<string> => {
   if (!isConfigured()) {
     throw new Error("IPFS is not configured");
@@ -151,7 +153,7 @@ const sendKeyEnvelope = async (
           ...buildAuthHeaders(),
         },
         timeout: 30000,
-      },
+      }
     );
   }
 
@@ -164,7 +166,7 @@ const sendKeyEnvelope = async (
 
 const listEnvelopeHashesForBeneficiary = async (
   beneficiaryAddress: string,
-  options?: { limit?: number },
+  options?: { limit?: number }
 ): Promise<string[]> => {
   if (!isConfigured()) {
     throw new Error("IPFS is not configured");
@@ -219,7 +221,7 @@ const listEnvelopeHashesForBeneficiary = async (
       const keyvalues = row.metadata?.keyvalues || {};
       const rowType = String(keyvalues.type || "");
       const rowBeneficiary = normalizeAddress(
-        String(keyvalues.beneficiary || ""),
+        String(keyvalues.beneficiary || "")
       );
       if (!hash) {
         continue;
@@ -244,7 +246,7 @@ const listEnvelopeHashesForBeneficiary = async (
 };
 
 const fetchEnvelopeByHash = async (
-  hash: string,
+  hash: string
 ): Promise<KeyEnvelopePayload | null> => {
   try {
     const response = await axios.get(getGatewayUrl(hash), { timeout: 30000 });
@@ -259,25 +261,25 @@ const fetchEnvelopeByHash = async (
 
 const fetchBeneficiaryInbox = async (
   beneficiaryAddress: string,
-  options?: { limit?: number },
+  options?: { limit?: number }
 ): Promise<KeyEnvelopePayload[]> => {
   const hashes = await listEnvelopeHashesForBeneficiary(
     beneficiaryAddress,
-    options,
+    options
   );
   if (hashes.length === 0) {
     return [];
   }
 
   const envelopes = await Promise.all(
-    hashes.map((hash) => fetchEnvelopeByHash(hash)),
+    hashes.map((hash) => fetchEnvelopeByHash(hash))
   );
   const normalizedRecipient = normalizeAddress(beneficiaryAddress);
 
   return envelopes
     .filter((item): item is KeyEnvelopePayload => item !== null)
     .filter(
-      (item) => normalizeAddress(item.beneficiary) === normalizedRecipient,
+      (item) => normalizeAddress(item.beneficiary) === normalizedRecipient
     )
     .sort((a, b) => {
       const aTime = Date.parse(a.issuedAt || "");
@@ -288,9 +290,193 @@ const fetchBeneficiaryInbox = async (
     });
 };
 
+const unpinKeyEnvelope = async (hash: string): Promise<boolean> => {
+  return ipfsService.unpin(hash);
+};
+
+const listAllKeyEnvelopes = async (options?: {
+  limit?: number;
+  maxPages?: number;
+}): Promise<Array<{ hash: string; row: PinRow }>> => {
+  if (!isConfigured()) {
+    throw new Error("IPFS is not configured");
+  }
+
+  const maxMatches = Math.max(1, Math.min(options?.limit ?? 200, 500));
+  const pageLimit = 100;
+  const maxPages = options?.maxPages ?? 10;
+  const results: Array<{ hash: string; row: PinRow }> = [];
+
+  for (let page = 0; page < maxPages && results.length < maxMatches; page++) {
+    let response;
+    if (IPFS_PROXY_URL) {
+      const query = new URLSearchParams({
+        status: "pinned",
+        pageLimit: String(pageLimit),
+        pageOffset: String(page * pageLimit),
+      });
+      const path = `/api/ipfs/pin-list?${query.toString()}`;
+      const auth = await signProxyRequest({
+        secret: getProxySecret(),
+        method: "GET",
+        path,
+      });
+      response = await axios.get(`${IPFS_PROXY_URL}${path}`, {
+        headers: auth.headers,
+        timeout: 30000,
+      });
+    } else {
+      response = await axios.get(`${PINATA_API_URL}/data/pinList`, {
+        headers: buildAuthHeaders(),
+        params: {
+          status: "pinned",
+          pageLimit,
+          pageOffset: page * pageLimit,
+        },
+        timeout: 30000,
+      });
+    }
+
+    const rows = Array.isArray(response?.data?.rows)
+      ? (response.data.rows as PinRow[])
+      : [];
+    if (rows.length === 0) {
+      break;
+    }
+
+    for (const row of rows) {
+      const hash = String(row.ipfs_pin_hash || "");
+      const metadataName = String(row.metadata?.name || "");
+      const keyvalues = row.metadata?.keyvalues || {};
+      const rowType = String(keyvalues.type || "");
+      if (
+        !hash ||
+        metadataName !== ENVELOPE_NAME ||
+        rowType !== "beneficiary_key_envelope"
+      ) {
+        continue;
+      }
+      results.push({ hash, row });
+      if (results.length >= maxMatches) {
+        break;
+      }
+    }
+  }
+
+  return results;
+};
+
+const findEnvelopeHashesForBeneficiaryAndDoc = async (
+  beneficiaryAddress: string,
+  documentId: number,
+  options?: { limit?: number }
+): Promise<string[]> => {
+  if (!isConfigured()) {
+    throw new Error("IPFS is not configured");
+  }
+
+  const targetBeneficiary = hashAddress(beneficiaryAddress);
+  const targetDocIdStr = String(documentId);
+  const maxMatches = Math.max(1, Math.min(options?.limit ?? 30, 100));
+  const pageLimit = 100;
+  const maxPages = 6;
+  const matches: string[] = [];
+
+  for (let page = 0; page < maxPages && matches.length < maxMatches; page++) {
+    let response;
+    if (IPFS_PROXY_URL) {
+      const query = new URLSearchParams({
+        status: "pinned",
+        pageLimit: String(pageLimit),
+        pageOffset: String(page * pageLimit),
+      });
+      const path = `/api/ipfs/pin-list?${query.toString()}`;
+      const auth = await signProxyRequest({
+        secret: getProxySecret(),
+        method: "GET",
+        path,
+      });
+      response = await axios.get(`${IPFS_PROXY_URL}${path}`, {
+        headers: auth.headers,
+        timeout: 30000,
+      });
+    } else {
+      response = await axios.get(`${PINATA_API_URL}/data/pinList`, {
+        headers: buildAuthHeaders(),
+        params: {
+          status: "pinned",
+          pageLimit,
+          pageOffset: page * pageLimit,
+        },
+        timeout: 30000,
+      });
+    }
+
+    const rows = Array.isArray(response?.data?.rows)
+      ? (response.data.rows as PinRow[])
+      : [];
+    if (rows.length === 0) {
+      break;
+    }
+
+    for (const row of rows) {
+      const hash = String(row.ipfs_pin_hash || "");
+      const metadataName = String(row.metadata?.name || "");
+      const keyvalues = row.metadata?.keyvalues || {};
+      const rowType = String(keyvalues.type || "");
+      const rowBeneficiary = normalizeAddress(
+        String(keyvalues.beneficiary || "")
+      );
+      const rowDocId = String(keyvalues.documentId || "");
+      if (
+        !hash ||
+        metadataName !== ENVELOPE_NAME ||
+        rowType !== "beneficiary_key_envelope"
+      ) {
+        continue;
+      }
+      if (rowBeneficiary === targetBeneficiary && rowDocId === targetDocIdStr) {
+        matches.push(hash);
+        if (matches.length >= maxMatches) {
+          break;
+        }
+      }
+    }
+  }
+
+  return matches;
+};
+
+const unpinEnvelopesForBeneficiaryAndDoc = async (
+  beneficiaryAddress: string,
+  documentId: number
+): Promise<{ unpinned: string[]; failed: string[] }> => {
+  const hashes = await findEnvelopeHashesForBeneficiaryAndDoc(
+    beneficiaryAddress,
+    documentId
+  );
+  const unpinned: string[] = [];
+  const failed: string[] = [];
+
+  for (const hash of hashes) {
+    try {
+      await unpinKeyEnvelope(hash);
+      unpinned.push(hash);
+    } catch {
+      failed.push(hash);
+    }
+  }
+
+  return { unpinned, failed };
+};
+
 export const keyInboxService = {
   isConfigured,
   sendKeyEnvelope,
   fetchBeneficiaryInbox,
+  unpinKeyEnvelope,
+  listAllKeyEnvelopes,
+  findEnvelopeHashesForBeneficiaryAndDoc,
+  unpinEnvelopesForBeneficiaryAndDoc,
   hashAddress,
 };

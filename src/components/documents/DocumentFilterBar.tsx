@@ -1,7 +1,13 @@
 import React from "react";
 import { FiSearch, FiX, FiFilter, FiLayers } from "react-icons/fi";
 
-export type DocumentCategory = "ALL" | "LEGAL" | "FINANCIAL" | "IDENTITY" | "SECRETS" | "MEDICAL";
+export type DocumentCategory =
+  | "ALL"
+  | "LEGAL"
+  | "FINANCIAL"
+  | "IDENTITY"
+  | "SECRETS"
+  | "MEDICAL";
 export type ChainFilter = "ALL" | "AVALANCHE" | "STELLAR";
 export type SortOption = "NEWEST" | "OLDEST" | "NAME_ASC" | "NAME_DESC";
 
@@ -69,9 +75,15 @@ export const DocumentFilterBar: React.FC<DocumentFilterBarProps> = ({
               onChange={(e) => onChainChange(e.target.value as ChainFilter)}
               className="bg-transparent text-xs text-slate-200 focus:outline-none cursor-pointer"
             >
-              <option value="ALL" className="bg-slate-900 text-white">All Networks</option>
-              <option value="AVALANCHE" className="bg-slate-900 text-white">Avalanche Fuji (EVM)</option>
-              <option value="STELLAR" className="bg-slate-900 text-white">Stellar Soroban</option>
+              <option value="ALL" className="bg-slate-900 text-white">
+                All Networks
+              </option>
+              <option value="AVALANCHE" className="bg-slate-900 text-white">
+                Avalanche Fuji (EVM)
+              </option>
+              <option value="STELLAR" className="bg-slate-900 text-white">
+                Stellar Soroban
+              </option>
             </select>
           </div>
 
@@ -82,10 +94,18 @@ export const DocumentFilterBar: React.FC<DocumentFilterBarProps> = ({
               onChange={(e) => onSortChange(e.target.value as SortOption)}
               className="bg-transparent text-xs text-slate-200 focus:outline-none cursor-pointer"
             >
-              <option value="NEWEST" className="bg-slate-900 text-white">Newest First</option>
-              <option value="OLDEST" className="bg-slate-900 text-white">Oldest First</option>
-              <option value="NAME_ASC" className="bg-slate-900 text-white">Name A-Z</option>
-              <option value="NAME_DESC" className="bg-slate-900 text-white">Name Z-A</option>
+              <option value="NEWEST" className="bg-slate-900 text-white">
+                Newest First
+              </option>
+              <option value="OLDEST" className="bg-slate-900 text-white">
+                Oldest First
+              </option>
+              <option value="NAME_ASC" className="bg-slate-900 text-white">
+                Name A-Z
+              </option>
+              <option value="NAME_DESC" className="bg-slate-900 text-white">
+                Name Z-A
+              </option>
             </select>
           </div>
         </div>
@@ -113,7 +133,9 @@ export const DocumentFilterBar: React.FC<DocumentFilterBarProps> = ({
         </div>
 
         <span className="text-xs text-slate-400 font-mono">
-          Showing <span className="text-white font-semibold">{totalResults}</span> documents
+          Showing{" "}
+          <span className="text-white font-semibold">{totalResults}</span>{" "}
+          documents
         </span>
       </div>
     </div>

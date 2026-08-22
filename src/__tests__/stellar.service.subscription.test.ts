@@ -63,10 +63,12 @@ describe("Freighter wallet-change subscription", () => {
 
   it("registers a native listen handler and propagates account/network events", async () => {
     let captured: ((event: StellarWalletChangeEvent) => void) | null = null;
-    const listenFn = vi.fn((callback: (event: StellarWalletChangeEvent) => void) => {
-      captured = callback;
-      return undefined;
-    });
+    const listenFn = vi.fn(
+      (callback: (event: StellarWalletChangeEvent) => void) => {
+        captured = callback;
+        return undefined;
+      }
+    );
     (globalThis as any).window.freighterApi = { listen: listenFn };
 
     const subscriber = vi.fn();
@@ -92,10 +94,12 @@ describe("Freighter wallet-change subscription", () => {
 
   it("stops propagating events after unsubscribe", async () => {
     let captured: ((event: StellarWalletChangeEvent) => void) | null = null;
-    const listenFn = vi.fn((callback: (event: StellarWalletChangeEvent) => void) => {
-      captured = callback;
-      return () => {};
-    });
+    const listenFn = vi.fn(
+      (callback: (event: StellarWalletChangeEvent) => void) => {
+        captured = callback;
+        return () => {};
+      }
+    );
     (globalThis as any).window.freighterApi = { listen: listenFn };
 
     const subscriber = vi.fn();
@@ -112,10 +116,12 @@ describe("Freighter wallet-change subscription", () => {
 
   it("only propagates account-only or network-only change events", async () => {
     let captured: ((event: StellarWalletChangeEvent) => void) | null = null;
-    const listenFn = vi.fn((callback: (event: StellarWalletChangeEvent) => void) => {
-      captured = callback;
-      return () => {};
-    });
+    const listenFn = vi.fn(
+      (callback: (event: StellarWalletChangeEvent) => void) => {
+        captured = callback;
+        return () => {};
+      }
+    );
     (globalThis as any).window.freighterApi = { listen: listenFn };
 
     const subscriber = vi.fn();
@@ -125,7 +131,9 @@ describe("Freighter wallet-change subscription", () => {
     });
 
     captured!({ account: "GACCOUNTONLY123456" });
-    expect(subscriber).toHaveBeenLastCalledWith({ account: "GACCOUNTONLY123456" });
+    expect(subscriber).toHaveBeenLastCalledWith({
+      account: "GACCOUNTONLY123456",
+    });
 
     captured!({ network: "PUBLIC" });
     expect(subscriber).toHaveBeenLastCalledWith({ network: "PUBLIC" });

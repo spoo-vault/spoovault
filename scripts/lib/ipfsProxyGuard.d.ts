@@ -3,8 +3,14 @@ export const SIGNATURE_HEADER: string;
 export const DEFAULT_MAX_SKEW_SEC: number;
 export const DEFAULT_ALLOWED_ORIGINS: string[];
 
-export function parseAllowedOrigins(raw?: string | null, fallback?: string[]): string[];
-export function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): boolean;
+export function parseAllowedOrigins(
+  raw?: string | null,
+  fallback?: string[]
+): string[];
+export function isOriginAllowed(
+  origin: string | undefined,
+  allowedOrigins: string[]
+): boolean;
 export function isMultipartContentType(contentType?: string): boolean;
 export function toHex(buffer: BufferSource): string;
 export function sha256Hex(data: string | BufferSource): Promise<string>;

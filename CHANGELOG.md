@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **Automated IPFS Unpinning Garbage Collection for Expired Key Envelopes**:
+  - Added authenticated `DELETE /api/ipfs/unpin/:hash` proxy endpoint in `scripts/pinata-proxy.mjs` with HMAC signature validation and CORS restrictions.
+  - Extended `ipfsService.unpin` and `keyInboxService.unpinKeyEnvelope` to support authenticated unpinning through proxy or direct Pinata API with graceful 404 handling.
+  - Implemented `keyEnvelopeGCService` with automated evaluation (`isRequestExpiredOrRejected`), targeted request unpinning (`unpinEnvelopesForRequest`), and scoped/account garbage collection sweeps (`runGarbageCollection`).
+  - Integrated automated unpinning lifecycle triggers into Access Center to automatically reclaim Pinata storage quota whenever access requests expire or are rejected.
+  - Added comprehensive Vitest unit test suites (`ipfs.service.test.ts`, `keyEnvelopeGC.service.test.ts`, `keyInbox.service.test.ts`, `ipfsProxyGuard.test.ts`) with high statement and branch coverage.
 - **Pinata proxy HMAC auth and CORS lock-down (Issue #27)**:
   - Restricted `scripts/pinata-proxy.mjs` CORS to `SPOOVUALT_ALLOWED_ORIGINS` instead of `Access-Control-Allow-Origin: *`.
   - Required `X-SpooVault-Signature` HMAC verification on pin/list routes so unsigned external requests are rejected with 403 Forbidden, keeping the Pinata JWT off the public internet.
@@ -31,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Expanded Crypto & Keyring Test Suites**: Added comprehensive Vitest unit tests in `crypto.test.ts` and `clientKeyring.service.test.ts` covering key generation, ECIES encryption/decryption, tampered payloads, legacy fallbacks, PIN security, and encrypted backup export/import.
 
 ### Fixed
+
 - **UTF-8 Multi-byte Character Encoding in Crypto Utilities**: Fixed character corruption and potential `DOMException: Invalid character` errors when encoding/decoding Base64 payloads containing multi-byte UTF-8 characters (emojis, international characters, and symbols) by refactoring to standard `TextEncoder` and `TextDecoder` APIs.
 - **Timestamp Manipulation Guard on Post-Death Release** (#4): `SpooVault.sol` and `contracts-stellar/src/lib.rs` no longer unlock post-death release conditions from `block.timestamp`/ledger-timestamp comparisons alone. Both contracts now also require a minimum block/ledger-sequence delta (`MIN_POST_DEATH_BLOCK_DELTA` / `MIN_POST_DEATH_SEQUENCE_DELTA`, 256) to have elapsed since the last recorded proof of life, closing the window for miners/validators to trigger an early release via short-range timestamp drift.
 
@@ -39,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-08-14
 
 ### Added
+
 - **Web Worker Off-Thread Encryption Engine**: Dedicated `crypto.worker.ts` and `CryptoWorkerService` handling client-side AES-256-GCM encryption and decryption off the main UI thread with automatic fallback for high-throughput document processing.
 - **Cryptographic Audit Certificate Exporter**: Built `AuditService` for generating SHA-256 signed JSON audit certificates and CSV activity logs for enterprise compliance verification.
 - **Vault Dead-Man Switch & Inheritance Controls**: Smart contract methods and `InheritanceSettings` UI component supporting proof-of-life heartbeats, configurable inactivity timeouts, and emergency mode toggles.
@@ -55,4 +64,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-08-01
 
 ### Added
+
 - Initial release of SpooVault supporting dual Avalanche (EVM) and Stellar (Soroban) document custody, client-side encryption, and IPFS storage.

@@ -22,7 +22,9 @@ import {
 describe("Web Crypto API ECIES & Encoding Utilities", () => {
   describe("Base64 <-> Uint8Array conversions", () => {
     it("should convert Uint8Array to Base64 and back accurately", () => {
-      const originalBytes = new Uint8Array([72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100]);
+      const originalBytes = new Uint8Array([
+        72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100,
+      ]);
       const b64 = uint8ArrayToBase64(originalBytes);
       const resultBytes = base64ToUint8Array(b64);
 
@@ -40,7 +42,10 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
     it("should correctly parse URL-safe Base64 strings with - and _ and missing padding", () => {
       const bytes = new Uint8Array([251, 255, 254, 253, 252]);
       const standardB64 = uint8ArrayToBase64(bytes);
-      const urlSafeB64 = standardB64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      const urlSafeB64 = standardB64
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
 
       const decodedFromUrlSafe = base64ToUint8Array(urlSafeB64);
       expect(decodedFromUrlSafe).toEqual(bytes);
@@ -65,7 +70,8 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
     });
 
     it("should correctly encode and decode multi-byte UTF-8 characters and emojis", () => {
-      const complexText = "🔐 SpooVault 🚀 ~ Accents: café, naïve, español — Multilingual: 日本語, 中文, العربية, Русский — Special: 🌟✨⚡️🔥";
+      const complexText =
+        "🔐 SpooVault 🚀 ~ Accents: café, naïve, español — Multilingual: 日本語, 中文, العربية, Русский — Special: 🌟✨⚡️🔥";
       const bytes = stringToUint8Array(complexText);
       expect(bytes).toBeInstanceOf(Uint8Array);
       expect(bytes.length).toBeGreaterThan(complexText.length);
@@ -84,7 +90,8 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
 
   describe("Direct UTF-8 Base64 Helpers", () => {
     it("should encode and decode UTF-8 string to Base64 without DOMException or character corruption", () => {
-      const utf8Data = "Document with Emojis: 📄 🔑 🛡️ and Symbols: © ® ™ € £ ¥";
+      const utf8Data =
+        "Document with Emojis: 📄 🔑 🛡️ and Symbols: © ® ™ € £ ¥";
       const base64 = utf8ToBase64(utf8Data);
       expect(typeof base64).toBe("string");
       expect(base64.length).toBeGreaterThan(0);
@@ -100,7 +107,9 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
       expect(keyPair.publicKey).toBeDefined();
       expect(keyPair.privateKey).toBeDefined();
       expect(keyPair.publicKey.algorithm.name).toBe("ECDH");
-      expect((keyPair.publicKey.algorithm as EcKeyGenParams).namedCurve).toBe("P-256");
+      expect((keyPair.publicKey.algorithm as EcKeyGenParams).namedCurve).toBe(
+        "P-256"
+      );
     });
 
     it("should export and import public and private keys in Base64 format", async () => {
@@ -135,7 +144,10 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
       const { publicKey } = await generateECIESKeyPairBase64();
       const message = "Guardian Key Share Payload #1";
 
-      const encryptedJsonString = await encryptWithPublicKey(message, publicKey);
+      const encryptedJsonString = await encryptWithPublicKey(
+        message,
+        publicKey
+      );
       const parsed = JSON.parse(encryptedJsonString);
 
       expect(parsed.version).toBe(ECIES_VERSION);
@@ -150,12 +162,20 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
       const secretDocument = JSON.stringify({
         title: "Confidential Payroll & Document 💼🔒",
         owner: "Alice 👩‍💻",
-        notes: "Includes emojis 🚀🎉, accents éàü, and asian chars 繁體中文 / にほんご",
-        secretKey: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        notes:
+          "Includes emojis 🚀🎉, accents éàü, and asian chars 繁體中文 / にほんご",
+        secretKey:
+          "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
       });
 
-      const encryptedPayload = await encryptWithPublicKey(secretDocument, receiver.publicKey);
-      const decrypted = await decryptWithPrivateKey(encryptedPayload, receiver.privateKey);
+      const encryptedPayload = await encryptWithPublicKey(
+        secretDocument,
+        receiver.publicKey
+      );
+      const decrypted = await decryptWithPrivateKey(
+        encryptedPayload,
+        receiver.privateKey
+      );
 
       expect(decrypted).toBe(secretDocument);
       expect(JSON.parse(decrypted)).toEqual(JSON.parse(secretDocument));
@@ -165,10 +185,16 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
       const receiver = await generateECIESKeyPairBase64();
       const secretText = "Testing object payload input 📦";
 
-      const encryptedJsonString = await encryptWithPublicKey(secretText, receiver.publicKey);
+      const encryptedJsonString = await encryptWithPublicKey(
+        secretText,
+        receiver.publicKey
+      );
       const payloadObj = JSON.parse(encryptedJsonString);
 
-      const decrypted = await decryptWithPrivateKey(payloadObj, receiver.privateKey);
+      const decrypted = await decryptWithPrivateKey(
+        payloadObj,
+        receiver.privateKey
+      );
       expect(decrypted).toBe(secretText);
     });
 
@@ -176,16 +202,24 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
       const receiver = await generateECIESKeyPairBase64();
       const wrongReceiver = await generateECIESKeyPairBase64();
 
-      const encryptedPayload = await encryptWithPublicKey("Secret data", receiver.publicKey);
+      const encryptedPayload = await encryptWithPublicKey(
+        "Secret data",
+        receiver.publicKey
+      );
 
       await expect(
         decryptWithPrivateKey(encryptedPayload, wrongReceiver.privateKey)
-      ).rejects.toThrow("Failed to decrypt ciphertext with provided private key");
+      ).rejects.toThrow(
+        "Failed to decrypt ciphertext with provided private key"
+      );
     });
 
     it("should fail decryption when ciphertext has been tampered with", async () => {
       const receiver = await generateECIESKeyPairBase64();
-      const encryptedJsonString = await encryptWithPublicKey("Original secret", receiver.publicKey);
+      const encryptedJsonString = await encryptWithPublicKey(
+        "Original secret",
+        receiver.publicKey
+      );
       const payload = JSON.parse(encryptedJsonString);
 
       // Tamper ciphertext
@@ -195,12 +229,17 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
 
       await expect(
         decryptWithPrivateKey(JSON.stringify(payload), receiver.privateKey)
-      ).rejects.toThrow("Failed to decrypt ciphertext with provided private key");
+      ).rejects.toThrow(
+        "Failed to decrypt ciphertext with provided private key"
+      );
     });
 
     it("should fail decryption when IV is missing or tampered", async () => {
       const receiver = await generateECIESKeyPairBase64();
-      const encryptedJsonString = await encryptWithPublicKey("Original secret", receiver.publicKey);
+      const encryptedJsonString = await encryptWithPublicKey(
+        "Original secret",
+        receiver.publicKey
+      );
       const payload = JSON.parse(encryptedJsonString);
 
       delete payload.iv;
@@ -239,7 +278,10 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
         ciphertext: uint8ArrayToBase64(ciphertext),
       };
 
-      const decrypted = await decryptWithPrivateKey(JSON.stringify(legacyPayload), secretKeyB64);
+      const decrypted = await decryptWithPrivateKey(
+        JSON.stringify(legacyPayload),
+        secretKeyB64
+      );
       expect(decrypted).toBe(message);
     });
 
@@ -271,7 +313,9 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
 
       await expect(
         decryptWithPrivateKey(JSON.stringify(legacyPayload), wrongSecretKeyB64)
-      ).rejects.toThrow("Failed to decrypt ciphertext with provided private key");
+      ).rejects.toThrow(
+        "Failed to decrypt ciphertext with provided private key"
+      );
     });
 
     it("should throw error when payload version is unsupported", async () => {
@@ -286,7 +330,9 @@ describe("Web Crypto API ECIES & Encoding Utilities", () => {
 
       await expect(
         decryptWithPrivateKey(invalidPayload, receiver.privateKey)
-      ).rejects.toThrow("Unsupported encryption version: unsupported-crypto-algorithm-v99");
+      ).rejects.toThrow(
+        "Unsupported encryption version: unsupported-crypto-algorithm-v99"
+      );
     });
   });
 });

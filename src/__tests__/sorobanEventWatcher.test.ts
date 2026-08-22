@@ -11,7 +11,9 @@ describe("SorobanEventWatcher", () => {
     global.fetch = vi.fn();
     // Stop the watcher's self-rescheduling loop from firing under fake timers
     // so each test controls polling explicitly.
-    vi.spyOn(window, "setTimeout").mockReturnValue(0 as unknown as ReturnType<typeof setTimeout>);
+    vi.spyOn(window, "setTimeout").mockReturnValue(
+      0 as unknown as ReturnType<typeof setTimeout>
+    );
     vi.spyOn(window, "clearTimeout").mockImplementation(() => {});
     vi.spyOn(window, "dispatchEvent").mockImplementation(() => true);
   });
@@ -34,8 +36,14 @@ describe("SorobanEventWatcher", () => {
 
   it("should fetch latest ledger and events on the first poll", async () => {
     (global.fetch as any)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { sequence: 1000 } }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { events: [] } }) });
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { sequence: 1000 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { events: [] } }),
+      });
 
     sorobanEventWatcher.start(rpcUrl, contractId);
     await vi.runOnlyPendingTimersAsync();
@@ -43,14 +51,19 @@ describe("SorobanEventWatcher", () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
     const getLatestLedgerCall = (global.fetch as any).mock.calls[0];
     expect(getLatestLedgerCall[0]).toBe(rpcUrl);
-    expect(JSON.parse(getLatestLedgerCall[1].body).method).toBe("getLatestLedger");
+    expect(JSON.parse(getLatestLedgerCall[1].body).method).toBe(
+      "getLatestLedger"
+    );
     const getEventsCall = (global.fetch as any).mock.calls[1];
     expect(JSON.parse(getEventsCall[1].body).method).toBe("getEvents");
   });
 
   it("should fetch events and dispatch to listeners when events are present", async () => {
     (global.fetch as any)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { sequence: 1000 } }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { sequence: 1000 } }),
+      })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -99,7 +112,10 @@ describe("SorobanEventWatcher", () => {
 
     // Second poll: getLatestLedger succeeds, but getEvents fails -> logged.
     (global.fetch as any)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { sequence: 1000 } }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { sequence: 1000 } }),
+      })
       .mockResolvedValueOnce({ ok: false, statusText: "Bad Gateway" });
 
     // @ts-ignore

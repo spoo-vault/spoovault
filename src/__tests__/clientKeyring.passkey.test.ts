@@ -49,7 +49,7 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
       expect(record?.hasPasskey).toBe(true);
       expect(record?.passkeyEncryptedPrivateKey).toBeDefined();
       expect(record?.hasPin).toBe(true);
-      expect(record?.encryptedPrivateKey.length).toBeGreaterThan(0);
+      expect((record?.zkpp?.ciphertext || record?.encryptedPrivateKey || "").length).toBeGreaterThan(0);
     });
 
     it("should fall back to PIN/passphrase-only when the user cancels passkey registration", async () => {
@@ -59,7 +59,7 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
       const record = await clientKeyringService.getKeyPairRecord(testAccount);
       expect(record?.hasPasskey).toBeFalsy();
       expect(record?.hasPin).toBe(true);
-      expect(record?.encryptedPrivateKey.length).toBeGreaterThan(0);
+      expect((record?.zkpp?.ciphertext || record?.encryptedPrivateKey || "").length).toBeGreaterThan(0);
 
       clientKeyringService.clearSessionCache();
       const privateKey = await clientKeyringService.getDecryptedPrivateKey(testAccount, "pin-123");
@@ -84,7 +84,7 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
       expect(mock.create).not.toHaveBeenCalled();
       const record = await clientKeyringService.getKeyPairRecord(testAccount);
       expect(record?.hasPasskey).toBeFalsy();
-      expect(record?.encryptedPrivateKey.length).toBeGreaterThan(0);
+      expect((record?.zkpp?.ciphertext || record?.encryptedPrivateKey || "").length).toBeGreaterThan(0);
     });
 
     it("should not register a passkey when WebAuthn is unavailable (smooth fallback)", async () => {
@@ -93,7 +93,7 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
 
       const record = await clientKeyringService.getKeyPairRecord(testAccount);
       expect(record?.hasPasskey).toBeFalsy();
-      expect(record?.encryptedPrivateKey.length).toBeGreaterThan(0);
+      expect((record?.zkpp?.ciphertext || record?.encryptedPrivateKey || "").length).toBeGreaterThan(0);
     });
   });
 

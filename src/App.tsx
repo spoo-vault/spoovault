@@ -33,15 +33,22 @@ function App() {
 
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
-      captureError("window.error", event.error || event.message || "Unhandled window error", {
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-      });
+      captureError(
+        "window.error",
+        event.error || event.message || "Unhandled window error",
+        {
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+        }
+      );
     };
 
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {
-      captureError("window.unhandledrejection", event.reason || "Unhandled promise rejection");
+      captureError(
+        "window.unhandledrejection",
+        event.reason || "Unhandled promise rejection"
+      );
     };
 
     window.addEventListener("error", onError);
@@ -95,4 +102,3 @@ function App() {
 }
 
 export default App;
-
