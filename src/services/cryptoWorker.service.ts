@@ -1,59 +1,108 @@
-import CryptoJS from "crypto-js";
 import { CryptoWorkerRequest, CryptoWorkerResponse } from "../workers/crypto.worker";
 
 class CryptoWorkerService {
-  private worker: Worker | null = null;
+  private workers: Worker[] = [];
+  private nextWorkerIndex = 0;
   private pendingRequests: Map<
     string,
-    { resolve: (val: string) => void; reject: (err: Error) => void }
+    { resolve: (val: any) => void; reject: (err: Error) => void }
   > = new Map();
 
   constructor() {
-    this.initWorker();
+    this.initWorkers();
   }
 
-  private initWorker() {
+  private initWorkers() {
     if (typeof window !== "undefined" && typeof Worker !== "undefined") {
       try {
-        this.worker = new Worker(
-          new URL("../workers/crypto.worker.ts", import.meta.url),
-          { type: "module" }
-        );
+        const poolSize = navigator.hardwareConcurrency || 4;
+        
+        for (let i = 0; i < poolSize; i++) {
+          const worker = new Worker(
+            new URL("../workers/crypto.worker.ts", import.meta.url),
+            { type: "module" }
+          );
 
-        this.worker.onmessage = (event: MessageEvent<CryptoWorkerResponse>) => {
-          const { id, type, result, error } = event.data;
-          const promiseCallbacks = this.pendingRequests.get(id);
+          worker.onmessage = (event: MessageEvent<CryptoWorkerResponse>) => {
+            const response = event.data;
+            const promiseCallbacks = this.pendingRequests.get(response.id);
 
-          if (!promiseCallbacks) return;
+            if (!promiseCallbacks) return;
 
-          this.pendingRequests.delete(id);
+            this.pendingRequests.delete(response.id);
 
-          if (type === "ERROR" || error) {
-            promiseCallbacks.reject(new Error(error || "Worker encryption failed"));
-          } else if (result !== undefined) {
-            promiseCallbacks.resolve(result);
-          } else {
-            promiseCallbacks.reject(new Error("Empty worker response result"));
-          }
-        };
+            if (response.type === "ERROR") {
+              promiseCallbacks.reject(new Error(response.error || "Worker operation failed"));
+            } else if (response.type === "ENCRYPT_SUCCESS" || response.type === "DECRYPT_SUCCESS") {
+              promiseCallbacks.resolve(response.result);
+            } else if (response.type === "SPLIT_SECRET_SUCCESS") {
+              promiseCallbacks.resolve({
+                shares: response.shares,
+                commitments: response.commitments,
+              });
+            } else {
+              promiseCallbacks.reject(new Error("Unknown worker response type"));
+            }
+          };
 
-        this.worker.onerror = (err) => {
-          console.error("Crypto worker error event:", err);
-        };
+          worker.onerror = (err) => {
+            console.error(`Crypto worker ${i} error event:`, err);
+          };
+
+          this.workers.push(worker);
+        }
       } catch (e) {
-        console.warn("Web Worker initialization failed, falling back to main-thread crypto:", e);
-        this.worker = null;
+        console.warn("Web Worker pool initialization failed:", e);
+        this.workers = [];
       }
     }
   }
 
+  private getNextWorker(): Worker | null {
+    if (this.workers.length === 0) return null;
+    const worker = this.workers[this.nextWorkerIndex];
+    this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
+    return worker;
+  }
+
+  private hexToBytes(hex: string): Uint8Array {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return bytes;
+  }
+
+  private async importKey(hexKey: string): Promise<CryptoKey> {
+    const keyBytes = this.hexToBytes(hexKey);
+    return await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "AES-GCM" },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
   /**
-   * Encrypt payload asynchronously using Web Worker (with main-thread fallback)
+   * Encrypt payload asynchronously using Web Worker Pool (with main-thread fallback)
    */
-  public async encryptAsync(data: string, key: string): Promise<string> {
-    if (!this.worker) {
+  public async encryptAsync(data: ArrayBuffer, key: string): Promise<ArrayBuffer> {
+    const worker = this.getNextWorker();
+    
+    if (!worker) {
       // Fallback for environments where Web Worker is unavailable
-      return CryptoJS.AES.encrypt(data, key).toString();
+      const cryptoKey = await this.importKey(key);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        cryptoKey,
+        data
+      );
+      const resultBuffer = new Uint8Array(iv.length + ciphertext.byteLength);
+      resultBuffer.set(iv, 0);
+      resultBuffer.set(new Uint8Array(ciphertext), iv.length);
+      return resultBuffer.buffer;
     }
 
     const requestId = this.generateId();
@@ -64,22 +113,27 @@ class CryptoWorkerService {
         type: "ENCRYPT",
         payload: { data, key },
       };
-      this.worker!.postMessage(request);
+      worker.postMessage(request, [data]);
     });
   }
 
   /**
-   * Decrypt payload asynchronously using Web Worker (with main-thread fallback)
+   * Decrypt payload asynchronously using Web Worker Pool (with main-thread fallback)
    */
-  public async decryptAsync(encryptedData: string, key: string): Promise<string> {
-    if (!this.worker) {
+  public async decryptAsync(encryptedData: ArrayBuffer, key: string): Promise<ArrayBuffer> {
+    const worker = this.getNextWorker();
+
+    if (!worker) {
       // Fallback for environments where Web Worker is unavailable
-      try {
-        const bytes = CryptoJS.AES.decrypt(encryptedData, key);
-        return bytes.toString(CryptoJS.enc.Utf8);
-      } catch {
-        return "";
-      }
+      const cryptoKey = await this.importKey(key);
+      const dataBytes = new Uint8Array(encryptedData);
+      const iv = dataBytes.slice(0, 12);
+      const ciphertext = dataBytes.slice(12);
+      return await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        cryptoKey,
+        ciphertext
+      );
     }
 
     const requestId = this.generateId();
@@ -90,7 +144,31 @@ class CryptoWorkerService {
         type: "DECRYPT",
         payload: { data: encryptedData, key },
       };
-      this.worker!.postMessage(request);
+      worker.postMessage(request, [encryptedData]);
+    });
+  }
+
+  /**
+   * Split a secret into shares using Shamir Secret Sharing via Web Worker Pool
+   */
+  public async splitSecretVSSAsync(secretHex: string, n: number, k: number): Promise<{ shares: string[]; commitments: string[] }> {
+    const worker = this.getNextWorker();
+
+    if (!worker) {
+      // Fallback: dynamic import to avoid blocking main thread initialization
+      const { splitSecretVSS } = await import("./secrets.service");
+      return splitSecretVSS(secretHex, n, k);
+    }
+
+    const requestId = this.generateId();
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(requestId, { resolve, reject });
+      const request: CryptoWorkerRequest = {
+        id: requestId,
+        type: "SPLIT_SECRET",
+        payload: { secretHex, n, k },
+      };
+      worker.postMessage(request);
     });
   }
 
@@ -99,10 +177,10 @@ class CryptoWorkerService {
   }
 
   public terminate() {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
+    for (const worker of this.workers) {
+      worker.terminate();
     }
+    this.workers = [];
   }
 }
 
