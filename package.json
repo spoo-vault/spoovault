@@ -31,6 +31,7 @@
     "axios": "^1.6.0",
     "crypto-js": "^4.2.0",
     "date-fns": "^3.6.0",
+    "dexie": "^4.0.0",
     "ethers": "^6.13.0",
     "framer-motion": "^11.5.6",
     "mlkem": "^2.7.0",
@@ -41,6 +42,12 @@
     "react-router-dom": "^6.20.0",
     "tweetnacl": "^1.0.3",
     "web3.storage": "^4.5.5",
+    "workbox-background-sync": "^7.1.0",
+    "workbox-core": "^7.1.0",
+    "workbox-expiration": "^7.1.0",
+    "workbox-routing": "^7.1.0",
+    "workbox-strategies": "^7.1.0",
+    "workbox-window": "^7.1.0",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
@@ -65,6 +72,7 @@
     "@vitejs/plugin-react": "^4.0.3",
     "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.4.14",
+    "fake-indexeddb": "^6.0.0",
     "happy-dom": "^20.11.6",
     "hardhat": "^2.22.0",
     "hardhat-gas-reporter": "^2.3.0",

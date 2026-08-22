@@ -2,6 +2,20 @@ import { ethers } from "ethers";
 import { stellarService } from "./stellar.service";
 import { identityService } from "./identity.service";
 import { TtlCache } from "../utils/ttlCache";
+import {
+  OfflineQueuedError,
+  isNetworkFailure,
+  withOfflineFallback,
+  readDocumentsCache,
+  readInvitesCache,
+  readPublicKeyCache,
+  readVaultsCache,
+  writeDocumentsCache,
+  writeInvitesCache,
+  writePublicKeyCache,
+  writeVaultsCache,
+} from "./offline/offlineCache.service";
+import { enqueueAction } from "./offline/offlineQueue.service";
 
 export interface VaultData {
   id: number;
@@ -1623,16 +1637,41 @@ const getEcosystem = (): "avalanche" | "stellar" => {
   return (window.localStorage.getItem("spoovault-ecosystem") as "avalanche" | "stellar") || "avalanche";
 };
 
+// ---------------------------------------------------------------------------
+// Offline-first integration
+//
+// Reads fall back to the Dexie/IndexedDB cache when the network is down so
+// vault inspection keeps working; writes that fail due to connectivity are
+// persisted into the offline action queue and replayed automatically on
+// reconnect (see services/offline/replay.service.ts).
+// ---------------------------------------------------------------------------
+
 const proxiedCreateVault = async (
   name: string,
   description: string,
   guardians: string[],
   approvalThreshold: number
 ): Promise<number> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.createVault(name, description, guardians, approvalThreshold);
+  const run = async (): Promise<number> => {
+    if (getEcosystem() === "stellar") {
+      return stellarService.createVault(name, description, guardians, approvalThreshold);
+    }
+    return createVault(name, description, guardians, approvalThreshold);
+  };
+
+  try {
+    return await run();
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await enqueueAction(
+        "create-vault",
+        { name, description, guardians, approvalThreshold },
+        { label: `Vault "${name}"` }
+      );
+      throw new OfflineQueuedError(`vault "${name}" creation`);
+    }
+    throw error;
   }
-  return createVault(name, description, guardians, approvalThreshold);
 };
 
 const proxiedAddDocument = async (
@@ -1644,25 +1683,65 @@ const proxiedAddDocument = async (
   guardiansList?: string[],
   shares?: string[]
 ): Promise<number> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.addDocument(
-      vaultId,
-      encryptedMetadata,
-      ipfsHash,
-      requiredAccess,
-      releaseCondition,
-      guardiansList,
-      shares
-    );
+  const run = async (): Promise<number> => {
+    if (getEcosystem() === "stellar") {
+      return stellarService.addDocument(
+        vaultId,
+        encryptedMetadata,
+        ipfsHash,
+        requiredAccess,
+        releaseCondition,
+        guardiansList,
+        shares
+      );
+    }
+    return addDocument(vaultId, encryptedMetadata, ipfsHash, requiredAccess, releaseCondition, guardiansList, shares);
+  };
+
+  try {
+    return await run();
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await enqueueAction(
+        "add-document",
+        {
+          vaultId,
+          encryptedMetadata,
+          ipfsHash,
+          requiredAccess,
+          releaseCondition,
+          guardiansList,
+          shares,
+        },
+        { label: `document upload to vault #${vaultId}` }
+      );
+      throw new OfflineQueuedError("document upload");
+    }
+    throw error;
   }
-  return addDocument(vaultId, encryptedMetadata, ipfsHash, requiredAccess, releaseCondition, guardiansList, shares);
 };
 
 const proxiedRequestAccess = async (documentId: number): Promise<number> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.requestAccess(documentId);
+  const run = async (): Promise<number> => {
+    if (getEcosystem() === "stellar") {
+      return stellarService.requestAccess(documentId);
+    }
+    return requestAccess(documentId);
+  };
+
+  try {
+    return await run();
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await enqueueAction(
+        "request-access",
+        { documentId },
+        { label: `access request for document #${documentId}` }
+      );
+      throw new OfflineQueuedError("access request");
+    }
+    throw error;
   }
-  return requestAccess(documentId);
 };
 
 const proxiedApproveAccess = async (requestId: number, encryptedShareForBeneficiary?: string): Promise<void> => {
@@ -1690,18 +1769,43 @@ const proxiedAcceptGuardianInvite = async (vaultId: number): Promise<void> => {
 const proxiedFetchVaultsForAccount = async (
   account: string,
   options?: { tokenVaultIds?: number[] }
-): Promise<VaultData[]> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.fetchVaultsForAccount(account) as unknown as Promise<VaultData[]>;
-  }
-  return fetchVaultsForAccount(account, options);
-};
+): Promise<VaultData[]> =>
+  withOfflineFallback({
+    scope: `vaults:${account}`,
+    fetchLive: async () => {
+      if (getEcosystem() === "stellar") {
+        return stellarService.fetchVaultsForAccount(account) as unknown as VaultData[];
+      }
+      return fetchVaultsForAccount(account, options);
+    },
+    readCache: () => readVaultsCache(account, getEcosystem()),
+    writeCache: (vaults) => writeVaultsCache(account, getEcosystem(), vaults),
+  });
 
-const proxiedFetchDocumentsForVaults = async (vaultIds: number[]): Promise<DocumentData[]> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.fetchDocumentsForVaults(vaultIds) as unknown as Promise<DocumentData[]>;
-  }
-  return fetchDocumentsForVaults(vaultIds);
+const proxiedFetchDocumentsForVaults = async (
+  vaultIds: number[],
+  account?: string
+): Promise<DocumentData[]> => {
+  const network = getEcosystem();
+  const owner = account ?? "";
+
+  return withOfflineFallback({
+    scope: "documents",
+    fetchLive: async () => {
+      if (network === "stellar") {
+        return stellarService.fetchDocumentsForVaults(vaultIds) as unknown as DocumentData[];
+      }
+      return fetchDocumentsForVaults(vaultIds);
+    },
+    readCache: () =>
+      owner
+        ? readDocumentsCache(owner, network)
+        : Promise.resolve([] as DocumentData[]),
+    writeCache: (documents) =>
+      owner
+        ? writeDocumentsCache(owner, network, documents)
+        : Promise.resolve(),
+  });
 };
 
 const proxiedFetchPendingApprovalsForGuardian = async (
@@ -1729,25 +1833,53 @@ const proxiedGetBeneficiaryKeyShare = async (requestId: number, guardian: string
 };
 
 const proxiedRegisterPublicKey = async (publicKey: string): Promise<void> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.registerPublicKey(publicKey);
+  const run = async (): Promise<void> => {
+    if (getEcosystem() === "stellar") {
+      return stellarService.registerPublicKey(publicKey);
+    }
+    return registerPublicKey(publicKey);
+  };
+
+  try {
+    await run();
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await enqueueAction(
+        "register-public-key",
+        { publicKey },
+        { label: "encryption public key registration" }
+      );
+      throw new OfflineQueuedError("encryption public key registration");
+    }
+    throw error;
   }
-  return registerPublicKey(publicKey);
 };
 
-const proxiedGetUserPublicKey = async (user: string): Promise<string> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.getUserPublicKey(user);
-  }
-  return getUserPublicKey(user);
-};
+const proxiedGetUserPublicKey = async (user: string): Promise<string> =>
+  withOfflineFallback({
+    scope: `publicKey:${user}`,
+    fetchLive: async () => {
+      if (getEcosystem() === "stellar") {
+        return stellarService.getUserPublicKey(user);
+      }
+      return getUserPublicKey(user);
+    },
+    readCache: () => readPublicKeyCache(user, getEcosystem()),
+    writeCache: (publicKey) => writePublicKeyCache(user, publicKey, getEcosystem()),
+  });
 
-const proxiedFetchPendingInvites = async (account: string): Promise<any[]> => {
-  if (getEcosystem() === "stellar") {
-    return stellarService.getPendingInvites(account);
-  }
-  return fetchPendingInvites(account);
-};
+const proxiedFetchPendingInvites = async (account: string): Promise<any[]> =>
+  withOfflineFallback({
+    scope: `invites:${account}`,
+    fetchLive: async () => {
+      if (getEcosystem() === "stellar") {
+        return stellarService.getPendingInvites(account);
+      }
+      return fetchPendingInvites(account);
+    },
+    readCache: () => readInvitesCache(account, getEcosystem()),
+    writeCache: (invites) => writeInvitesCache(account, getEcosystem(), invites),
+  });
 
 const proxiedHasActiveAccess = async (documentId: number, user: string): Promise<boolean> => {
   if (getEcosystem() === "stellar") {

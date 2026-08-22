@@ -1448,6 +1448,8 @@ export const stellarService = {
   isConfigured,
   setMockStellarSdk,
   setMockFreighter,
+  getRpcUrl: () => sorobanRpcUrl,
+  getContractId,
 };
 
 declare global {

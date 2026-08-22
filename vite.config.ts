@@ -54,8 +54,14 @@ export default defineConfig({
     sourcemap: true,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
+      input: {
+        main: 'index.html',
+        'service-worker': 'src/sw.ts',
+      },
       output: {
         manualChunks: getVendorChunk,
+        entryFileNames: (chunkInfo) =>
+          chunkInfo.name === 'service-worker' ? 'sw.js' : 'assets/[name]-[hash].js',
       },
     },
   },

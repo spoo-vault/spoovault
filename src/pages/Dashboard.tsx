@@ -311,7 +311,8 @@ const Dashboard = () => {
   ) => {
     try {
       const docsData = await contractService.fetchDocumentsForVaults(
-        userVaults.map((vault) => vault.id)
+        userVaults.map((vault) => vault.id),
+        account ?? undefined
       );
       if (loadVersionRef.current !== loadVersion) {
         return;
@@ -483,7 +484,7 @@ const Dashboard = () => {
         // VSS share verification
         let doc = documents.find((d) => d.id === approvalInfo.documentId);
         if (!doc) {
-          const docs = await contractService.fetchDocumentsForVaults([approvalInfo.vaultId]);
+          const docs = await contractService.fetchDocumentsForVaults([approvalInfo.vaultId], account);
           doc = docs.find((d) => d.id === approvalInfo.documentId);
         }
 

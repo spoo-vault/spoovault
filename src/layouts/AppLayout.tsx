@@ -27,6 +27,7 @@ import { shortenAddress } from "../utils/helpers";
 import { toast } from "react-hot-toast";
 import { buttonClasses } from "../utils/buttonClasses";
 import BrandLogo from "../components/BrandLogo";
+import OfflineBanner from "../components/offline/OfflineBanner";
 
 const AppLayout = () => {
   const location = useLocation();
@@ -279,6 +280,7 @@ const AppLayout = () => {
 
   return (
     <div className="app-shell-bg min-h-screen">
+      <OfflineBanner />
       <aside
         className={`hidden lg:flex fixed left-0 top-0 h-screen border-r border-gray-800/80 bg-gray-950/90 backdrop-blur-2xl z-50 shadow-[18px_0_40px_-34px_rgba(0,0,0,0.95)] transition-[width] duration-300 overflow-visible ${
           desktopSidebarExpanded ? "w-[20rem]" : "w-[4.5rem]"

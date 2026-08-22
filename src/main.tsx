@@ -2,7 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { Web3Provider } from "./context/Web3Context";
+import { initOfflineLayer } from "./services/offline/backgroundSync.client";
 import "./styles/globals.css";
+
+initOfflineLayer();
 
 const CHUNK_RELOAD_GUARD_KEY = "spoovault-chunk-reload-once";
 

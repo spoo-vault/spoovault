@@ -112,7 +112,8 @@ const Vaults = () => {
     try {
       const vaultsData = await contractService.fetchVaultsForAccount(account);
       const docsData = await contractService.fetchDocumentsForVaults(
-        vaultsData.map((vault) => vault.id)
+        vaultsData.map((vault) => vault.id),
+        account
       );
 
       const visibleVaults = vaultsData;

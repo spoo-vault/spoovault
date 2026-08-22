@@ -130,7 +130,7 @@ const AnalyticsDashboard = () => {
       setVaults(vaultsData);
 
       const [docsData, states, activityData] = await Promise.all([
-        contractService.fetchDocumentsForVaults(vaultIds).catch(() => []),
+        contractService.fetchDocumentsForVaults(vaultIds, account).catch(() => []),
         contractService.fetchVaultReleaseStates(vaultIds).catch(() => ({})),
         contractService
           .getRecentActivity(60)
