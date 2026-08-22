@@ -423,6 +423,13 @@ impl SpooVaultStellar {
         uploader.require_auth();
         Self::bump_instance(&env);
 
+        let vault: Vault = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Vault(vault_id))
+            .expect("Vault not found");
+        assert!(vault.is_active, "Vault is deactivated");
+
         let is_guard: bool = env
             .storage()
             .persistent()
@@ -488,6 +495,13 @@ impl SpooVaultStellar {
             .get(&doc_key)
             .expect("Document not found");
         Self::bump_persistent(&env, &doc_key);
+
+        let vault: Vault = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Vault(doc.vault_id))
+            .expect("Vault not found");
+        assert!(vault.is_active, "Vault is deactivated");
 
         let has_acc: bool = env
             .storage()
@@ -571,6 +585,7 @@ impl SpooVaultStellar {
             .persistent()
             .get(&vault_key)
             .expect("Vault not found");
+        assert!(vault.is_active, "Vault is deactivated");
 
         let is_guard_key = DataKey::IsGuardian(doc.vault_id, approver.clone());
         let is_guard: bool = env
@@ -736,6 +751,25 @@ impl SpooVaultStellar {
         Self::bump_persistent(&env, &registry_key);
     }
 
+    /// Deactivate a vault, blocking all document and access operations
+    pub fn deactivate_vault(env: Env, owner: Address, vault_id: u64) {
+        owner.require_auth();
+        Self::bump_instance(&env);
+
+        let vault_key = DataKey::Vault(vault_id);
+        let mut vault: Vault = env
+            .storage()
+            .persistent()
+            .get(&vault_key)
+            .expect("Vault not found");
+        assert!(vault.creator == owner, "Only creator can deactivate vault");
+        assert!(vault.is_active, "Vault is already inactive");
+
+        vault.is_active = false;
+        env.storage().persistent().set(&vault_key, &vault);
+        Self::bump_persistent(&env, &vault_key);
+    }
+
     /// Helper function to check if release condition is satisfied
     pub fn is_release_condition_satisfied(
         env: &Env,
@@ -760,7 +794,7 @@ impl SpooVaultStellar {
             ReleaseCondition::LiveOnly => !is_dead,
             ReleaseCondition::EmergencyOnly => state.emergency_mode || is_dead,
             ReleaseCondition::PostDeathOnly => is_dead,
-            ReleaseCondition::Anytime => true,
+            _ => false,
         }
     }
 

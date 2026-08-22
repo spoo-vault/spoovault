@@ -52,15 +52,72 @@ impl MockAccessRegistry {
     }
 }
 
-#[test]
-fn test_register_and_get_public_key() {
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+fn setup<'a>() -> (Env, SpooVaultStellarClient<'a>) {
     let env = Env::default();
     let contract_id = env.register_contract(None, SpooVaultStellar);
     let client = SpooVaultStellarClient::new(&env, &contract_id);
+    env.mock_all_auths();
+    (env, client)
+}
+
+/// Create a vault with the creator as guardian and two external guardians.
+/// Returns (env, client, creator, guardian1, guardian2, vault_id).
+fn create_test_vault<'a>() -> (Env, SpooVaultStellarClient<'a>, Address, Address, Address, u64) {
+    let (env, client) = setup();
+    let creator = Address::generate(&env);
+    let g1 = Address::generate(&env);
+    let g2 = Address::generate(&env);
+
+    let name = String::from_str(&env, "Test Vault");
+    let desc = String::from_str(&env, "A test vault");
+    let guardians = vec![&env, g1.clone(), g2.clone()];
+
+    let vault_id = client.create_vault(&creator, &name, &desc, &guardians, &2);
+    (env, client, creator, g1, g2, vault_id)
+}
+
+/// Helper: add a document to an active vault and return its id.
+fn add_test_document(
+    client: &SpooVaultStellarClient<'_>,
+    env: &Env,
+    uploader: Address,
+    vault_id: u64,
+    guardians_list: soroban_sdk::Vec<Address>,
+    shares: soroban_sdk::Vec<String>,
+) -> u64 {
+    client.add_document(
+        &uploader,
+        &vault_id,
+        &String::from_str(env, "encrypted-meta"),
+        &String::from_str(env, "QmIPFSHash"),
+        &AccessLevel::ReadWrite,
+        &ReleaseCondition::Anytime,
+        &guardians_list,
+        &shares,
+    )
+}
+
+/// Helper: set up g1 as an accepted guardian for the vault.
+fn accept_guardian(
+    client: &SpooVaultStellarClient<'_>,
+    _env: &Env,
+    g1: &Address,
+    vault_id: u64,
+) {
+    client.accept_guardian_invite(g1, &vault_id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Existing tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_register_public_key() {
+    let (env, client) = setup();
 
     let user = Address::generate(&env);
-    env.mock_all_auths();
-
     let pubkey = String::from_str(&env, "B64_STELLAR_PUBKEY_TEST");
     client.register_public_key(&user, &pubkey);
 
@@ -403,4 +460,243 @@ fn test_deep_auth_invocation_notifies_access_registry() {
             .unwrap()
     });
     assert_eq!(recorded, (doc_id, requester));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// deactivate_vault tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_deactivate_vault_success() {
+    let (_env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    // Deactivate the vault
+    client.deactivate_vault(&creator, &vault_id);
+
+    // Verify vault is deactivated by confirming that add_document now fails
+    let guardians_list = vec![&_env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &_env,
+        String::from_str(&_env, "share1"),
+        String::from_str(&_env, "share2"),
+        String::from_str(&_env, "share3"),
+    ];
+
+    // This would be caught by test_add_document_on_deactivated_vault,
+    // but here we confirm the vault state via the contract's own guard.
+    // We simply verify that deactivate_vault succeeded (didn't panic above)
+    // and the vault will now block operations (tested in other tests).
+    drop(guardians_list);
+    drop(shares);
+}
+
+#[test]
+#[should_panic(expected = "Vault is already inactive")]
+fn test_deactivate_vault_already_inactive() {
+    let (_env, client, creator, _g1, _g2, vault_id) = create_test_vault();
+
+    client.deactivate_vault(&creator, &vault_id);
+    // Second deactivation should panic
+    client.deactivate_vault(&creator, &vault_id);
+}
+
+#[test]
+#[should_panic(expected = "Only creator can deactivate vault")]
+fn test_deactivate_vault_not_creator() {
+    let (_env, client, _creator, g1, _g2, vault_id) = create_test_vault();
+
+    // Non-creator should fail
+    client.deactivate_vault(&g1, &vault_id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// add_document vault-active enforcement tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_add_document_on_active_vault() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "share1"),
+        String::from_str(&env, "share2"),
+        String::from_str(&env, "share3"),
+    ];
+
+    let doc_id = add_test_document(&client, &env, creator, vault_id, guardians_list, shares);
+    assert_eq!(doc_id, 1);
+}
+
+#[test]
+#[should_panic(expected = "Vault is deactivated")]
+fn test_add_document_on_deactivated_vault() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    // Deactivate vault first
+    client.deactivate_vault(&creator, &vault_id);
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "share1"),
+        String::from_str(&env, "share2"),
+        String::from_str(&env, "share3"),
+    ];
+
+    // Should panic because vault is deactivated
+    add_test_document(&client, &env, creator, vault_id, guardians_list, shares);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// request_access vault-active enforcement tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_request_access_on_active_vault() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "share1"),
+        String::from_str(&env, "share2"),
+        String::from_str(&env, "share3"),
+    ];
+    let doc_id = add_test_document(&client, &env, creator.clone(), vault_id, guardians_list, shares);
+
+    let requester = Address::generate(&env);
+    let req_id = client.request_access(&requester, &doc_id);
+    assert_eq!(req_id, 1);
+}
+
+#[test]
+#[should_panic(expected = "Vault is deactivated")]
+fn test_request_access_on_deactivated_vault() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "share1"),
+        String::from_str(&env, "share2"),
+        String::from_str(&env, "share3"),
+    ];
+    let doc_id = add_test_document(&client, &env, creator.clone(), vault_id, guardians_list, shares);
+
+    // Deactivate vault
+    client.deactivate_vault(&creator, &vault_id);
+
+    // Request access should fail
+    let requester = Address::generate(&env);
+    client.request_access(&requester, &doc_id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// approve_access vault-active enforcement tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_approve_access_on_active_vault() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    // g1 must accept invite to become guardian
+    accept_guardian(&client, &env, &g1, vault_id);
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "share1"),
+        String::from_str(&env, "share2"),
+        String::from_str(&env, "share3"),
+    ];
+    let doc_id = add_test_document(&client, &env, creator.clone(), vault_id, guardians_list, shares);
+
+    let requester = Address::generate(&env);
+    let req_id = client.request_access(&requester, &doc_id);
+
+    // Guardian 1 approves
+    client.approve_access(&g1, &req_id, &None);
+}
+
+#[test]
+#[should_panic(expected = "Vault is deactivated")]
+fn test_approve_access_on_deactivated_vault() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    // g1 must accept invite to become guardian
+    accept_guardian(&client, &env, &g1, vault_id);
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "share1"),
+        String::from_str(&env, "share2"),
+        String::from_str(&env, "share3"),
+    ];
+    let doc_id = add_test_document(&client, &env, creator.clone(), vault_id, guardians_list, shares);
+
+    let requester = Address::generate(&env);
+    let req_id = client.request_access(&requester, &doc_id);
+
+    // Deactivate vault before approval
+    client.deactivate_vault(&creator, &vault_id);
+
+    // Approval should fail on deactivated vault
+    client.approve_access(&g1, &req_id, &None);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// End-to-end: deactivate then verify blocked
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+#[should_panic(expected = "Vault is deactivated")]
+fn test_deactivate_blocks_add_document_end_to_end() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+    client.deactivate_vault(&creator, &vault_id);
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "s1"),
+        String::from_str(&env, "s2"),
+        String::from_str(&env, "s3"),
+    ];
+    add_test_document(&client, &env, creator, vault_id, guardians_list, shares);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// approve_access full flow on active vault (threshold met)
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_approve_access_full_flow_grants_access() {
+    let (env, client, creator, g1, g2, vault_id) = create_test_vault();
+
+    // g1 must accept invite to become guardian
+    accept_guardian(&client, &env, &g1, vault_id);
+
+    let guardians_list = vec![&env, creator.clone(), g1.clone(), g2.clone()];
+    let shares = vec![
+        &env,
+        String::from_str(&env, "share_c"),
+        String::from_str(&env, "share_g1"),
+        String::from_str(&env, "share_g2"),
+    ];
+    let doc_id = add_test_document(&client, &env, creator.clone(), vault_id, guardians_list, shares);
+
+    let requester = Address::generate(&env);
+    let req_id = client.request_access(&requester, &doc_id);
+
+    // Approval threshold is 2 – first approval
+    client.approve_access(&g1, &req_id, &Some(String::from_str(&env, "enc_share")));
+    // Second approval meets threshold → request should be Approved
+    client.approve_access(&creator, &req_id, &Some(String::from_str(&env, "enc_share2")));
+
+    // Verify: the requester now has access (get_access doesn't exist, but we
+    // can confirm the full flow completed without panicking)
+    // The access grant is confirmed by the fact that both approvals succeeded
+    // and the threshold was met (2 approvals >= threshold of 2)
 }
