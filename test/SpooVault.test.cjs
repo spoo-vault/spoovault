@@ -85,4 +85,35 @@ describe("SpooVault EVM Contract Unit Tests", function () {
         .withArgs(1, true);
     });
   });
+
+  describe("Post-Death Release: timestamp + block confirmation", function () {
+    it("should NOT unlock post-death release from timestamp manipulation alone without block progression", async function () {
+      const guardians = [guardian1.address];
+      await spooVault.connect(owner).createVault("Inheritance Vault", "Desc", guardians, 1);
+      await spooVault.connect(owner).configureVaultRelease(1, 1 * 24 * 60 * 60); // 1 day
+
+      // Simulate a manipulated/skewed timestamp far in the future while only
+      // a single block has actually been mined since the last proof of life.
+      await ethers.provider.send("evm_increaseTime", [2 * 24 * 60 * 60]);
+      await ethers.provider.send("evm_mine", []);
+
+      const state = await spooVault.getVaultReleaseState(1);
+      expect(state.postDeathUnlocked).to.equal(false);
+    });
+
+    it("should unlock post-death release once both the timestamp threshold and minimum block delta have elapsed", async function () {
+      const guardians = [guardian1.address];
+      await spooVault.connect(owner).createVault("Inheritance Vault", "Desc", guardians, 1);
+      await spooVault.connect(owner).configureVaultRelease(1, 1 * 24 * 60 * 60); // 1 day
+
+      await ethers.provider.send("evm_increaseTime", [2 * 24 * 60 * 60]);
+      const minBlockDelta = await spooVault.MIN_POST_DEATH_BLOCK_DELTA();
+      for (let i = 0n; i < minBlockDelta; i++) {
+        await ethers.provider.send("evm_mine", []);
+      }
+
+      const state = await spooVault.getVaultReleaseState(1);
+      expect(state.postDeathUnlocked).to.equal(true);
+    });
+  });
 });

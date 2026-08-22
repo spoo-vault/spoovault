@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import hre from "hardhat";
 const { ethers } = hre;
-import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("SpooVault EVM Contract Unit Tests", function () {
   let spooVault;
@@ -151,6 +151,35 @@ describe("SpooVault EVM Contract Unit Tests", function () {
 
       const pending = await spooVault.getPendingInvites(guardian1.address);
       expect(pending.length).to.equal(0);
+    });
+  });
+
+  describe("Post-Death Release: timestamp + block confirmation", function () {
+    it("should NOT unlock post-death release from timestamp manipulation alone without block progression", async function () {
+      const guardians = [guardian1.address];
+      await spooVault.connect(owner).createVault("Inheritance Vault", "Desc", guardians, 1);
+      await spooVault.connect(owner).configureVaultRelease(1, 1 * 24 * 60 * 60); // 1 day
+
+      // Simulate a manipulated/skewed timestamp far in the future while only
+      // a single block has actually been mined since the last proof of life.
+      await time.increase(2 * 24 * 60 * 60);
+      await mine(1);
+
+      const state = await spooVault.getVaultReleaseState(1);
+      expect(state.postDeathUnlocked).to.equal(false);
+    });
+
+    it("should unlock post-death release once both the timestamp threshold and minimum block delta have elapsed", async function () {
+      const guardians = [guardian1.address];
+      await spooVault.connect(owner).createVault("Inheritance Vault", "Desc", guardians, 1);
+      await spooVault.connect(owner).configureVaultRelease(1, 1 * 24 * 60 * 60); // 1 day
+
+      await time.increase(2 * 24 * 60 * 60);
+      const minBlockDelta = await spooVault.MIN_POST_DEATH_BLOCK_DELTA();
+      await mine(minBlockDelta);
+
+      const state = await spooVault.getVaultReleaseState(1);
+      expect(state.postDeathUnlocked).to.equal(true);
     });
   });
 });

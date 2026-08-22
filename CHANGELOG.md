@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **UTF-8 Multi-byte Character Encoding in Crypto Utilities**: Fixed character corruption and potential `DOMException: Invalid character` errors when encoding/decoding Base64 payloads containing multi-byte UTF-8 characters (emojis, international characters, and symbols) by refactoring to standard `TextEncoder` and `TextDecoder` APIs.
-
+- **Timestamp Manipulation Guard on Post-Death Release** (#4): `SpooVault.sol` and `contracts-stellar/src/lib.rs` no longer unlock post-death release conditions from `block.timestamp`/ledger-timestamp comparisons alone. Both contracts now also require a minimum block/ledger-sequence delta (`MIN_POST_DEATH_BLOCK_DELTA` / `MIN_POST_DEATH_SEQUENCE_DELTA`, 256) to have elapsed since the last recorded proof of life, closing the window for miners/validators to trigger an early release via short-range timestamp drift.
 
 ---
 
