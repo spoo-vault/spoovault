@@ -1,0 +1,104 @@
+name: Soroban Test Coverage (cargo-tarpaulin)
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master, dev ]
+  workflow_dispatch:
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  soroban-coverage:
+    name: Soroban Contract Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts-stellar
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts-stellar/target
+          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('contracts-stellar/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-coverage-
+            ${{ runner.os }}-cargo-
+
+      # Installs a prebuilt cargo-tarpaulin binary instead of compiling it
+      # from source, keeping this job fast and avoiding an extra multi-minute
+      # build step on every run.
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
+
+      # The LLVM source-based instrumentation engine works reliably inside
+      # GitHub-hosted containers (no ptrace/YAMA restrictions to work around)
+      # and covers the native `cargo test` build. The crate's
+      # crate-type = ["cdylib"] (needed for the wasm32 release artifact) does
+      # not affect this: `cargo test`/tarpaulin always compile a separate
+      # native test-harness binary from the crate root regardless of the
+      # declared crate-type.
+      #
+      # src/test.rs (the test module itself) is excluded from the report so
+      # the percentage reflects coverage of contract logic, not of the tests
+      # exercising it.
+      - name: Run cargo-tarpaulin
+        run: |
+          cargo tarpaulin \
+            --engine llvm \
+            --out Xml --out Html \
+            --output-dir ../coverage \
+            --exclude-files 'src/test.rs' \
+            --timeout 120 \
+            --verbose
+
+      - name: Upload coverage report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-coverage-report
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: warn
+
+      # Surfaces the headline line-coverage number in the workflow run
+      # summary so reviewers don't have to download the artifact just to see
+      # the percentage. SpooVault's PR policy targets >=90% line/branch
+      # coverage on new or modified contract code; this step reports the
+      # current number rather than gating on it, since enforcing a hard
+      # --fail-under threshold here would need a coverage baseline agreed on
+      # separately first.
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          REPORT="../coverage/cobertura.xml"
+          if [ -f "$REPORT" ]; then
+            LINE_RATE=$(grep -o 'line-rate="[0-9.]*"' "$REPORT" | head -n1 | grep -o '[0-9.]*')
+            PCT=$(awk -v r="$LINE_RATE" 'BEGIN { printf "%.2f", r * 100 }')
+            {
+              echo "### Soroban Contract Coverage: ${PCT}%"
+              echo ""
+              echo "Target: >= 90% line coverage per SpooVault PR requirements."
+              echo ""
+              echo "Full HTML/XML reports are attached as the \`soroban-coverage-report\` artifact."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::cargo-tarpaulin did not produce a cobertura.xml report."
+          fi

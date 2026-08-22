@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:contracts": "npx hardhat test --config hardhat.config.cjs",
     "test:stellar": "cd contracts-stellar && cargo test",
+    "test:stellar:coverage": "cd contracts-stellar && cargo tarpaulin --engine llvm --out Html --output-dir ../coverage --exclude-files 'src/test.rs'",
     "test:smoke": "node scripts/smoke-check.mjs",
     "test:baseline": "node scripts/test-baseline.mjs",
     "test:sss": "node scripts/test-sss.mjs",

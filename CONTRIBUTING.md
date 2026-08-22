@@ -75,6 +75,12 @@ CI runs [Slither](https://github.com/crytic/slither) and [Mythril](https://githu
   ```bash
   cargo test
   ```
+- Check test coverage ([cargo-tarpaulin](https://github.com/xd009642/tarpaulin), same as CI):
+  ```bash
+  cargo install cargo-tarpaulin --locked
+  npm run test:stellar:coverage
+  ```
+  Opens an HTML report at `coverage/tarpaulin-report.html`. CI runs this on every push/PR (see [`coverage.yml`](.github/workflows/coverage.yml)) and uploads the XML/HTML reports as the `soroban-coverage-report` workflow artifact. SpooVault's PR policy targets >=90% line/branch coverage on new or modified contract code.
 
 ---
 
