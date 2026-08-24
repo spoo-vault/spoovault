@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   keyRotationService,
   KeyOwnershipProofError,
@@ -11,14 +11,31 @@ import {
   encryptWithPublicKey,
   decryptWithPrivateKey,
 } from "../utils/crypto";
+import { installOpaqueServerMock } from "./helpers/opaqueServerMock";
 
 describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60000 }, () => {
   const testAccount = "0x71C838936352937A71E976BBE84e941E79409932";
+  const testPin = "rotation-test-pin";
+
+  const rotateCompromisedKey = (
+    options: Omit<
+      Parameters<typeof keyRotationService.rotateCompromisedKey>[0],
+      "pinOrPassphrase"
+    >
+  ) => keyRotationService.rotateCompromisedKey({ ...options, pinOrPassphrase: testPin });
+
+  const emergencyBatchRevoke = (
+    options: Omit<
+      Parameters<typeof keyRotationService.emergencyBatchRevoke>[0],
+      "pinOrPassphrase"
+    >
+  ) => keyRotationService.emergencyBatchRevoke({ ...options, pinOrPassphrase: testPin });
 
   let oldKeys: { publicKey: string; privateKey: string };
   let envelopes: ShareEnvelopeRef[];
 
   beforeEach(async () => {
+    await installOpaqueServerMock();
     clientKeyringService.clearSessionCache();
     await clientKeyringService.deleteKeyPair(testAccount);
 
@@ -52,7 +69,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
         },
       };
 
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -98,7 +115,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
     });
 
     it("should persist a usable rotated keypair in the local keyring", async () => {
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -138,7 +155,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
         },
       };
 
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -167,7 +184,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
           ({ id: "stellar-op-id-xyz" }),
       };
 
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -186,7 +203,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
       };
 
       // No sorobanContract arg — sorobanCalls must stay empty.
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -248,7 +265,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
         },
       };
 
-      const report = await keyRotationService.emergencyBatchRevoke({
+      const report = await emergencyBatchRevoke({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -286,7 +303,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
         },
       };
 
-      const report = await keyRotationService.emergencyBatchRevoke({
+      const report = await emergencyBatchRevoke({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -312,7 +329,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
         { vaultId: 2, envelopes: vault2Envelopes },
       ];
 
-      const report = await keyRotationService.emergencyBatchRevoke({
+      const report = await emergencyBatchRevoke({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -337,7 +354,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
       const wrongKeys = await generateECIESKeyPairBase64();
 
       await expect(
-        keyRotationService.emergencyBatchRevoke({
+        emergencyBatchRevoke({
           account: testAccount,
           oldPublicKey: oldKeys.publicKey,
           oldPrivateKey: wrongKeys.privateKey,
@@ -347,7 +364,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
     });
 
     it("persists the new keypair after batch revocation", async () => {
-      const report = await keyRotationService.emergencyBatchRevoke({
+      const report = await emergencyBatchRevoke({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -359,7 +376,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
     });
 
     it("handles an empty vault batch list gracefully", async () => {
-      const report = await keyRotationService.emergencyBatchRevoke({
+      const report = await emergencyBatchRevoke({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -381,7 +398,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
       const wrongKeys = await generateECIESKeyPairBase64();
 
       await expect(
-        keyRotationService.rotateCompromisedKey({
+        rotateCompromisedKey({
           account: testAccount,
           oldPublicKey: oldKeys.publicKey,
           oldPrivateKey: wrongKeys.privateKey,
@@ -399,7 +416,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
         { documentId: 4, envelope: "{ not-a-valid-envelope }" },
       ];
 
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -414,7 +431,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
 
     it("should reject missing account or keys", async () => {
       await expect(
-        keyRotationService.rotateCompromisedKey({
+        rotateCompromisedKey({
           account: "",
           oldPublicKey: oldKeys.publicKey,
           oldPrivateKey: oldKeys.privateKey,
@@ -423,7 +440,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
       ).rejects.toThrow("Account address is required");
 
       await expect(
-        keyRotationService.rotateCompromisedKey({
+        rotateCompromisedKey({
           account: testAccount,
           oldPublicKey: "",
           oldPrivateKey: oldKeys.privateKey,
@@ -432,8 +449,24 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
       ).rejects.toThrow("Old public and private keys are required");
     });
 
+    it("rejects a missing OPAQUE PIN before submitting an irreversible revocation", async () => {
+      const contract = { revokeKey: vi.fn() };
+
+      await expect(
+        keyRotationService.rotateCompromisedKey({
+          account: testAccount,
+          oldPublicKey: oldKeys.publicKey,
+          oldPrivateKey: oldKeys.privateKey,
+          pinOrPassphrase: " ",
+          envelopes,
+          contract,
+        })
+      ).rejects.toThrow("A PIN or passphrase is required");
+      expect(contract.revokeKey).not.toHaveBeenCalled();
+    });
+
     it("should support off-chain-only rotation when no contract is provided", async () => {
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -448,7 +481,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
     it("accepts a pre-generated replacement keypair", async () => {
       const generated = await generateECIESKeyPairBase64();
 
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -468,7 +501,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
   describe("Report shape & metadata", () => {
     it("normalises the account address to lowercase in the report", async () => {
       const upperAccount = testAccount.toUpperCase();
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: upperAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,
@@ -480,7 +513,7 @@ describe("KeyRotationService (Automated Compromise Key Rotation)", { timeout: 60
 
     it("records a timestamp in the report", async () => {
       const before = Date.now();
-      const report = await keyRotationService.rotateCompromisedKey({
+      const report = await rotateCompromisedKey({
         account: testAccount,
         oldPublicKey: oldKeys.publicKey,
         oldPrivateKey: oldKeys.privateKey,

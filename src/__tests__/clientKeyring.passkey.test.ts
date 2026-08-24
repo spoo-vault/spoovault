@@ -2,12 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { clientKeyringService } from "../services/clientKeyring.service";
 import { importECIESPrivateKey } from "../utils/crypto";
 import { installWebAuthnMock, uninstallWebAuthnMock, InstalledWebAuthnMock } from "./helpers/webauthnMock";
+import { installOpaqueServerMock } from "./helpers/opaqueServerMock";
 
 describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }, () => {
   const testAccount = "0x71C838936352937A71E976BBE84e941E79409932";
   const testAccount2 = "0x2546BcD3c84621e976D8185a91A922aE77ECEc30";
 
   beforeEach(async () => {
+    await installOpaqueServerMock();
     uninstallWebAuthnMock();
     clientKeyringService.clearSessionCache();
     await clientKeyringService.deleteKeyPair(testAccount);
@@ -41,7 +43,7 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
       expect(await clientKeyringService.hasKeyPair(testAccount)).toBe(true);
     });
 
-    it("should register a passkey and keep the PIN-encrypted blob when a custom PIN is set", async () => {
+    it("should register a passkey and keep the OPAQUE envelope when a custom PIN is set", async () => {
       installWebAuthnMock({ returnPrfAtRegistration: true });
       await clientKeyringService.generateAndSaveKeyPair(testAccount, "custom-pin-000");
 
@@ -49,17 +51,17 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
       expect(record?.hasPasskey).toBe(true);
       expect(record?.passkeyEncryptedPrivateKey).toBeDefined();
       expect(record?.hasPin).toBe(true);
-      expect((record?.encryptedPrivateKey?.length || 0) > 0 || !!record?.zkpp).toBe(true);
+      expect(record?.opaque).toBeDefined();
     });
 
-    it("should fall back to PIN/passphrase-only when the user cancels passkey registration", async () => {
+    it("should fall back to OPAQUE PIN protection when passkey registration is cancelled", async () => {
       installWebAuthnMock({ registrationThrows: true, registrationErrorName: "NotAllowedError" });
       await clientKeyringService.generateAndSaveKeyPair(testAccount, "pin-123");
 
       const record = await clientKeyringService.getKeyPairRecord(testAccount);
       expect(record?.hasPasskey).toBeFalsy();
       expect(record?.hasPin).toBe(true);
-      expect((record?.encryptedPrivateKey?.length || 0) > 0 || !!record?.zkpp).toBe(true);
+      expect(record?.opaque).toBeDefined();
 
       clientKeyringService.clearSessionCache();
       const privateKey = await clientKeyringService.getDecryptedPrivateKey(testAccount, "pin-123");
@@ -75,25 +77,23 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
       expect(record?.hasPin).toBe(true);
     });
 
-    it("should not attempt passkey registration when enablePasskey is false", async () => {
+    it("should reject insecure storage when passkeys are disabled and no PIN is supplied", async () => {
       const mock = installWebAuthnMock({ returnPrfAtRegistration: true });
-      await clientKeyringService.generateAndSaveKeyPair(testAccount, undefined, {
-        enablePasskey: false,
-      });
+      await expect(
+        clientKeyringService.generateAndSaveKeyPair(testAccount, undefined, {
+          enablePasskey: false,
+        })
+      ).rejects.toThrow("PIN/passphrase is required");
 
       expect(mock.create).not.toHaveBeenCalled();
-      const record = await clientKeyringService.getKeyPairRecord(testAccount);
-      expect(record?.hasPasskey).toBeFalsy();
-      expect((record?.encryptedPrivateKey?.length || 0) > 0 || !!record?.zkpp).toBe(true);
+      expect(await clientKeyringService.getKeyPairRecord(testAccount)).toBeNull();
     });
 
-    it("should not register a passkey when WebAuthn is unavailable (smooth fallback)", async () => {
+    it("should require a PIN when WebAuthn is unavailable", async () => {
       // No mock installed → WebAuthn API absent, like a non-supporting browser.
-      await clientKeyringService.generateAndSaveKeyPair(testAccount);
-
-      const record = await clientKeyringService.getKeyPairRecord(testAccount);
-      expect(record?.hasPasskey).toBeFalsy();
-      expect((record?.encryptedPrivateKey?.length || 0) > 0 || !!record?.zkpp).toBe(true);
+      await expect(clientKeyringService.generateAndSaveKeyPair(testAccount)).rejects.toThrow(
+        "PIN/passphrase is required"
+      );
     });
   });
 
@@ -214,7 +214,8 @@ describe("ClientKeyringService WebAuthn Passkey Integration", { timeout: 30000 }
       const restored = await clientKeyringService.importKeyBackup(
         testAccount,
         backupJson,
-        "backup-pass"
+        "backup-pass",
+        "restored-pin"
       );
       expect(restored.publicKey).toBe(publicKey);
       expect(await clientKeyringService.hasKeyPair(testAccount)).toBe(true);

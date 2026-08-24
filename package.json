@@ -23,6 +23,7 @@
     "e2e:stellar": "node e2e/soroban/soroban-flow.test.mjs",
     "proxy:pinata": "node scripts/pinata-proxy.mjs",
     "proxy:push-notifications": "node scripts/push-notification-proxy.mjs",
+    "server:opaque": "node scripts/opaque-keyring-server.mjs",
     "gateway:soroban": "node scripts/soroban-event-gateway.mjs"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
     "@noble/curves": "^2.3.0",
     "@openzeppelin/contracts": "^5.0.0",
     "@scure/bip39": "^2.3.0",
+    "@serenity-kit/opaque": "^1.1.0",
     "@stellar/freighter-api": "^2.0.0",
     "@stellar/stellar-sdk": "^12.1.0",
     "@tanstack/react-virtual": "^3.11.3",

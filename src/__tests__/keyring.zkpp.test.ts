@@ -1,179 +1,184 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { clientKeyringService, KeyPairRecord, __keyringDevHooks } from "../services/clientKeyring.service";
+import { secretsService } from "../services/secrets.service";
+import { generateECIESKeyPairBase64 } from "../utils/crypto";
+import { installOpaqueServerMock } from "./helpers/opaqueServerMock";
 import {
-  clientKeyringService,
-  KeyPairRecord,
-  __zkppInternals,
-  __keyringDevHooks,
-} from "../services/clientKeyring.service";
-
-const { zkppBlindPin, zkppEvaluate, zkppFinalize, generateOprfKey } = __zkppInternals;
+  OpaqueTransport,
+  OpaqueTransportError,
+  __opaqueKeyringTestHooks,
+} from "../services/opaqueKeyring.service";
 
 const testAccount = "0x71C838936352937A71E976BBE84e941E79409932";
 const pin = "correct-horse-battery";
 
-describe("Keyring ZKPP (Zero-Knowledge PIN Verification Engine)", { timeout: 60000 }, () => {
+describe("RFC 9807 OPAQUE keyring PIN verification", { timeout: 120_000 }, () => {
   beforeEach(async () => {
+    await installOpaqueServerMock();
     clientKeyringService.clearSessionCache();
     await clientKeyringService.deleteKeyPair(testAccount);
   });
 
-  describe("OPAQUE-style key exchange", () => {
-    it("should derive an identical wrapping key from the same PIN through the 3-message flow", async () => {
-      const oprfKey = await generateOprfKey();
-
-      // Message 1 (client -> vault): blinded PIN commitment
-      const blinded = await zkppBlindPin(pin);
-
-      // Message 2 (vault -> client): OPRF evaluation under non-extractable key
-      const evaluation = await zkppEvaluate(oprfKey, testAccount, blinded);
-
-      // Finalize: stretch to the AES-GCM wrapping key
-      const wrappingKey = await zkppFinalize(evaluation);
-      expect(wrappingKey).toBeDefined();
-      expect(wrappingKey.type).toBe("secret");
-      expect(wrappingKey.algorithm.name).toBe("AES-GCM");
+  it("enrolls and unlocks through a complete interactive OPAQUE exchange", async () => {
+    await clientKeyringService.generateAndSaveKeyPair(testAccount, pin, {
+      enablePasskey: false,
     });
+    const enrolled = await clientKeyringService.getKeyPairRecord(testAccount);
+    expect(enrolled?.opaque?.version).toBe("spoovault-opaque-rfc9807-v1");
 
-    it("should produce different OPRF outputs for different accounts (domain separation)", async () => {
-      const oprfKey = await generateOprfKey();
-      const blinded = await zkppBlindPin(pin);
-
-      const a = await zkppEvaluate(oprfKey, "0xaaaa", blinded);
-      const b = await zkppEvaluate(oprfKey, "0xbbbb", blinded);
-      expect(Buffer.from(a).equals(Buffer.from(b))).toBe(false);
-    });
-
-    it("should produce different envelopes for repeated enrollment of the same PIN", async () => {
-      // Fresh random IV per enrollment => ciphertext differs even for
-      // identical (account, pin) inputs.
-      await clientKeyringService.generateAndSaveKeyPair(testAccount, pin);
-      const record1 = (await clientKeyringService.getKeyPairRecord(testAccount))!;
-      await deleteRecord();
-      await clientKeyringService.generateAndSaveKeyPair(testAccount, pin);
-      const record2 = (await clientKeyringService.getKeyPairRecord(testAccount))!;
-
-      expect(record1.zkpp!.ciphertext).not.toBe(record2.zkpp!.ciphertext);
-      // The deterministic commitment means both envelopes remain decryptable
-      // with the same PIN.
-      expect(
-        (await clientKeyringService.getDecryptedPrivateKey(testAccount, pin)).length
-      ).toBeGreaterThan(0);
-    });
+    clientKeyringService.clearSessionCache();
+    const privateKey = await clientKeyringService.getDecryptedPrivateKey(testAccount, pin);
+    expect(privateKey.length).toBeGreaterThan(0);
+    expect(clientKeyringService.isUnlocked(testAccount)).toBe(true);
   });
 
-  describe("Zero-storage verification", () => {
-    let record: KeyPairRecord;
-
-    beforeEach(async () => {
-      await clientKeyringService.generateAndSaveKeyPair(testAccount, pin);
-      record = (await clientKeyringService.getKeyPairRecord(testAccount))!;
+  it("stores no PIN hash, salt, KDF parameters, OPRF key, export key, or registration record", async () => {
+    await clientKeyringService.generateAndSaveKeyPair(testAccount, pin, {
+      enablePasskey: false,
     });
+    const record = (await clientKeyringService.getKeyPairRecord(testAccount))!;
+    const serialized = JSON.parse(JSON.stringify(record)) as Record<string, unknown>;
 
-    it("should store no static password hash, salt, or iteration parameters", () => {
-      const dumped = JSON.stringify(record);
-      const lower = dumped.toLowerCase();
-      expect(lower).not.toContain("salt");
-      expect(lower).not.toContain("iterations");
-      expect(lower).not.toContain("pbkdf2");
-      expect(lower).not.toContain("hash");
-      // The legacy plaintext-derivation envelope must not be present.
-      expect(record.encryptedPrivateKey).toBe("");
-    });
-
-    it("should verify the correct PIN without any stored comparison material", async () => {
-      const privateKey = await clientKeyringService.getDecryptedPrivateKey(testAccount, pin);
-      expect(privateKey).toBeTruthy();
-    });
-
-    it("should fail instantly when the ZK proof does not verify (wrong PIN)", async () => {
-      // Simulate a fresh browser session: no unlocked key in memory.
-      clientKeyringService.clearSessionCache();
-
-      await expect(
-        clientKeyringService.getDecryptedPrivateKey(testAccount, "wrong-pin")
-      ).rejects.toThrow("Incorrect PIN or passphrase");
-    });
-
-    it("should keep the private key out of the stored record in plaintext", () => {
-      const dumped = JSON.stringify(record);
-      expect(dumped).not.toContain("BEGIN PRIVATE KEY");
-      expect(dumped).not.toContain("BEGIN EC");
-    });
+    expect(Object.keys(serialized).sort()).toEqual([
+      "account",
+      "createdAt",
+      "encryptedPrivateKey",
+      "hasPin",
+      "opaque",
+      "publicKey",
+      "updatedAt",
+    ]);
+    expect(Object.keys(serialized.opaque as object).sort()).toEqual([
+      "ciphertext",
+      "iv",
+      "version",
+    ]);
+    expect(record.encryptedPrivateKey).toBe("");
+    expect(record.zkpp).toBeUndefined();
+    expect(record.oprfKey).toBeUndefined();
   });
 
-  describe("Offline dump resistance", () => {
-    it("should make a JSON dump of IndexedDB useless for brute-forcing the PIN", async () => {
-      await clientKeyringService.generateAndSaveKeyPair(testAccount, pin);
-      const liveRecord = (await clientKeyringService.getKeyPairRecord(testAccount))!;
-
-      // Attacker exfiltrates the record as plain JSON (e.g. via devtools export).
-      const dumped: KeyPairRecord = JSON.parse(JSON.stringify(liveRecord));
-
-      // The non-extractable OPRF secret does not survive serialization: what
-      // remains is a plain empty object with no key material or type.
-      expect((dumped.oprfKey as unknown as { type?: string })?.type).toBeUndefined();
-      expect(dumped.zkpp).toBeDefined(); // envelope is visible but inert
-
-      // Simulate the attacker re-importing ONLY the dumped fields into a
-      // fresh store: verification must fail closed.
-      await expect(__keyringDevHooks.unlockRecord(dumped, pin)).rejects.toThrow(
-        /OPRF secret is missing/
-      );
+  it("rejects an incorrect PIN before exposing or caching private-key material", async () => {
+    await clientKeyringService.generateAndSaveKeyPair(testAccount, pin, {
+      enablePasskey: false,
     });
+    clientKeyringService.clearSessionCache();
 
-    it("should not leak the PIN through envelope length or structure", async () => {
-      await clientKeyringService.generateAndSaveKeyPair(testAccount, "1234");
-      const shortRecord = (await clientKeyringService.getKeyPairRecord(testAccount))!;
-      await deleteRecord();
-
-      await clientKeyringService.generateAndSaveKeyPair(
-        testAccount,
-        "a-much-longer-passphrase-entropy"
-      );
-      const longRecord = (await clientKeyringService.getKeyPairRecord(testAccount))!;
-
-      // Envelope size is independent of PIN length: the commitment is a
-      // fixed 256-bit value and the GCM output depends only on plaintext size.
-      expect(longRecord.zkpp!.iv.length).toBe(shortRecord.zkpp!.iv.length);
-      expect(longRecord.zkpp!.ciphertext.length).toBe(
-        shortRecord.zkpp!.ciphertext.length
-      );
-    });
+    await expect(
+      clientKeyringService.getDecryptedPrivateKey(testAccount, "wrong-pin")
+    ).rejects.toThrow("Incorrect PIN or passphrase");
+    expect(clientKeyringService.isUnlocked(testAccount)).toBe(false);
   });
 
-  describe("Legacy record compatibility", () => {
-    it("should still decrypt pre-ZKPP records stored with the PBKDF2 envelope", async () => {
-      const { secretsService } = await import("../services/secrets.service");
-      const { generateECIESKeyPairBase64 } = await import("../utils/crypto");
-
-      const legacyKeys = await generateECIESKeyPairBase64();
-      const legacyEnvelope = await secretsService.encryptWithPassphrase(
-        legacyKeys.privateKey,
-        pin,
-        600_000
-      );
-
-      // Hand-craft a legacy-shaped record directly into the store.
-      const legacyRecord: KeyPairRecord = {
-        account: testAccount,
-        publicKey: legacyKeys.publicKey,
-        encryptedPrivateKey: legacyEnvelope,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        hasPin: true,
-      };
-      await seedRecord(legacyRecord);
-
-      const decrypted = await clientKeyringService.getDecryptedPrivateKey(testAccount, pin);
-      expect(decrypted).toBe(legacyKeys.privateKey);
+  it("does not unwrap when the server rejects the final client proof", async () => {
+    const { transport, serverPublicKey } = await installOpaqueServerMock();
+    await clientKeyringService.generateAndSaveKeyPair(testAccount, pin, {
+      enablePasskey: false,
     });
+    clientKeyringService.clearSessionCache();
+    __opaqueKeyringTestHooks.configure(
+      {
+        ...transport,
+        async finishLogin() {
+          throw new OpaqueTransportError(
+            "OPAQUE proof verification failed",
+            "OPAQUE_VERIFICATION_FAILED",
+            401
+          );
+        },
+      },
+      serverPublicKey
+    );
+
+    await expect(
+      clientKeyringService.getDecryptedPrivateKey(testAccount, pin)
+    ).rejects.toThrow("Incorrect PIN or passphrase");
+    expect(clientKeyringService.isUnlocked(testAccount)).toBe(false);
   });
 
-  async function deleteRecord() {
-    await clientKeyringService.deleteKeyPair(testAccount);
-  }
+  it("rejects an unpinned OPAQUE server identity", async () => {
+    const { transport } = await installOpaqueServerMock();
+    __opaqueKeyringTestHooks.configure(transport, "attacker-controlled-server-key");
 
-  async function seedRecord(record: KeyPairRecord) {
-    await __keyringDevHooks.putRecord(record);
-  }
+    await expect(
+      clientKeyringService.generateAndSaveKeyPair(testAccount, pin, {
+        enablePasskey: false,
+      })
+    ).rejects.toThrow("OPAQUE server identity verification failed");
+    expect(await clientKeyringService.hasKeyPair(testAccount)).toBe(false);
+  });
+
+  it("makes an IndexedDB-only dump insufficient to test PIN guesses", async () => {
+    const { serverPublicKey } = await installOpaqueServerMock();
+    await clientKeyringService.generateAndSaveKeyPair(testAccount, pin, {
+      enablePasskey: false,
+    });
+    const dump = JSON.parse(
+      JSON.stringify(await clientKeyringService.getKeyPairRecord(testAccount))
+    ) as KeyPairRecord;
+
+    // The dump has only an authenticated ciphertext. The OPAQUE registration
+    // record and server OPRF setup are held by the independent server store.
+    expect(dump.opaque).toBeDefined();
+    expect(dump.oprfKey).toBeUndefined();
+    expect((dump as unknown as Record<string, unknown>).registrationRecord).toBeUndefined();
+    expect((dump as unknown as Record<string, unknown>).exportKey).toBeUndefined();
+
+    const unavailable = async (): Promise<never> => {
+      throw new OpaqueTransportError(
+        "OPAQUE verification server is unavailable",
+        "OPAQUE_SERVER_UNAVAILABLE",
+        0
+      );
+    };
+    const offlineTransport: OpaqueTransport = {
+      startRegistration: unavailable,
+      finishRegistration: unavailable,
+      startLogin: unavailable,
+      finishLogin: unavailable,
+      deleteCredential: unavailable,
+    };
+    __opaqueKeyringTestHooks.configure(offlineTransport, serverPublicKey);
+    clientKeyringService.clearSessionCache();
+    await expect(__keyringDevHooks.unlockRecord(dump, pin)).rejects.toThrow(
+      "OPAQUE verification server is unavailable"
+    );
+  });
+
+  it("binds the ciphertext to both account and public key", async () => {
+    await clientKeyringService.generateAndSaveKeyPair(testAccount, pin, {
+      enablePasskey: false,
+    });
+    const record = (await clientKeyringService.getKeyPairRecord(testAccount))!;
+    const tampered = { ...record, publicKey: `${record.publicKey}A` };
+
+    await expect(__keyringDevHooks.unlockRecord(tampered, pin)).rejects.toThrow(
+      "Incorrect PIN or passphrase"
+    );
+  });
+
+  it("migrates a legacy PBKDF2 IndexedDB record immediately after successful verification", async () => {
+    const keys = await generateECIESKeyPairBase64();
+    const legacyEnvelope = await secretsService.encryptWithPassphrase(
+      keys.privateKey,
+      pin,
+      600_000
+    );
+    await __keyringDevHooks.putRecord({
+      account: testAccount,
+      publicKey: keys.publicKey,
+      encryptedPrivateKey: legacyEnvelope,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      hasPin: true,
+    });
+
+    const decrypted = await clientKeyringService.getDecryptedPrivateKey(testAccount, pin);
+    expect(decrypted).toBe(keys.privateKey);
+    const migrated = (await clientKeyringService.getKeyPairRecord(testAccount))!;
+    expect(migrated.opaque).toBeDefined();
+    expect(migrated.encryptedPrivateKey).toBe("");
+    expect(migrated.zkpp).toBeUndefined();
+    expect(migrated.oprfKey).toBeUndefined();
+  });
 });

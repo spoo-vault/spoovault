@@ -9,6 +9,7 @@ import {
   type SessionLockPlatform,
 } from "../services/sessionLock.service";
 import { clientKeyringService } from "../services/clientKeyring.service";
+import { installOpaqueServerMock } from "./helpers/opaqueServerMock";
 
 const testAccount = "0x71C838936352937A71E976BBE84e941E79409932";
 
@@ -94,9 +95,10 @@ describe("SessionLockManager", () => {
   let fake: ReturnType<typeof makeFakePlatform>;
 
   beforeEach(async () => {
+    await installOpaqueServerMock();
     clientKeyringService.clearSessionCache();
     await clientKeyringService.deleteKeyPair(testAccount);
-    await clientKeyringService.generateAndSaveKeyPair(testAccount); // unlocks session cache
+    await clientKeyringService.generateAndSaveKeyPair(testAccount, "session-lock-pin");
     fake = makeFakePlatform();
   });
 

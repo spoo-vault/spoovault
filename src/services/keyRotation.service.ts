@@ -64,8 +64,8 @@ export interface KeyRotationOptions {
   /** Optional pre-generated replacement keypair; generated when omitted. */
   newPublicKey?: string;
   newPrivateKey?: string;
-  /** PIN/passphrase used to encrypt the new private key in the local keyring. */
-  pinOrPassphrase?: string;
+  /** PIN/passphrase used for OPAQUE enrollment of the new private key. */
+  pinOrPassphrase: string;
   /** Share envelopes that must be re-encrypted to the new key. */
   envelopes: ShareEnvelopeRef[];
   /** EVM on-chain adapter exposing `revokeKey`; rotation is off-chain-only when omitted. */
@@ -126,8 +126,8 @@ export interface EmergencyRevocationOptions {
   /** Optional pre-generated replacement keypair; generated when omitted. */
   newPublicKey?: string;
   newPrivateKey?: string;
-  /** PIN/passphrase used to encrypt the new private key in the local keyring. */
-  pinOrPassphrase?: string;
+  /** PIN/passphrase used for OPAQUE enrollment of the new private key. */
+  pinOrPassphrase: string;
   /** Envelopes grouped per vault. All vaults are processed independently. */
   vaultBatches: VaultEnvelopeBatch[];
   /** EVM adapter. Revocation is submitted once regardless of vault count. */
@@ -185,6 +185,9 @@ class KeyRotationService {
     if (!account) throw new Error("Account address is required");
     if (!oldPublicKey || !oldPrivateKey) {
       throw new Error("Old public and private keys are required");
+    }
+    if (!pinOrPassphrase?.trim()) {
+      throw new Error("A PIN or passphrase is required to protect the rotated keypair");
     }
     if (!Array.isArray(envelopes)) {
       throw new Error("Envelopes list is required");
@@ -319,6 +322,9 @@ class KeyRotationService {
     if (!account) throw new Error("Account address is required");
     if (!oldPublicKey || !oldPrivateKey) {
       throw new Error("Old public and private keys are required");
+    }
+    if (!pinOrPassphrase?.trim()) {
+      throw new Error("A PIN or passphrase is required to protect the rotated keypair");
     }
     if (!Array.isArray(vaultBatches)) {
       throw new Error("vaultBatches list is required");

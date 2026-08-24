@@ -8,6 +8,12 @@ import {
 
 import { secretsService, PBKDF2_ITERATIONS } from "./secrets.service";
 import {
+  OpaqueKeyringEnvelope,
+  OpaqueTransportError,
+  isOpaqueKeyringEnvelope,
+  opaqueKeyringService,
+} from "./opaqueKeyring.service";
+import {
   WebAuthnError,
   authenticatePasskey,
   decryptWithPrfKey,
@@ -35,18 +41,15 @@ export interface KeyPairRecord {
   passkeyPrfSalt?: string;
   /** Private key encrypted with the AES key derived from the authenticator's PRF output. */
   passkeyEncryptedPrivateKey?: string;
+  /** Private key wrapped with the client-only export key established by RFC 9807 OPAQUE. */
+  opaque?: OpaqueKeyringEnvelope;
   /**
-   * Zero-Knowledge Password Proof envelope (issue #151). When present, the
-   * private key is wrapped under a key derived from the PIN *and* an OPRF
-   * output produced by the non-extractable `oprfKey` below. No salt, hash,
-   * or iteration parameter is ever persisted.
+   * Legacy client-only ZKPP envelope from PR #214. Retained solely so an
+   * authenticated unlock can migrate the record to real two-party OPAQUE.
    */
   zkpp?: ZkppEnvelope;
   /**
-   * Non-extractable HMAC key acting as the OPRF (opaque pseudorandom
-   * function) secret. It cannot be read or exported by JavaScript and does
-   * not survive JSON serialization, so an offline IndexedDB dump alone is
-   * useless for brute-forcing the PIN.
+   * Legacy HMAC key stored by PR #214. New records never create or persist it.
    */
   oprfKey?: CryptoKey;
 }
@@ -64,9 +67,7 @@ export interface GenerateKeyPairOptions {
 }
 
 /**
- * OPAQUE-inspired credential envelope. The wrapping key is derived from
- * HKDF(PBKDF2(pin, salt = OPRF(account))) where the OPRF secret lives only
- * inside the non-extractable `oprfKey` CryptoKey of the stored record.
+ * Legacy, non-standard client-only envelope. Do not use for new records.
  */
 export interface ZkppEnvelope {
   version: typeof ZKPP_VERSION;
@@ -129,10 +130,9 @@ const isIndexedDBAvailable = (): boolean => {
 };
 
 /**
- * Build and persist a KeyPairRecord using the zero-knowledge password proof
- * envelope (issue #151). The private key is wrapped under a key derived from
- * the PIN through an OPAQUE-style OPRF exchange; no salt, hash, or iteration
- * parameter is written to storage.
+ * Enroll with the remote OPAQUE server and persist only the private-key
+ * ciphertext locally. The OPAQUE registration record and OPRF secret remain
+ * server-side, so an IndexedDB dump contains no offline PIN verifier.
  */
 const persistKeyPair = async (
   account: string,
@@ -142,23 +142,32 @@ const persistKeyPair = async (
   existing?: KeyPairRecord | null
 ): Promise<void> => {
   const normalized = account.toLowerCase();
-  const { passphrase } = getEffectivePassphrase(normalized, pinOrPassphrase);
-
-  // Fresh non-extractable OPRF secret per enrollment.
-  const oprfKey = await generateOprfKey();
-  const zkpp = await zkppWrapPrivateKey(normalized, passphrase, oprfKey, privateKey);
+  const passphrase = pinOrPassphrase?.trim() || "";
+  if (!passphrase) {
+    throw new Error("A PIN or passphrase is required when no passkey protects the keyring");
+  }
+  const opaqueEnvelope = await opaqueKeyringService.enrollAndWrap(
+    normalized,
+    passphrase,
+    publicKey,
+    privateKey
+  );
 
   const now = Date.now();
   const record: KeyPairRecord = {
+    ...existing,
     account: normalized,
     publicKey,
     encryptedPrivateKey: "",
     createdAt: existing?.createdAt || now,
     updatedAt: now,
-    hasPin: !!pinOrPassphrase?.trim(),
-    zkpp,
-    oprfKey,
+    hasPin: true,
+    opaque: opaqueEnvelope,
+    zkpp: undefined,
+    oprfKey: undefined,
   };
+  delete record.zkpp;
+  delete record.oprfKey;
 
   await idbPut(record);
   cachePrivateKey(normalized, privateKey);
@@ -175,26 +184,12 @@ const getEffectivePassphrase = (account: string, pinOrPassphrase?: string): { pa
 };
 
 /* ------------------------------------------------------------------ */
-/* Zero-Knowledge Password Proof (ZKPP) engine — issue #151            */
+/* Legacy client-only ZKPP migration engine — PR #214                 */
 /*                                                                     */
-/* OPAQUE-inspired asymmetric credential design adapted to a purely    */
-/* client-side vault: the "server" role is played by a non-extractable */
-/* HMAC CryptoKey stored inside the IndexedDB record itself.           */
-/*                                                                     */
-/*   Registration (3-step OPAQUE-style exchange):                      */
-/*     1. client  -> vault : blinded PIN commitment                    */
-/*        M = PBKDF2(pin, random per-enrollment salt)                  */
-/*     2. vault   -> client : OPRF evaluation                          */
-/*        Z = HMAC(oprfKey, "oprf" | account | M)                      */
-/*     3. finalize: wrapping key                                       */
-/*        K = HKDF(Z)  (AES-256-GCM key)                               */
-/*                                                                     */
-/*   The record stores only {iv, ciphertext} and the non-extractable   */
-/*   oprfKey. No password hash, no salt, no iteration count is ever    */
-/*   written to storage, so an offline dump contains nothing that can  */
-/*   be brute-forced: every PIN guess requires evaluating the OPRF,    */
-/*   which is impossible without a live non-exportable key. A wrong    */
-/*   PIN fails the AES-GCM authentication tag check instantly.         */
+/* This construction is not OPAQUE. It is kept only to decrypt existing */
+/* records once and replace them with an RFC 9807 OPAQUE envelope.      */
+/* Its deterministic PBKDF2 input and HMAC key were stored in the same */
+/* browser origin, so it did not provide a two-party security boundary. */
 /* ------------------------------------------------------------------ */
 
 const subtle = (): SubtleCrypto => {
@@ -207,12 +202,6 @@ const subtle = (): SubtleCrypto => {
 
 const encoder = new TextEncoder();
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
 function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const out = new Uint8Array(binary.length);
@@ -220,20 +209,8 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-/** Generate the non-extractable OPRF secret for a new credential file. */
-async function generateOprfKey(): Promise<CryptoKey> {
-  return subtle().generateKey(
-    { name: "HMAC", hash: "SHA-256", length: 256 },
-    false, // non-extractable: JS can never read the raw key bytes
-    ["sign", "verify"]
-  );
-}
-
 /**
- * Step 1 (client): derive the deterministic PIN commitment. The blinding
- * salt is a fixed application constant (never persisted); randomness comes
- * from the AES-GCM IV at wrap time. An attacker cannot evaluate anything
- * past this step without the non-extractable OPRF key.
+ * Reproduce the legacy deterministic PIN commitment for migration only.
  */
 async function zkppBlindPin(pin: string): Promise<Uint8Array> {
   const pinKey = await subtle().importKey("raw", encoder.encode(pin), "PBKDF2", false, [
@@ -284,31 +261,6 @@ async function zkppFinalize(oprfOutput: Uint8Array): Promise<CryptoKey> {
   );
 }
 
-/** Wrap a private key under the ZKPP envelope derived from (pin, oprfKey). */
-async function zkppWrapPrivateKey(
-  account: string,
-  pin: string,
-  oprfKey: CryptoKey,
-  privateKey: string
-): Promise<ZkppEnvelope> {
-  const blinded = await zkppBlindPin(pin);
-  const oprfOutput = await zkppEvaluate(oprfKey, account, blinded);
-  const wrappingKey = await zkppFinalize(oprfOutput);
-
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await subtle().encrypt(
-    { name: "AES-GCM", iv: iv as BufferSource },
-    wrappingKey,
-    encoder.encode(privateKey) as BufferSource
-  );
-
-  return {
-    version: ZKPP_VERSION,
-    iv: bytesToBase64(iv),
-    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
-  };
-}
-
 /**
  * Verify a PIN against the stored ZKPP envelope and unwrap the private key.
  * Throws immediately when the implicit zero-knowledge proof (the AES-GCM
@@ -349,17 +301,9 @@ const isZkppEnvelope = (value: unknown): value is ZkppEnvelope => {
 };
 
 /**
- * Test-only access to the internal ZKPP exchange steps so unit tests can
- * verify the OPAQUE-style message flow directly.
+ * Legacy helpers intentionally remain private. New code must use the audited
+ * OPAQUE library through opaqueKeyring.service.ts.
  */
-export const __zkppInternals = {
-  zkppBlindPin,
-  zkppEvaluate,
-  zkppFinalize,
-  zkppWrapPrivateKey,
-  zkppUnwrapPrivateKey,
-  generateOprfKey,
-};
 
 /**
  * Core unlock routine shared by the public API and test hooks. Verifies the
@@ -371,9 +315,36 @@ const unlockRecord = async (
 ): Promise<string> => {
   const normalized = record.account;
 
-  // Zero-knowledge password proof path (issue #151): the PIN is verified
-  // implicitly by the OPAQUE-style envelope. No stored hash is compared;
-  // a wrong PIN fails AES-GCM tag verification instantly.
+  if (isOpaqueKeyringEnvelope(record.opaque)) {
+    const pin = pinOrPassphrase?.trim() || "";
+    try {
+      return await opaqueKeyringService.verifyAndUnwrap(
+        normalized,
+        pin,
+        record.publicKey,
+        record.opaque
+      );
+    } catch (error) {
+      if (error instanceof OpaqueTransportError) {
+        if (error.code === "OPAQUE_RATE_LIMITED") {
+          throw new Error("Too many PIN attempts. Please wait before trying again.");
+        }
+        if (
+          error.code === "OPAQUE_SERVER_UNAVAILABLE" ||
+          error.code === "OPAQUE_SERVER_NOT_CONFIGURED"
+        ) {
+          throw error;
+        }
+      }
+      if (error instanceof Error && error.message === "OPAQUE server identity verification failed") {
+        throw error;
+      }
+      throw new Error("Incorrect PIN or passphrase. Please verify your PIN.");
+    }
+  }
+
+  // Legacy PR #214 path. A successful unlock is immediately migrated to the
+  // remote two-party OPAQUE protocol before key material is returned.
   if (isZkppEnvelope(record.zkpp)) {
     // Duck-type the OPRF key: a JSON-extracted dump loses the CryptoKey and
     // leaves a plain `{}` behind, which must fail closed just like a record
@@ -385,9 +356,22 @@ const unlockRecord = async (
         "ZKPP credential file is incomplete: the non-extractable OPRF secret is missing from this storage dump."
       );
     }
-    const { passphrase } = getEffectivePassphrase(normalized, pinOrPassphrase);
+    const { passphrase, isCustomPin } = getEffectivePassphrase(normalized, pinOrPassphrase);
     try {
-      return await zkppUnwrapPrivateKey(normalized, passphrase, oprfKey!, record.zkpp);
+      const privateKey = await zkppUnwrapPrivateKey(normalized, passphrase, oprfKey!, record.zkpp);
+      if (!isCustomPin) {
+        throw new Error(
+          "This legacy keyring needs a new PIN before it can be migrated to OPAQUE."
+        );
+      }
+      await persistKeyPair(
+        normalized,
+        record.publicKey,
+        privateKey,
+        passphrase,
+        record
+      );
+      return privateKey;
     } catch (err: any) {
       if (err?.message === "ZKPP_VERIFICATION_FAILED") {
         throw new Error(
@@ -404,9 +388,13 @@ const unlockRecord = async (
   if (!record.encryptedPrivateKey) {
     throw new Error("No decryptable key material in keyring record");
   }
-  const { passphrase } = getEffectivePassphrase(normalized, pinOrPassphrase);
+  const { passphrase, isCustomPin } = getEffectivePassphrase(normalized, pinOrPassphrase);
+  let privateKey: string;
   try {
-    return await secretsService.decryptWithPassphrase(record.encryptedPrivateKey, passphrase);
+    privateKey = await secretsService.decryptWithPassphrase(
+      record.encryptedPrivateKey,
+      passphrase
+    );
   } catch {
     throw new Error(
       record.hasPin
@@ -414,6 +402,11 @@ const unlockRecord = async (
         : "Failed to decrypt client private key from secure storage."
     );
   }
+  if (!isCustomPin) {
+    throw new Error("This legacy keyring needs a new PIN before it can be migrated to OPAQUE.");
+  }
+  await persistKeyPair(normalized, record.publicKey, privateKey, passphrase, record);
+  return privateKey;
 };
 
 /**
@@ -674,7 +667,10 @@ export const clientKeyringService = {
     const record = await idbGet(account);
     return (
       !!record?.publicKey &&
-      (!!record?.encryptedPrivateKey || !!record?.passkeyEncryptedPrivateKey || !!record?.zkpp)
+      (!!record?.encryptedPrivateKey ||
+        !!record?.passkeyEncryptedPrivateKey ||
+        !!record?.opaque ||
+        !!record?.zkpp)
     );
   },
 
@@ -719,10 +715,31 @@ export const clientKeyringService = {
         : null;
 
     const existing = await idbGet(normalized);
-    await persistKeyPair(normalized, publicKey, privateKey, pinOrPassphrase, existing);
-    const updatedRecord = await idbGet(normalized);
+    const pin = pinOrPassphrase?.trim() || "";
+    if (pin) {
+      await persistKeyPair(normalized, publicKey, privateKey, pin, existing);
+    } else if (passkey) {
+      const now = Date.now();
+      await idbPut({
+        account: normalized,
+        publicKey,
+        encryptedPrivateKey: "",
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+        hasPin: false,
+        hasPasskey: true,
+        passkeyCredentialId: passkey.credentialId,
+        passkeyPrfSalt: passkey.prfSalt,
+        passkeyEncryptedPrivateKey: passkey.encryptedPrivateKey,
+      });
+    } else {
+      throw new Error(
+        "A PIN/passphrase is required because a WebAuthn PRF passkey could not be created."
+      );
+    }
 
-    if (passkey && updatedRecord) {
+    const updatedRecord = await idbGet(normalized);
+    if (passkey && pin && updatedRecord) {
       updatedRecord.hasPasskey = true;
       updatedRecord.passkeyCredentialId = passkey.credentialId;
       updatedRecord.passkeyPrfSalt = passkey.prfSalt;
@@ -737,8 +754,8 @@ export const clientKeyringService = {
 
   /**
    * Save an existing private and public key pair into the IndexedDB keyring.
-   * The private key is stored under a zero-knowledge password proof envelope
-   * (issue #151): no salt, hash, or derivation parameter is persisted.
+   * The private key is wrapped with the client export key from a successful
+   * RFC 9807 OPAQUE exchange. No PIN verifier is persisted in IndexedDB.
    */
   async saveKeyPair(
     account: string,
@@ -755,6 +772,9 @@ export const clientKeyringService = {
     await importECIESPrivateKey(privateKey);
 
     const normalized = account.toLowerCase();
+    if (!pinOrPassphrase?.trim()) {
+      throw new Error("A PIN or passphrase is required to save a keypair without a passkey");
+    }
     const existing = await idbGet(normalized);
     await persistKeyPair(normalized, publicKey, privateKey, pinOrPassphrase, existing);
   },
@@ -765,7 +785,7 @@ export const clientKeyringService = {
    *
    * For passkey-protected keyrings, unlock happens via the hardware authenticator
    * (TouchID / FaceID / YubiKey) when no PIN is supplied; a supplied PIN/passphrase
-   * decrypts the PIN-encrypted fallback blob or ZKPP envelope instead.
+   * performs an interactive OPAQUE login before unwrapping the private key.
    */
   async getDecryptedPrivateKey(
     account: string,
@@ -782,7 +802,13 @@ export const clientKeyringService = {
     }
 
     const record = await idbGet(normalized);
-    if (!record || (!record.encryptedPrivateKey && !record.passkeyEncryptedPrivateKey && !record.zkpp)) {
+    if (
+      !record ||
+      (!record.encryptedPrivateKey &&
+        !record.passkeyEncryptedPrivateKey &&
+        !record.opaque &&
+        !record.zkpp)
+    ) {
       throw new Error(
         `No local encryption keypair found for wallet ${account}. Please generate one in your Profile page.`
       );
@@ -804,8 +830,8 @@ export const clientKeyringService = {
         return privateKey;
       } catch (err) {
         const cancelled = err instanceof WebAuthnError && err.code === "NOT_ALLOWED";
-        if (record.hasPin && (record.encryptedPrivateKey || record.zkpp)) {
-          // Smooth fallback: the keyring also has a PIN-encrypted copy / ZKPP envelope.
+        if (record.hasPin && (record.encryptedPrivateKey || record.opaque || record.zkpp)) {
+          // Smooth fallback: the keyring also has an OPAQUE PIN-protected copy.
           throw new Error(
             cancelled
               ? "Passkey authentication cancelled. Unlock with your PIN/passphrase instead."
@@ -839,6 +865,7 @@ export const clientKeyringService = {
   lockAccount(account: string): void {
     if (account) {
       wipeCachedPrivateKey(account.toLowerCase());
+      opaqueKeyringService.lockAccount(account);
     }
   },
 
@@ -849,6 +876,7 @@ export const clientKeyringService = {
     for (const account of sessionKeyCache.keys()) {
       wipeCachedPrivateKey(account);
     }
+    opaqueKeyringService.clearSession();
   },
 
   /**
@@ -858,6 +886,11 @@ export const clientKeyringService = {
     if (!account) return;
     const normalized = account.toLowerCase();
     wipeCachedPrivateKey(normalized);
+    try {
+      await opaqueKeyringService.deleteCredential(normalized);
+    } catch {
+      // Local deletion must remain available if the verification server is offline.
+    }
     await idbDelete(normalized);
   },
 

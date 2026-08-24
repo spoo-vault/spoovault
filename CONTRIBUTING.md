@@ -100,7 +100,8 @@ Echidna/Medusa property fuzzing of `SpooVault.sol` (`fuzz/`) and proptest/cargo-
    ```
    Set the same value in `VITE_SPOOVUALT_PROXY_SECRET`. Unsigned or cross-origin pin requests are rejected with 403.
 3. Use the network switcher in the header sidebar to toggle between Avalanche (MetaMask) and Stellar (Freighter).
-4. Run the frontend unit tests (Vitest):
+4. For PIN-protected keyrings, configure and run the RFC 9807 OPAQUE server as described in `docs/OPAQUE_KEYRING.md`.
+5. Run the frontend unit tests (Vitest):
    ```bash
    npm run test
    ```

@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { clientKeyringService } from "../services/clientKeyring.service";
 import { generateECIESKeyPairBase64, encryptWithPublicKey, decryptWithPrivateKey } from "../utils/crypto";
+import { installOpaqueServerMock } from "./helpers/opaqueServerMock";
 
 describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 30000 }, () => {
   const testAccount = "0x71C838936352937A71E976BBE84e941E79409932";
   const testAccount2 = "0x2546BcD3c84621e976D8185a91A922aE77ECEc30";
 
   beforeEach(async () => {
+    await installOpaqueServerMock();
     clientKeyringService.clearSessionCache();
     await clientKeyringService.deleteKeyPair(testAccount);
     await clientKeyringService.deleteKeyPair(testAccount2);
@@ -18,22 +20,13 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
       expect(exists).toBe(false);
     });
 
-    it("should generate and store a new keypair in zero-prompt (default derivation) mode", async () => {
-      const { publicKey } = await clientKeyringService.generateAndSaveKeyPair(testAccount);
-      expect(publicKey).toBeDefined();
-      expect(publicKey.length).toBeGreaterThan(0);
-
-      const exists = await clientKeyringService.hasKeyPair(testAccount);
-      expect(exists).toBe(true);
-
-      const storedPub = await clientKeyringService.getStoredPublicKey(testAccount);
-      expect(storedPub).toBe(publicKey);
-
-      const record = await clientKeyringService.getKeyPairRecord(testAccount);
-      expect(record?.hasPin).toBe(false);
-      expect(record?.encryptedPrivateKey).toBeDefined();
-      // Ensure private key is NOT in plaintext
-      expect(record?.encryptedPrivateKey).not.toContain("BEGIN PRIVATE KEY");
+    it("should reject insecure zero-prompt storage when no passkey is available", async () => {
+      await expect(
+        clientKeyringService.generateAndSaveKeyPair(testAccount, undefined, {
+          enablePasskey: false,
+        })
+      ).rejects.toThrow("PIN/passphrase is required");
+      expect(await clientKeyringService.hasKeyPair(testAccount)).toBe(false);
     });
 
     it("should generate and store a new keypair with a custom user PIN/passphrase", async () => {
@@ -111,8 +104,8 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
     });
 
     it("should clear entire session cache with clearSessionCache()", async () => {
-      await clientKeyringService.generateAndSaveKeyPair(testAccount);
-      await clientKeyringService.generateAndSaveKeyPair(testAccount2);
+      await clientKeyringService.generateAndSaveKeyPair(testAccount, "cache-pin-one");
+      await clientKeyringService.generateAndSaveKeyPair(testAccount2, "cache-pin-two");
 
       const firstCachedBytes = clientKeyringService.getCachedPrivateKeyBytes(testAccount);
       const secondCachedBytes = clientKeyringService.getCachedPrivateKeyBytes(testAccount2);
@@ -131,7 +124,7 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
     });
 
     it("should return the live mutable cache buffer instead of a decoded copy", async () => {
-      await clientKeyringService.generateAndSaveKeyPair(testAccount);
+      await clientKeyringService.generateAndSaveKeyPair(testAccount, "cache-buffer-pin");
 
       const firstRead = clientKeyringService.getCachedPrivateKeyBytes(testAccount);
       const secondRead = clientKeyringService.getCachedPrivateKeyBytes(testAccount);
@@ -143,11 +136,17 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
 
   describe("End-to-End Keyring Encryption & Decryption", () => {
     it("should encrypt with keyring public key and decrypt with keyring private key", async () => {
-      const { publicKey } = await clientKeyringService.generateAndSaveKeyPair(testAccount);
+      const { publicKey } = await clientKeyringService.generateAndSaveKeyPair(
+        testAccount,
+        "ecies-test-pin"
+      );
       const secretShare = "3-4f8a9b2c1d0e3f4a5b6c7d8e9f0a1b2c";
 
       const encrypted = await encryptWithPublicKey(secretShare, publicKey);
-      const privateKey = await clientKeyringService.getDecryptedPrivateKey(testAccount);
+      const privateKey = await clientKeyringService.getDecryptedPrivateKey(
+        testAccount,
+        "ecies-test-pin"
+      );
       const decrypted = await decryptWithPrivateKey(encrypted, privateKey);
 
       expect(decrypted).toBe(secretShare);
@@ -193,11 +192,12 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
     it("should reject backup import if backup passphrase is incorrect", async () => {
 
       const backupPassphrase = "Real-Passphrase-123";
-      await clientKeyringService.generateAndSaveKeyPair(testAccount);
+      await clientKeyringService.generateAndSaveKeyPair(testAccount, "backup-source-pin");
 
       const backupJson = await clientKeyringService.exportKeyBackup(
         testAccount,
-        backupPassphrase
+        backupPassphrase,
+        "backup-source-pin"
       );
 
       await expect(
@@ -213,8 +213,8 @@ describe("ClientKeyringService (IndexedDB & Secure Key Management)", { timeout: 
 
   describe("Account List & Deletion", () => {
     it("should list accounts and delete properly", async () => {
-      await clientKeyringService.generateAndSaveKeyPair(testAccount);
-      await clientKeyringService.generateAndSaveKeyPair(testAccount2);
+      await clientKeyringService.generateAndSaveKeyPair(testAccount, "list-pin-one");
+      await clientKeyringService.generateAndSaveKeyPair(testAccount2, "list-pin-two");
 
       const accounts = await clientKeyringService.listAccounts();
       expect(accounts).toContain(testAccount.toLowerCase());

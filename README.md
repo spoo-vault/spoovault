@@ -29,6 +29,7 @@ Enterprise-grade document custody app supporting both **Avalanche (EVM)** and **
 - **Private Information Retrieval (PIR)**: Oblivious IPFS document fetching using dummy query batching and optional Tor proxy routing to prevent gateway surveillance.
 - **Real-Time Event Indexing**: High-performance Soroban contract event indexer with WebSocket real-time broadcast and exponential backoff reconnection.
 - **NFT Access Passes**: Tokenized authorization layers representing access rights to specific document vaults.
+- **OPAQUE PIN Verification**: RFC 9807 client/server PIN verification keeps password verifiers and derivation parameters out of browser IndexedDB. See `docs/OPAQUE_KEYRING.md`.
 
 ---
 

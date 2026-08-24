@@ -30,6 +30,8 @@ interface ImportMetaEnv {
   readonly VITE_ARWEAVE_NODE_URL?: string;
   readonly VITE_ARWEAVE_GATEWAY_URL?: string;
   readonly VITE_BACKUP_STORAGE_PROVIDERS?: string;
+  readonly VITE_OPAQUE_SERVER_URL?: string;
+  readonly VITE_OPAQUE_SERVER_PUBLIC_KEY?: string;
 }
 
 interface ImportMeta {
