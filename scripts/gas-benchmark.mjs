@@ -425,7 +425,7 @@ export function main() {
     console.log(`BASELINE: refreshed ${BASELINE_PATH} with ${entries.length} entries.`);
   }
 
-  if (summary.hasRegression && ALLOW_FAIL && gateReliable) {
+  if (!UPDATE_BASELINE && summary.hasRegression && ALLOW_FAIL && gateReliable) {
     console.error(`FAIL: gas regression(s) above +${REGRESSION_THRESHOLD_PCT}% detected.`);
     process.exit(1);
   } else if (comparison.regressionCount > 0 && !gateReliable) {
