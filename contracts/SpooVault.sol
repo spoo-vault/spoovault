@@ -233,6 +233,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     error ZeroShareAlreadySubmitted();
     error InvalidShareRefreshInput();
     error InvalidReshareDuration();
+    error InvalidShareCommitment();
     error InvalidBLSKeyLength();
     error InvalidProofOfPossession();
     error GuardianBLSKeyNotRegistered();
@@ -287,6 +288,8 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     mapping(uint256 => mapping(address => string)) public encryptedGuardianShares;
     // requestId => guardianAddress => encryptedShareForBeneficiary
     mapping(uint256 => mapping(address => string)) public beneficiaryKeyShares;
+    // documentId => guardianAddress => shareCommitment (keccak256 hash)
+    mapping(uint256 => mapping(address => bytes32)) public guardianShareCommitments;
 
     // FHE-encrypted shares and accumulator mappings
     // documentId => guardianAddress => fheCiphertext
@@ -446,6 +449,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     event KeyRevoked(address indexed user, string oldPublicKey, string newPublicKey, uint256 rotationCount);
     event GuardianSharesSaved(uint256 indexed documentId);
     event ShareSubmittedForBeneficiary(uint256 indexed requestId, address indexed guardian, string encryptedShare);
+    event ShareValidated(uint256 indexed requestId, address indexed guardian, bytes32 commitment);
     event FheGuardianSharesSaved(uint256 indexed documentId, uint256 count);
     event FheShareSubmitted(uint256 indexed requestId, address indexed guardian);
     event FheSharesAggregated(uint256 indexed requestId, uint256 indexed documentId, address indexed requester, bytes aggregateCiphertext);
@@ -1465,6 +1469,9 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
             }
 
             encryptedGuardianShares[documentId][guardian] = newShares[i];
+            if (bytes(newShares[i]).length > 0) {
+                guardianShareCommitments[documentId][guardian] = keccak256(bytes(newShares[i]));
+            }
         }
 
         if (session.submittedCount < vaultGuardians.length) {
@@ -1577,6 +1584,9 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
 
         for (uint256 i = 0; i < guardiansList.length; i++) {
             encryptedGuardianShares[documentId][guardiansList[i]] = shares[i];
+            if (bytes(shares[i]).length > 0) {
+                guardianShareCommitments[documentId][guardiansList[i]] = keccak256(bytes(shares[i]));
+            }
         }
 
         emit DocumentAdded(documentId, vaultId, ipfsHash);
@@ -1737,6 +1747,17 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         request.approvedBy.push(msg.sender);
 
         if (bytes(encryptedShareForBeneficiary).length > 0) {
+            bytes32 expectedCommitment = guardianShareCommitments[request.documentId][msg.sender];
+            if (expectedCommitment == bytes32(0) && bytes(encryptedGuardianShares[request.documentId][msg.sender]).length > 0) {
+                expectedCommitment = keccak256(bytes(encryptedGuardianShares[request.documentId][msg.sender]));
+            }
+            if (expectedCommitment != bytes32(0)) {
+                bytes32 submittedCommitment = keccak256(bytes(encryptedShareForBeneficiary));
+                if (submittedCommitment != expectedCommitment) {
+                    revert InvalidShareCommitment();
+                }
+                emit ShareValidated(requestId, msg.sender, submittedCommitment);
+            }
             beneficiaryKeyShares[requestId][msg.sender] = encryptedShareForBeneficiary;
             emit ShareSubmittedForBeneficiary(requestId, msg.sender, encryptedShareForBeneficiary);
         }
@@ -1871,6 +1892,17 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         request.approvedBy.push(guardian);
 
         if (bytes(encryptedShareForBeneficiary).length > 0) {
+            bytes32 expectedCommitment = guardianShareCommitments[request.documentId][guardian];
+            if (expectedCommitment == bytes32(0) && bytes(encryptedGuardianShares[request.documentId][guardian]).length > 0) {
+                expectedCommitment = keccak256(bytes(encryptedGuardianShares[request.documentId][guardian]));
+            }
+            if (expectedCommitment != bytes32(0)) {
+                bytes32 submittedCommitment = keccak256(bytes(encryptedShareForBeneficiary));
+                if (submittedCommitment != expectedCommitment) {
+                    revert InvalidShareCommitment();
+                }
+                emit ShareValidated(requestId, guardian, submittedCommitment);
+            }
             beneficiaryKeyShares[requestId][guardian] = encryptedShareForBeneficiary;
             emit ShareSubmittedForBeneficiary(requestId, guardian, encryptedShareForBeneficiary);
         }
@@ -1932,6 +1964,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     function _processBLSGuardians(
         uint256 requestId,
         uint256 vaultId,
+        uint256 documentId,
         address requester,
         address[] calldata guardianAddresses,
         string[] calldata encryptedSharesForBeneficiary
@@ -1945,6 +1978,17 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
             if (!guardianBLSKeys[vaultId][guardian].registered) revert GuardianBLSKeyNotRegistered();
 
             if (i < encryptedSharesForBeneficiary.length && bytes(encryptedSharesForBeneficiary[i]).length > 0) {
+                bytes32 expectedCommitment = guardianShareCommitments[documentId][guardian];
+                if (expectedCommitment == bytes32(0) && bytes(encryptedGuardianShares[documentId][guardian]).length > 0) {
+                    expectedCommitment = keccak256(bytes(encryptedGuardianShares[documentId][guardian]));
+                }
+                if (expectedCommitment != bytes32(0)) {
+                    bytes32 submittedCommitment = keccak256(bytes(encryptedSharesForBeneficiary[i]));
+                    if (submittedCommitment != expectedCommitment) {
+                        revert InvalidShareCommitment();
+                    }
+                    emit ShareValidated(requestId, guardian, submittedCommitment);
+                }
                 beneficiaryKeyShares[requestId][guardian] = encryptedSharesForBeneficiary[i];
                 emit ShareSubmittedForBeneficiary(requestId, guardian, encryptedSharesForBeneficiary[i]);
             }
@@ -1978,6 +2022,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         _processBLSGuardians(
             requestId,
             vaultId,
+            request.documentId,
             request.requester,
             guardianAddresses,
             encryptedSharesForBeneficiary
