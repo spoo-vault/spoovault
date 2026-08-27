@@ -277,5 +277,131 @@ describe("SpooVault Proactive Secret Resharing (zero-sharing protocol)", functio
       expect(await spooVault.hasSubmittedZeroShare(documentId, 2, guardian1.address)).to.equal(true);
       expect(await spooVault.hasSubmittedZeroShare(documentId, 3, guardian1.address)).to.equal(false);
     });
+
+    it("should allow setting and querying initial document VSS commitments", async function () {
+      const initialCommitments = [
+        ethers.id("master-secret-c0"),
+        ethers.id("c1"),
+        ethers.id("c2"),
+      ];
+
+      const tx = await spooVault
+        .connect(guardian1)
+        .setDocumentVSSCommitments(documentId, initialCommitments);
+
+      await expect(tx)
+        .to.emit(spooVault, "VSSCommitmentsUpdated")
+        .withArgs(documentId, 0, initialCommitments);
+
+      const stored = await spooVault.getDocumentVSSCommitments(documentId);
+      expect(stored).to.deep.equal(initialCommitments);
+
+      // Revert if non-guardian attempts to set commitments
+      await expect(
+        spooVault.connect(outsider).setDocumentVSSCommitments(documentId, initialCommitments)
+      ).to.be.revertedWithCustomError(spooVault, "OnlyGuardian");
+
+      // Revert if commitment array has length < 2
+      await expect(
+        spooVault.connect(guardian1).setDocumentVSSCommitments(documentId, [ethers.id("only-one")])
+      ).to.be.revertedWithCustomError(spooVault, "InvalidVSSCommitmentUpdate");
+    });
+
+    it("should update on-chain Feldmann VSS commitments when applyShareRefresh includes newCommitments", async function () {
+      const initialCommitments = [
+        ethers.id("master-secret-c0"),
+        ethers.id("c1-initial"),
+        ethers.id("c2-initial"),
+      ];
+      await spooVault
+        .connect(owner)
+        .setDocumentVSSCommitments(documentId, initialCommitments);
+
+      await submitAll();
+
+      const updatedCommitments = [
+        ethers.id("master-secret-c0"), // C_0 invariant preserved
+        ethers.id("c1-refreshed"),
+        ethers.id("c2-refreshed"),
+      ];
+
+      const tx = await spooVault
+        .connect(guardian2)
+        ["applyShareRefresh(uint256,address[],string[],bytes32[])"](
+          documentId,
+          list,
+          newShares,
+          updatedCommitments
+        );
+
+      await expect(tx)
+        .to.emit(spooVault, "SharesRefreshed")
+        .withArgs(documentId, 1);
+      await expect(tx)
+        .to.emit(spooVault, "VSSCommitmentsUpdated")
+        .withArgs(documentId, 1, updatedCommitments);
+
+      const stored = await spooVault.getDocumentVSSCommitments(documentId);
+      expect(stored).to.deep.equal(updatedCommitments);
+    });
+
+    it("should revert if applyShareRefresh attempts to alter C_0 (master secret commitment invariance)", async function () {
+      const initialCommitments = [
+        ethers.id("master-secret-c0"),
+        ethers.id("c1-initial"),
+        ethers.id("c2-initial"),
+      ];
+      await spooVault
+        .connect(owner)
+        .setDocumentVSSCommitments(documentId, initialCommitments);
+
+      await submitAll();
+
+      const corruptedCommitments = [
+        ethers.id("tampered-c0-attempt"), // Corrupted C_0!
+        ethers.id("c1-refreshed"),
+        ethers.id("c2-refreshed"),
+      ];
+
+      await expect(
+        spooVault
+          .connect(owner)
+          ["applyShareRefresh(uint256,address[],string[],bytes32[])"](
+            documentId,
+            list,
+            newShares,
+            corruptedCommitments
+          )
+      ).to.be.revertedWithCustomError(spooVault, "InvalidVSSCommitmentUpdate");
+    });
+
+    it("should revert if applyShareRefresh provides a commitment vector of mismatched length", async function () {
+      const initialCommitments = [
+        ethers.id("master-secret-c0"),
+        ethers.id("c1-initial"),
+        ethers.id("c2-initial"),
+      ];
+      await spooVault
+        .connect(owner)
+        .setDocumentVSSCommitments(documentId, initialCommitments);
+
+      await submitAll();
+
+      const shortCommitments = [
+        ethers.id("master-secret-c0"),
+        ethers.id("c1-refreshed"),
+      ];
+
+      await expect(
+        spooVault
+          .connect(owner)
+          ["applyShareRefresh(uint256,address[],string[],bytes32[])"](
+            documentId,
+            list,
+            newShares,
+            shortCommitments
+          )
+      ).to.be.revertedWithCustomError(spooVault, "InvalidVSSCommitmentUpdate");
+    });
   });
 });
