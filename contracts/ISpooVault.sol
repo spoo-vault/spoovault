@@ -33,6 +33,11 @@ interface ISpooVault {
     event DelegationRevoked(address indexed guardian, uint256 indexed nonce);
 
     /**
+     * @dev Emitted when a document's Feldmann VSS polynomial commitments are updated.
+     */
+    event VSSCommitmentsUpdated(uint256 indexed documentId, uint256 indexed epoch, bytes32[] commitments);
+
+    /**
      * @dev Emitted when a delegate submits an approval on behalf of a guardian.
      */
     event DelegatedApprovalSubmitted(uint256 indexed requestId, address indexed guardian, address indexed delegate);
@@ -145,4 +150,11 @@ interface ISpooVault {
      * @dev Instantly revokes an off-chain EIP-712 delegation nonce for the caller.
      */
     function revokeDelegation(uint256 nonce) external;
+
+    /**
+     * @dev Returns the current active Feldmann VSS polynomial coefficient commitments for a document.
+     * @param documentId The identifier of the document.
+     * @return commitments The array of coefficient commitments [C_0, C_1, ..., C_{k-1}].
+     */
+    function getDocumentVSSCommitments(uint256 documentId) external view returns (bytes32[] memory);
 }

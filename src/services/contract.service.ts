@@ -117,8 +117,18 @@ const CONTRACT_ABI = [
   "function approveAccess(uint256 requestId) external",
   "function approveAccess(uint256 requestId, string encryptedShareForBeneficiary) external",
   "function guardianShareCommitments(uint256 documentId, address guardian) external view returns (bytes32)",
+<<<<<<< HEAD
   "event ShareValidated(uint256 indexed requestId, address indexed guardian, bytes32 commitment)",
   "error InvalidShareCommitment()",
+=======
+  "function setDocumentVSSCommitments(uint256 documentId, bytes32[] commitments) external",
+  "function getDocumentVSSCommitments(uint256 documentId) external view returns (bytes32[])",
+  "function applyShareRefresh(uint256 documentId, address[] guardiansList, string[] newShares, bytes32[] newCommitments) external",
+  "event ShareValidated(uint256 indexed requestId, address indexed guardian, bytes32 commitment)",
+  "event VSSCommitmentsUpdated(uint256 indexed documentId, uint256 indexed epoch, bytes32[] commitments)",
+  "error InvalidShareCommitment()",
+  "error InvalidVSSCommitmentUpdate()",
+>>>>>>> main
   "function acceptGuardianInvite(uint256 vaultId) external",
   "function accessRequests(uint256 requestId) external view returns (uint256 requestId, uint256 documentId, address requester, uint8 status, uint256 expiresAt, uint256 createdAt)",
   "function latestRequestId(uint256 documentId, address user) external view returns (uint256)",
