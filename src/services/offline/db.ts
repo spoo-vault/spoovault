@@ -149,7 +149,8 @@ const getDb = async (): Promise<IDBPDatabase<SpooVaultDBSchema> | null> => {
 };
 
 export const __setOfflineDbFactoryForTests = (
-  factory: IDBFactory | null
+  factory: IDBFactory | null,
+  _idbKeyRange?: unknown
 ): void => {
   dbInstancePromise = null;
   injectedFactory = factory;

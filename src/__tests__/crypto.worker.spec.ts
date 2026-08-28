@@ -1,6 +1,26 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { CryptoClientService } from '../services/crypto-client';
 
+class MockWorker {
+  onmessage: ((event: any) => void) | null = null;
+  onerror: ((event: any) => void) | null = null;
+  postMessage(_message: any, transfer?: Transferable[]) {
+    if (transfer?.length) {
+      structuredClone(_message, { transfer });
+    }
+    setTimeout(() => {
+      if (this.onmessage) {
+        this.onmessage({ data: { status: 'SUCCESS', hash: new ArrayBuffer(32) } });
+      }
+    }, 0);
+  }
+  terminate() {}
+}
+
+if (typeof globalThis.Worker === 'undefined') {
+  (globalThis as any).Worker = MockWorker;
+}
+
 describe('CryptoWorker Zero-Copy Transfer (#42)', () => {
   const originalWorker = globalThis.Worker;
 

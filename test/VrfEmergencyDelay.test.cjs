@@ -298,7 +298,7 @@ describe("SpooVault VRF Emergency Unlock Delay Randomization", function () {
       // Advance beyond the default 30-day inactivity period and mine sufficient blocks.
       await time.increase(31 * 24 * 60 * 60);
       const targetBlocks = await spooVault.getTargetBlocks(vaultId);
-      await mine(targetBlocks);
+      await mine(Number(targetBlocks) + 10);
 
       const state = await spooVault.getVaultReleaseState(vaultId);
       expect(state.postDeathUnlocked).to.equal(true);
