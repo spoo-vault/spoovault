@@ -153,6 +153,10 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     error ProposalExpired();
     error CannotRemoveOnlyGuardian();
     error ProposalAlreadyExecuted();
+    error ProposalNotQueued();
+    error ProposalAlreadyQueued();
+    error TimelockNotElapsed();
+    error ProposalVetoed();
     error ApprovalAlreadyGiven();
     error CannotSelfApproveAccess();
     error ZeroAddressBeneficiary();
@@ -388,6 +392,8 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     event GuardianRemovalApproved(uint256 indexed vaultId, address indexed guardian, address indexed approver);
     event ThresholdUpdateProposed(uint256 indexed vaultId, uint256 newThreshold, address indexed proposedBy);
     event ThresholdUpdateApproved(uint256 indexed vaultId, uint256 newThreshold, address indexed approver);
+    event VaultReconfigurationQueued(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold, uint256 eta);
+    event VaultReconfigurationCanceled(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold, address indexed canceledBy);
     event VaultReconfigurationExecuted(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold);
     event KeeperAuthorized(uint256 indexed vaultId, address indexed owner, address indexed keeper, uint256 expiresAt);
     event KeeperRevoked(uint256 indexed vaultId, address indexed owner);
@@ -1166,6 +1172,37 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
             thresholdUpdateProposals,
             hasApprovedThreshold,
             vaultId,
+            newThreshold
+        );
+    }
+
+    function queueVaultReconfiguration(
+        uint256 vaultId,
+        address guardianToRemove,
+        uint256 newThreshold
+    ) external nonReentrant {
+        SpooVaultAdminLogic.queueVaultReconfiguration(
+            vaults,
+            isGuardian,
+            guardianRemovalProposals,
+            thresholdUpdateProposals,
+            vaultId,
+            guardianToRemove,
+            newThreshold
+        );
+    }
+
+    function cancelVaultReconfiguration(
+        uint256 vaultId,
+        address guardianToRemove,
+        uint256 newThreshold
+    ) external nonReentrant {
+        SpooVaultAdminLogic.cancelVaultReconfiguration(
+            vaults,
+            guardianRemovalProposals,
+            thresholdUpdateProposals,
+            vaultId,
+            guardianToRemove,
             newThreshold
         );
     }
