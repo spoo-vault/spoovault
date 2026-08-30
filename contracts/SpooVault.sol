@@ -377,6 +377,15 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         uint256 timestamp,
         string vaultGid
     );
+    /// @notice Emitted when a vault owner submits a cross-chain heartbeat with
+    ///         an EIP-191 signature that a relayer can forward to Soroban.
+    event CrossChainHeartbeatSigned(
+        uint256 indexed vaultId,
+        address indexed owner,
+        bytes32 indexed gidHash,
+        uint256 timestamp,
+        bytes signature
+    );
     event EmergencyModeUpdated(uint256 indexed vaultId, bool enabled);
     event BeneficiarySet(uint256 indexed vaultId, address indexed beneficiary);
     event DocumentReleaseConditionSet(uint256 indexed documentId, ReleaseCondition condition);
@@ -779,6 +788,54 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         if (!vaults[vaultId].isActive) revert VaultNotActive();
 
         _recordProofOfLife(vaultId);
+    }
+
+    /// @notice Heartbeat that also propagates to the linked Soroban vault.
+    /// @dev    The caller supplies an EIP-191 personal-sign over the canonical
+    ///         cross-chain payload so a permissioned relayer can forward it to
+    ///         Soroban's `sync_proof_of_life` without any additional trust.
+    ///         Payload (before EIP-191 prefix):
+    ///           keccak256("SpooVaultProofOfLife"
+    ///                     || keccak256(bytes(vaultGID))   // 32 bytes
+    ///                     || vaultId as uint64 big-endian // 8 bytes
+    ///                     || msg.sender as bytes20        // 20 bytes
+    ///                     || block.timestamp as uint64 BE // 8 bytes)
+    /// @param vaultId   The EVM vault to heartbeat.
+    /// @param signature 65-byte EIP-191 personal-sign produced by the vault
+    ///                  creator over the payload above.
+    function proveLifeCrossChain(uint256 vaultId, bytes calldata signature) external nonReentrant {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (vaults[vaultId].creator != msg.sender) revert OnlyVaultCreator();
+        if (!vaults[vaultId].isActive) revert VaultNotActive();
+        if (signature.length != 65) revert InvalidSigner();
+
+        bytes32 gidHash = keccak256(bytes(getVaultGID(vaultId)));
+        uint256 ts = block.timestamp;
+
+        // Build the same payload Soroban's sync_proof_of_life verifies.
+        bytes memory rawPayload = abi.encodePacked(
+            "SpooVaultProofOfLife",
+            gidHash,
+            uint64(vaultId),
+            bytes20(msg.sender),
+            uint64(ts)
+        );
+        bytes32 payloadHash = keccak256(rawPayload);
+        bytes32 ethSignedHash = keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", payloadHash)
+        );
+        address recovered = ECDSA.recover(ethSignedHash, signature);
+        if (recovered != msg.sender) revert InvalidSigner();
+
+        _recordProofOfLife(vaultId);
+
+        emit CrossChainHeartbeatSigned(
+            vaultId,
+            msg.sender,
+            gidHash,
+            ts,
+            signature
+        );
     }
 
     /**

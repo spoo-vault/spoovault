@@ -4,9 +4,7 @@
 //! using Soroban host environment crypto primitives (`env.crypto().ed25519_verify`).
 //! Includes nonce replay protection and ledger sequence expiration bounds.
 
-use soroban_sdk::{
-    contracterror, contracttype, panic_with_error, Bytes, BytesN, Env, Vec,
-};
+use soroban_sdk::{contracterror, contracttype, panic_with_error, Bytes, BytesN, Env, Vec};
 
 /// Byte prefix for domain-separated threshold signature payloads.
 pub const THRESHOLD_PREFIX: &[u8] = b"SpooVaultThresholdSig";

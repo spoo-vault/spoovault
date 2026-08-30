@@ -13,8 +13,8 @@ use soroban_sdk::{
 #[cfg(test)]
 extern crate std;
 
-pub mod threshold_sig;
 pub mod bls;
+pub mod threshold_sig;
 pub use bls::{BLSVerifier, GuardianBLSKeyInfo};
 
 /// Groth16 ZK-SNARK proof-of-access verifier (issue #70).
@@ -1181,19 +1181,16 @@ impl SpooVaultStellar {
         let acc_key = DataKey::HasAccess(request.document_id, request.requester.clone());
         let lvl_key = DataKey::AccessLvl(request.document_id, request.requester.clone());
         env.storage().persistent().set(&acc_key, &true);
-        env.storage().persistent().set(&lvl_key, &doc.required_access);
+        env.storage()
+            .persistent()
+            .set(&lvl_key, &doc.required_access);
         Self::bump_persistent(&env, &acc_key);
         Self::bump_persistent(&env, &lvl_key);
 
         let registry_key = DataKey::AccessRegistry(doc.vault_id);
         if let Some(registry) = env.storage().persistent().get::<_, Address>(&registry_key) {
             Self::bump_persistent(&env, &registry_key);
-            Self::notify_access_registry(
-                &env,
-                &registry,
-                request.document_id,
-                &request.requester,
-            );
+            Self::notify_access_registry(&env, &registry, request.document_id, &request.requester);
         }
 
         env.storage().persistent().set(&req_key, &request);
@@ -1594,7 +1591,7 @@ impl SpooVaultStellar {
         record.release_state.last_proof_of_life = env.ledger().timestamp();
         record.release_state.last_proof_of_life_sequence = env.ledger().sequence();
         Self::save_vault_record(&env, vault_id, &record);
-        
+
         env.events().publish(
             (Symbol::new(&env, "prove_life"), vault_id),
             (owner, env.ledger().timestamp()),
@@ -1839,10 +1836,8 @@ impl SpooVaultStellar {
         record.release_state.emergency_mode = enabled;
         Self::save_vault_record(&env, vault_id, &record);
 
-        env.events().publish(
-            (Symbol::new(&env, "emergency_mode"), vault_id),
-            enabled,
-        );
+        env.events()
+            .publish((Symbol::new(&env, "emergency_mode"), vault_id), enabled);
 
         let schedule_key = DataKey::EmergencyUnlock(vault_id);
         if enabled {
@@ -1851,10 +1846,7 @@ impl SpooVaultStellar {
                 .persistent()
                 .get::<DataKey, EmergencyUnlockSchedule>(&schedule_key)
             {
-                assert!(
-                    existing.fulfilled,
-                    "Emergency unlock delay already pending"
-                );
+                assert!(existing.fulfilled, "Emergency unlock delay already pending");
             }
             let cycle_key = DataKey::EmergencyUnlockCycle(vault_id);
             let cycle: u64 = env
@@ -1887,7 +1879,12 @@ impl SpooVaultStellar {
 
     /// Vault creator tunes Delta_T used to scale the PRNG offset:
     /// `T_random = PRNG() mod Delta_T`.
-    pub fn set_emergency_jitter_window(env: Env, owner: Address, vault_id: u64, jitter_window: u64) {
+    pub fn set_emergency_jitter_window(
+        env: Env,
+        owner: Address,
+        vault_id: u64,
+        jitter_window: u64,
+    ) {
         owner.require_auth();
         Self::bump_instance(&env);
 
@@ -1935,7 +1932,10 @@ impl SpooVaultStellar {
             .persistent()
             .get(&DataKey::EmergencyUnlockCycle(vault_id))
             .unwrap_or(0);
-        assert!(schedule.cycle == current_cycle && schedule.cycle != 0, "Stale emergency unlock request");
+        assert!(
+            schedule.cycle == current_cycle && schedule.cycle != 0,
+            "Stale emergency unlock request"
+        );
         assert!(
             env.ledger().sequence()
                 >= schedule.request_sequence + MIN_EMERGENCY_UNLOCK_CONFIRMATIONS,
@@ -1951,7 +1951,8 @@ impl SpooVaultStellar {
         let word: u64 = env.prng().gen();
         let jitter = word % window;
         let extra_ledgers = (jitter / EMERGENCY_SECONDS_PER_LEDGER) as u32;
-        let base_delay_ledgers = (EMERGENCY_UNLOCK_BASE_DELAY / EMERGENCY_SECONDS_PER_LEDGER) as u32;
+        let base_delay_ledgers =
+            (EMERGENCY_UNLOCK_BASE_DELAY / EMERGENCY_SECONDS_PER_LEDGER) as u32;
 
         schedule.fulfilled = true;
         schedule.jitter_seconds = jitter;
@@ -2527,7 +2528,11 @@ impl SpooVaultStellar {
         Self::bump_persistent(env, &acc_key);
 
         // Immediate state invalidation: bump vault access version for target
-        if let Some(doc) = env.storage().persistent().get::<DataKey, Document>(&DataKey::Doc(document_id)) {
+        if let Some(doc) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Document>(&DataKey::Doc(document_id))
+        {
             let ver_key = DataKey::VaultAccessVersion(doc.vault_id, target.clone());
             let current_ver: u64 = env.storage().persistent().get(&ver_key).unwrap_or(1);
             env.storage().persistent().set(&ver_key, &(current_ver + 1));
@@ -2908,8 +2913,6 @@ mod test;
 #[cfg(test)]
 mod fuzz_test;
 
-
-
 #[contract]
 pub struct FheVaultContract;
 
@@ -2918,9 +2921,11 @@ impl FheVaultContract {
     /// Homomorphically accumulates encrypted secret shares using FHE primitives
     pub fn aggregate_share(env: Env, vault_id: Bytes, encrypted_share: Bytes, _proof: Bytes) {
         let storage = env.storage().persistent();
-        
+
         // Fetch existing ciphertext accumulator or default to zero ciphertext
-        let mut accumulator: Bytes = storage.get(&vault_id).unwrap_or_else(|| Bytes::from_array(&env, &[0u8; 32]));
+        let mut accumulator: Bytes = storage
+            .get(&vault_id)
+            .unwrap_or_else(|| Bytes::from_array(&env, &[0u8; 32]));
 
         // Perform homomorphic addition over ciphertext bytes
         accumulator = Self::homomorphic_add(&env, &accumulator, &encrypted_share);
