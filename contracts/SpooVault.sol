@@ -1906,12 +1906,22 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         delete userAccessLevel[documentId][user];
         delete _documentAccessVersion[documentId][user];
 
+        // Immediate state invalidation: bump vault access version for this user
+        _vaultAccessVersion[vaultId][user] += 1;
+
         emit AccessRevoked(documentId, user);
 
         if (crossChainRevocationEnabled[vaultId]) {
             uint256 nonce = ++documentRevocationNonce[documentId][user];
-            emit CrossChainRevocationBroadcast(vaultGID(vaultId), documentId, user, nonce);
+            bytes32 gid = vaultGID(vaultId);
+            emit CrossChainRevocationBroadcast(gid, documentId, user, nonce);
+            emit RevokeAccess(gid, documentId, user, nonce);
         }
+    }
+
+    /// @notice Get the current access version for a user in a vault.
+    function getVaultAccessVersion(uint256 vaultId, address user) external view returns (uint256) {
+        return _currentAccessVersion(vaultId, user);
     }
 
     /// @notice Globally-unique cross-chain identifier for a vault, derived from

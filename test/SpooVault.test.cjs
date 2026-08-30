@@ -306,22 +306,29 @@ describe("SpooVault EVM Contract Unit Tests", function () {
       ).to.be.revertedWithCustomError(spooVault, "OnlyVaultCreator");
     });
 
-    it("emits CrossChainRevocationBroadcast with a strictly increasing nonce once enabled", async function () {
+    it("emits CrossChainRevocationBroadcast and RevokeAccess with a strictly increasing nonce once enabled, bumping vaultAccessVersion", async function () {
       await spooVault.connect(owner).setCrossChainRevocationEnabled(1, true);
       const gid = await spooVault.vaultGID(1);
+      const initialVer = await spooVault.getVaultAccessVersion(1, userA.address);
 
       await expect(spooVault.connect(guardian1).revokeAccess(1, userA.address))
         .to.emit(spooVault, "CrossChainRevocationBroadcast")
+        .withArgs(gid, 1, userA.address, 1)
+        .and.to.emit(spooVault, "RevokeAccess")
         .withArgs(gid, 1, userA.address, 1);
       expect(await spooVault.documentRevocationNonce(1, userA.address)).to.equal(1);
+      expect(await spooVault.getVaultAccessVersion(1, userA.address)).to.equal(initialVer + 1n);
 
       // A relayed message for a Soroban-side relay_revoke_access call must
       // never be replayable, so the nonce keeps increasing even across
       // repeated revokes of the same document/user pair.
       await expect(spooVault.connect(guardian1).revokeAccess(1, userA.address))
         .to.emit(spooVault, "CrossChainRevocationBroadcast")
+        .withArgs(gid, 1, userA.address, 2)
+        .and.to.emit(spooVault, "RevokeAccess")
         .withArgs(gid, 1, userA.address, 2);
       expect(await spooVault.documentRevocationNonce(1, userA.address)).to.equal(2);
+      expect(await spooVault.getVaultAccessVersion(1, userA.address)).to.equal(initialVer + 2n);
     });
   });
 });

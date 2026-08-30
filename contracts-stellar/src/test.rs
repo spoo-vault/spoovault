@@ -1516,9 +1516,12 @@ mod cross_chain_revocation {
     #[test]
     fn test_relay_revoke_access_applies_evm_signed_revocation() {
         let env = Env::default();
-        let (client, requester, _vault_id, doc_id, evm_keys, vault_gid) = setup_linked_vault(&env);
+        let (client, requester, vault_id, doc_id, evm_keys, vault_gid) = setup_linked_vault(&env);
 
         assert!(client.get_document(&doc_id).is_some());
+        assert!(client.has_access(&doc_id, &requester));
+        let ver_before = client.get_access_version(&vault_id, &requester);
+        assert_eq!(ver_before, 1);
 
         let nonce = 1u64;
         let (sig, recovery_id) = sign_revocation(
@@ -1540,6 +1543,10 @@ mod cross_chain_revocation {
             &sig,
             &recovery_id,
         );
+
+        assert!(!client.has_access(&doc_id, &requester));
+        let ver_after = client.get_access_version(&vault_id, &requester);
+        assert_eq!(ver_after, ver_before + 1);
 
         // Access was actually cleared: a fresh request now succeeds instead
         // of panicking on "Already has access".

@@ -286,6 +286,7 @@ pub enum DataKey {
     VaultGid(BytesN<32>),
     CrossChainRevoker(u64),
     RevocationNonce(BytesN<32>, u64, Address),
+    VaultAccessVersion(u64, Address),
     // Upgrade governance
     Admins,
     AdminThreshold,
@@ -2228,6 +2229,17 @@ impl SpooVaultStellar {
         has
     }
 
+    /// Retrieve the current vault access version for a user in a vault
+    pub fn get_access_version(env: Env, vault_id: u64, user: Address) -> u64 {
+        Self::bump_instance(&env);
+        let key = DataKey::VaultAccessVersion(vault_id, user);
+        let ver: u64 = env.storage().persistent().get(&key).unwrap_or(1);
+        if env.storage().persistent().has(&key) {
+            Self::bump_persistent(&env, &key);
+        }
+        ver
+    }
+
     pub fn get_invites(env: Env, guardian: Address) -> Vec<GuardianInvite> {
         Self::bump_instance(&env);
         let key = DataKey::Invites(guardian);
@@ -2505,8 +2517,20 @@ impl SpooVaultStellar {
         env.storage().persistent().remove(&lvl_key);
         Self::bump_persistent(env, &acc_key);
 
+        // Immediate state invalidation: bump vault access version for target
+        if let Some(doc) = env.storage().persistent().get::<DataKey, Document>(&DataKey::Doc(document_id)) {
+            let ver_key = DataKey::VaultAccessVersion(doc.vault_id, target.clone());
+            let current_ver: u64 = env.storage().persistent().get(&ver_key).unwrap_or(1);
+            env.storage().persistent().set(&ver_key, &(current_ver + 1));
+            Self::bump_persistent(env, &ver_key);
+        }
+
         env.events().publish(
             (Symbol::new(env, "access_revoked"), document_id),
+            target.clone(),
+        );
+        env.events().publish(
+            (Symbol::new(env, "RevokeAccess"), document_id),
             target.clone(),
         );
     }
