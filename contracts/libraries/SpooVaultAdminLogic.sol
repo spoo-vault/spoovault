@@ -15,45 +15,45 @@ library SpooVaultAdminLogic {
     // keep their own slots. External getVault still widens to uint256.
     struct Vault {
         address creator;
-        uint64 id;
+        uint96 approvalThreshold;
         bool isActive;
+        uint40 createdAt;
+        uint64 id;
         string name;
         string description;
         address[] guardians;
-        uint96 approvalThreshold;
-        uint40 createdAt;
     }
 
     struct GuardianRemovalProposal {
-        uint256 vaultId;
         address guardianToRemove;
         address proposedBy;
-        address[] approvedBy;
         bool executed;
-        uint256 createdAt;
-        uint256 expiresAt;
+        uint40 createdAt;
+        uint40 expiresAt;
+        uint64 vaultId;
+        address[] approvedBy;
     }
 
     struct ThresholdUpdateProposal {
-        uint256 vaultId;
-        uint256 newThreshold;
         address proposedBy;
-        address[] approvedBy;
         bool executed;
-        uint256 createdAt;
-        uint256 expiresAt;
+        uint40 createdAt;
+        uint40 expiresAt;
+        uint64 vaultId;
+        uint96 newThreshold;
+        address[] approvedBy;
     }
 
     struct ReshareSession {
-        uint256 startedAt;
-        uint256 deadline;
-        uint256 submittedCount;
+        uint40 startedAt;
+        uint40 deadline;
+        uint32 submittedCount;
         bool active;
     }
 
     struct GuardianInvite {
         address guardian;
-        uint64 vaultId;
+        uint48 vaultId;
         bool accepted;
         uint40 expiresAt;
     }
@@ -108,13 +108,13 @@ library SpooVaultAdminLogic {
 
         uint256 expiresAt = block.timestamp + 7 days;
         proposals[vaultId][guardianToRemove] = GuardianRemovalProposal({
-            vaultId: vaultId,
             guardianToRemove: guardianToRemove,
             proposedBy: msg.sender,
-            approvedBy: new address[](0),
             executed: false,
-            createdAt: block.timestamp,
-            expiresAt: expiresAt
+            createdAt: uint40(block.timestamp),
+            expiresAt: uint40(expiresAt),
+            vaultId: uint64(vaultId),
+            approvedBy: new address[](0)
         });
 
         emit GuardianRemovalProposed(vaultId, guardianToRemove, msg.sender);
@@ -163,13 +163,13 @@ library SpooVaultAdminLogic {
 
         uint256 expiresAt = block.timestamp + 7 days;
         proposals[vaultId][newThreshold] = ThresholdUpdateProposal({
-            vaultId: vaultId,
-            newThreshold: newThreshold,
             proposedBy: msg.sender,
-            approvedBy: new address[](0),
             executed: false,
-            createdAt: block.timestamp,
-            expiresAt: expiresAt
+            createdAt: uint40(block.timestamp),
+            expiresAt: uint40(expiresAt),
+            vaultId: uint64(vaultId),
+            newThreshold: uint96(newThreshold),
+            approvedBy: new address[](0)
         });
 
         emit ThresholdUpdateProposed(vaultId, newThreshold, msg.sender);
@@ -266,8 +266,8 @@ library SpooVaultAdminLogic {
 
         uint256 nextEpoch = shareEpoch[documentId] + 1;
         ReshareSession storage session = sessions[documentId];
-        session.startedAt = block.timestamp;
-        session.deadline = block.timestamp + duration;
+        session.startedAt = uint40(block.timestamp);
+        session.deadline = uint40(block.timestamp + duration);
         session.submittedCount = 0;
         session.active = true;
 
@@ -331,15 +331,16 @@ library SpooVaultAdminLogic {
             revert InvalidShareRefreshInput();
         }
 
-        for (uint256 i = 0; i < guardiansList.length; i++) {
+        if (_hasDuplicateAddresses(guardiansList)) {
+            revert InvalidShareRefreshInput();
+        }
+
+        for (uint256 i = 0; i < guardiansList.length; ) {
             address guardian = guardiansList[i];
             if (!isGuardian[vaultId][guardian]) revert InvalidShareRefreshInput();
 
-            for (uint256 j = 0; j < i; j++) {
-                if (guardiansList[j] == guardian) revert InvalidShareRefreshInput();
-            }
-
             encryptedGuardianShares[documentId][guardian] = newShares[i];
+            unchecked { ++i; }
         }
 
         if (session.submittedCount < vaultGuardians.length) {
@@ -411,6 +412,30 @@ library SpooVaultAdminLogic {
         }
 
         return pending;
+    }
+
+    function _hasDuplicateAddresses(address[] calldata addrs) internal pure returns (bool hasDuplicate) {
+        uint256 len = addrs.length;
+        assembly {
+            let base := addrs.offset
+            for { let i := 0 } lt(i, len) { i := add(i, 1) } {
+                let addr := and(
+                    calldataload(add(base, mul(i, 0x20))),
+                    0xffffffffffffffffffffffffffffffffffffffff
+                )
+                for { let j := 0 } lt(j, i) { j := add(j, 1) } {
+                    let other := and(
+                        calldataload(add(base, mul(j, 0x20))),
+                        0xffffffffffffffffffffffffffffffffffffffff
+                    )
+                    if eq(other, addr) {
+                        hasDuplicate := 1
+                        i := len
+                        break
+                    }
+                }
+            }
+        }
     }
 }
 // slither-disable-end timestamp
