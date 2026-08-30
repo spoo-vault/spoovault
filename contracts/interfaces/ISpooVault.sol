@@ -91,6 +91,7 @@ interface ISpooVault is IERC165 {
     event NFTMinted(uint256 indexed tokenId, address indexed to, uint256 indexed vaultId);
     event NFTBurned(uint256 indexed tokenId);
     event AccessRevoked(uint256 indexed documentId, address indexed user);
+    event RevokeAccess(bytes32 indexed vaultGID, uint256 indexed documentId, address indexed targetUser, uint256 nonce);
     event VaultReleaseConfigured(uint256 indexed vaultId, uint256 inactivityPeriod);
     event ProofOfLifeRecorded(uint256 indexed vaultId, address indexed owner, uint256 timestamp);
     event EmergencyModeUpdated(uint256 indexed vaultId, bool enabled);

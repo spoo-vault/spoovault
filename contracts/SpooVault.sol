@@ -153,6 +153,10 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     error ProposalExpired();
     error CannotRemoveOnlyGuardian();
     error ProposalAlreadyExecuted();
+    error ProposalNotQueued();
+    error ProposalAlreadyQueued();
+    error TimelockNotElapsed();
+    error ProposalVetoed();
     error ApprovalAlreadyGiven();
     error CannotSelfApproveAccess();
     error ZeroAddressBeneficiary();
@@ -388,6 +392,8 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     event GuardianRemovalApproved(uint256 indexed vaultId, address indexed guardian, address indexed approver);
     event ThresholdUpdateProposed(uint256 indexed vaultId, uint256 newThreshold, address indexed proposedBy);
     event ThresholdUpdateApproved(uint256 indexed vaultId, uint256 newThreshold, address indexed approver);
+    event VaultReconfigurationQueued(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold, uint256 eta);
+    event VaultReconfigurationCanceled(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold, address indexed canceledBy);
     event VaultReconfigurationExecuted(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold);
     event KeeperAuthorized(uint256 indexed vaultId, address indexed owner, address indexed keeper, uint256 expiresAt);
     event KeeperRevoked(uint256 indexed vaultId, address indexed owner);
@@ -1174,6 +1180,37 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         );
     }
 
+    function queueVaultReconfiguration(
+        uint256 vaultId,
+        address guardianToRemove,
+        uint256 newThreshold
+    ) external nonReentrant {
+        SpooVaultAdminLogic.queueVaultReconfiguration(
+            vaults,
+            isGuardian,
+            guardianRemovalProposals,
+            thresholdUpdateProposals,
+            vaultId,
+            guardianToRemove,
+            newThreshold
+        );
+    }
+
+    function cancelVaultReconfiguration(
+        uint256 vaultId,
+        address guardianToRemove,
+        uint256 newThreshold
+    ) external nonReentrant {
+        SpooVaultAdminLogic.cancelVaultReconfiguration(
+            vaults,
+            guardianRemovalProposals,
+            thresholdUpdateProposals,
+            vaultId,
+            guardianToRemove,
+            newThreshold
+        );
+    }
+
     function executeVaultReconfiguration(
         uint256 vaultId,
         address guardianToRemove,
@@ -1911,12 +1948,22 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         delete userAccessLevel[documentId][user];
         delete _documentAccessVersion[documentId][user];
 
+        // Immediate state invalidation: bump vault access version for this user
+        _vaultAccessVersion[vaultId][user] += 1;
+
         emit AccessRevoked(documentId, user);
 
         if (crossChainRevocationEnabled[vaultId]) {
             uint256 nonce = ++documentRevocationNonce[documentId][user];
-            emit CrossChainRevocationBroadcast(vaultGID(vaultId), documentId, user, nonce);
+            bytes32 gid = vaultGID(vaultId);
+            emit CrossChainRevocationBroadcast(gid, documentId, user, nonce);
+            emit RevokeAccess(gid, documentId, user, nonce);
         }
+    }
+
+    /// @notice Get the current access version for a user in a vault.
+    function getVaultAccessVersion(uint256 vaultId, address user) external view returns (uint256) {
+        return _currentAccessVersion(vaultId, user);
     }
 
     /// @notice Globally-unique cross-chain identifier for a vault, derived from

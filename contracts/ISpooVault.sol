@@ -43,6 +43,12 @@ interface ISpooVault {
     event DelegatedApprovalSubmitted(uint256 indexed requestId, address indexed guardian, address indexed delegate);
 
     /**
+     * @dev Emitted when vault document access is revoked across multi-chain instances.
+     *      Payload: RevokeAccess(vaultGID, documentId, targetUser, nonce).
+     */
+    event RevokeAccess(bytes32 indexed vaultGID, uint256 indexed documentId, address indexed targetUser, uint256 nonce);
+
+    /**
      * @dev Returns true if `interfaceId` is supported by the implementing
      *      contract (ERC-165). Implementations MUST return true for
      *      `type(ISpooVault).interfaceId` and for the standard ERC-165

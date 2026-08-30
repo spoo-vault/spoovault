@@ -58,13 +58,20 @@ library SpooVaultAdminLogic {
         uint40 expiresAt;
     }
 
+    uint256 public constant TIMELOCK_DELAY = 24 hours;
+
     error VaultNotExist();
     error OnlyGuardian();
+    error OnlyVaultCreator();
     error GuardianNotExists();
     error CannotRemoveOnlyGuardian();
     error ProposalNotExist();
     error ProposalExpired();
     error ProposalAlreadyExecuted();
+    error ProposalNotQueued();
+    error ProposalAlreadyQueued();
+    error TimelockNotElapsed();
+    error ProposalVetoed();
     error ApprovalAlreadyGiven();
     error InvalidNewThreshold();
     error InsufficientApprovalsForExecution();
@@ -83,11 +90,17 @@ library SpooVaultAdminLogic {
     event GuardianRemovalApproved(uint256 indexed vaultId, address indexed guardianToRemove, address indexed approver);
     event ThresholdUpdateProposed(uint256 indexed vaultId, uint256 newThreshold, address indexed proposedBy);
     event ThresholdUpdateApproved(uint256 indexed vaultId, uint256 newThreshold, address indexed approver);
+    event VaultReconfigurationQueued(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold, uint256 eta);
+    event VaultReconfigurationCanceled(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold, address indexed canceledBy);
     event VaultReconfigurationExecuted(uint256 indexed vaultId, address indexed guardianRemoved, uint256 newThreshold);
     event GuardianRemoved(uint256 indexed vaultId, address indexed guardian);
     event ShareRefreshStarted(uint256 indexed documentId, uint256 indexed epoch, uint256 deadline);
     event ZeroShareCommitmentSubmitted(uint256 indexed documentId, uint256 indexed epoch, address indexed guardian, uint256 degree);
     event SharesRefreshed(uint256 indexed documentId, uint256 indexed epoch);
+
+    function requiredQuorumApprovals(uint256 guardianCount) internal pure returns (uint256) {
+        return ((guardianCount + 1) / 2) + 1;
+    }
 
     function proposeGuardianRemoval(
         mapping(uint256 => Vault) storage vaults,
@@ -102,7 +115,7 @@ library SpooVaultAdminLogic {
         if (vaults[vaultId].guardians.length <= 1) revert CannotRemoveOnlyGuardian();
 
         GuardianRemovalProposal storage proposal = proposals[vaultId][guardianToRemove];
-        if (proposal.createdAt != 0 && proposal.expiresAt > block.timestamp && !proposal.executed) {
+        if (proposal.createdAt != 0 && proposal.expiresAt > block.timestamp && !proposal.executed && !proposal.vetoed) {
             revert ProposalNotExist();
         }
 
@@ -135,6 +148,7 @@ library SpooVaultAdminLogic {
         if (proposal.createdAt == 0) revert ProposalNotExist();
         if (proposal.expiresAt <= block.timestamp) revert ProposalExpired();
         if (proposal.executed) revert ProposalAlreadyExecuted();
+        if (proposal.vetoed) revert ProposalVetoed();
         if (hasApprovedRemoval[vaultId][guardianToRemove][msg.sender]) revert ApprovalAlreadyGiven();
 
         hasApprovedRemoval[vaultId][guardianToRemove][msg.sender] = true;
@@ -157,7 +171,7 @@ library SpooVaultAdminLogic {
         }
 
         ThresholdUpdateProposal storage proposal = proposals[vaultId][newThreshold];
-        if (proposal.createdAt != 0 && proposal.expiresAt > block.timestamp && !proposal.executed) {
+        if (proposal.createdAt != 0 && proposal.expiresAt > block.timestamp && !proposal.executed && !proposal.vetoed) {
             revert ProposalNotExist();
         }
 
@@ -190,12 +204,92 @@ library SpooVaultAdminLogic {
         if (proposal.createdAt == 0) revert ProposalNotExist();
         if (proposal.expiresAt <= block.timestamp) revert ProposalExpired();
         if (proposal.executed) revert ProposalAlreadyExecuted();
+        if (proposal.vetoed) revert ProposalVetoed();
         if (hasApprovedThreshold[vaultId][newThreshold][msg.sender]) revert ApprovalAlreadyGiven();
 
         hasApprovedThreshold[vaultId][newThreshold][msg.sender] = true;
         proposal.approvedBy.push(msg.sender);
 
         emit ThresholdUpdateApproved(vaultId, newThreshold, msg.sender);
+    }
+
+    function queueVaultReconfiguration(
+        mapping(uint256 => Vault) storage vaults,
+        mapping(uint256 => mapping(address => bool)) storage isGuardian,
+        mapping(uint256 => mapping(address => GuardianRemovalProposal)) storage removalProposals,
+        mapping(uint256 => mapping(uint256 => ThresholdUpdateProposal)) storage thresholdProposals,
+        uint256 vaultId,
+        address guardianToRemove,
+        uint256 newThreshold
+    ) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (!isGuardian[vaultId][msg.sender]) revert OnlyGuardian();
+
+        Vault storage vault = vaults[vaultId];
+        uint256 currentGuardianCount = vault.guardians.length;
+        uint256 requiredApprovals = requiredQuorumApprovals(currentGuardianCount);
+
+        GuardianRemovalProposal storage removalProposal = removalProposals[vaultId][guardianToRemove];
+        ThresholdUpdateProposal storage thresholdProposal = thresholdProposals[vaultId][newThreshold];
+
+        bool hasRemovalProposal = removalProposal.createdAt != 0 && !removalProposal.executed && removalProposal.expiresAt > block.timestamp;
+        bool hasThresholdProposal = thresholdProposal.createdAt != 0 && !thresholdProposal.executed && thresholdProposal.expiresAt > block.timestamp;
+
+        if (!hasRemovalProposal && !hasThresholdProposal) {
+            revert ProposalNotExist();
+        }
+
+        if (hasRemovalProposal) {
+            if (removalProposal.vetoed) revert ProposalVetoed();
+            if (removalProposal.queuedAt != 0) revert ProposalAlreadyQueued();
+            if (removalProposal.approvedBy.length < requiredApprovals) {
+                revert InsufficientApprovalsForExecution();
+            }
+            removalProposal.queuedAt = block.timestamp;
+        }
+
+        if (hasThresholdProposal) {
+            if (thresholdProposal.vetoed) revert ProposalVetoed();
+            if (thresholdProposal.queuedAt != 0) revert ProposalAlreadyQueued();
+            if (thresholdProposal.approvedBy.length < requiredApprovals) {
+                revert InsufficientApprovalsForExecution();
+            }
+            thresholdProposal.queuedAt = block.timestamp;
+        }
+
+        emit VaultReconfigurationQueued(vaultId, guardianToRemove, newThreshold, block.timestamp + TIMELOCK_DELAY);
+    }
+
+    function cancelVaultReconfiguration(
+        mapping(uint256 => Vault) storage vaults,
+        mapping(uint256 => mapping(address => GuardianRemovalProposal)) storage removalProposals,
+        mapping(uint256 => mapping(uint256 => ThresholdUpdateProposal)) storage thresholdProposals,
+        uint256 vaultId,
+        address guardianToRemove,
+        uint256 newThreshold
+    ) external {
+        if (vaults[vaultId].id == 0) revert VaultNotExist();
+        if (vaults[vaultId].creator != msg.sender) revert OnlyVaultCreator();
+
+        GuardianRemovalProposal storage removalProposal = removalProposals[vaultId][guardianToRemove];
+        ThresholdUpdateProposal storage thresholdProposal = thresholdProposals[vaultId][newThreshold];
+
+        bool hasRemovalProposal = removalProposal.createdAt != 0 && !removalProposal.executed;
+        bool hasThresholdProposal = thresholdProposal.createdAt != 0 && !thresholdProposal.executed;
+
+        if (!hasRemovalProposal && !hasThresholdProposal) {
+            revert ProposalNotExist();
+        }
+
+        if (hasRemovalProposal) {
+            removalProposal.vetoed = true;
+        }
+
+        if (hasThresholdProposal) {
+            thresholdProposal.vetoed = true;
+        }
+
+        emit VaultReconfigurationCanceled(vaultId, guardianToRemove, newThreshold, msg.sender);
     }
 
     function executeVaultReconfiguration(
@@ -211,7 +305,7 @@ library SpooVaultAdminLogic {
 
         Vault storage vault = vaults[vaultId];
         uint256 currentGuardianCount = vault.guardians.length;
-        uint256 requiredApprovals = (currentGuardianCount / 2) + 1;
+        uint256 requiredApprovals = requiredQuorumApprovals(currentGuardianCount);
 
         GuardianRemovalProposal storage removalProposal = removalProposals[vaultId][guardianToRemove];
         ThresholdUpdateProposal storage thresholdProposal = thresholdProposals[vaultId][newThreshold];
@@ -224,6 +318,11 @@ library SpooVaultAdminLogic {
         }
 
         if (hasRemovalProposal) {
+            if (removalProposal.vetoed) revert ProposalVetoed();
+            if (removalProposal.queuedAt == 0) revert ProposalNotQueued();
+            if (block.timestamp < removalProposal.queuedAt + TIMELOCK_DELAY) {
+                revert TimelockNotElapsed();
+            }
             if (removalProposal.approvedBy.length < requiredApprovals) {
                 revert InsufficientApprovalsForExecution();
             }
@@ -235,6 +334,11 @@ library SpooVaultAdminLogic {
         }
 
         if (hasThresholdProposal) {
+            if (thresholdProposal.vetoed) revert ProposalVetoed();
+            if (thresholdProposal.queuedAt == 0) revert ProposalNotQueued();
+            if (block.timestamp < thresholdProposal.queuedAt + TIMELOCK_DELAY) {
+                revert TimelockNotElapsed();
+            }
             if (thresholdProposal.approvedBy.length < requiredApprovals) {
                 revert InsufficientApprovalsForExecution();
             }
