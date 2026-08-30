@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../services/ipfs.service", () => {
   const fetchFile = vi.fn();
@@ -362,8 +362,12 @@ describe("StorageProviderService", () => {
     it("handles the wrapped dealInfo/data response shapes", async () => {
       const { service, fetchMock } = makeService();
       fetchMock
-        .mockResolvedValueOnce(jsonResponse({ dealInfo: [{ dealId: 5 }] }))
-        .mockResolvedValueOnce(jsonResponse({ data: [{ dealId: 6 }] }));
+        .mockResolvedValueOnce(
+          jsonResponse({ dealInfo: [{ dealId: 5, status: "StorageActive" }] })
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({ data: [{ dealId: 6, dealStatus: "proving" }] })
+        );
 
       expect(
         (await service.checkProofOfStorage("filecoin", "cid-a")).archived
@@ -371,6 +375,23 @@ describe("StorageProviderService", () => {
       expect(
         (await service.checkProofOfStorage("filecoin", "cid-b")).archived
       ).toBe(true);
+    });
+
+    it("does not treat pending Filecoin deals as proof of permanent storage", async () => {
+      const { service, fetchMock } = makeService();
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          deals: [
+            { dealId: 7, status: "queued" },
+            { dealId: 8, dealStatus: "published" },
+          ],
+        })
+      );
+
+      const status = await service.checkProofOfStorage("filecoin", "bafy-pending");
+
+      expect(status.archived).toBe(false);
+      expect(status.detail).toMatch(/none are active yet/);
     });
 
     it("reports not archived when the CID has no Filecoin deals yet", async () => {
@@ -393,6 +414,16 @@ describe("StorageProviderService", () => {
       expect(status.archived).toBe(true);
       const [url] = fetchMock.mock.calls[0];
       expect(url).toBe("https://arweave.net/tx/ar-tx/status");
+    });
+
+    it("requires an anchored Arweave block before marking the tx archived", async () => {
+      const { service, fetchMock } = makeService();
+      fetchMock.mockResolvedValueOnce(jsonResponse({ status: 200 }));
+
+      const status = await service.checkProofOfStorage("arweave", "ar-accepted");
+
+      expect(status.archived).toBe(false);
+      expect(status.detail).toMatch(/not anchored in a block/);
     });
 
     it("flags pending Arweave transactions as not yet permanent", async () => {
@@ -600,8 +631,8 @@ describe("StorageProviderService", () => {
       });
       vi.mocked(ipfsService.fetchFile).mockResolvedValueOnce(new Response("ok"));
       fetchMock
-        .mockResolvedValueOnce(jsonResponse([{ dealId: 1 }]))
-        .mockResolvedValueOnce(jsonResponse({ status: 200 }));
+        .mockResolvedValueOnce(jsonResponse([{ dealId: 1, status: "active" }]))
+        .mockResolvedValueOnce(jsonResponse({ status: 200, blockHeight: 1234 }));
 
       const { statuses } = await service.verifyArchival("QmVerify");
 
