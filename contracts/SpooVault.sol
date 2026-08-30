@@ -75,22 +75,22 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
     // storage matches this contract.
     struct Document {
         uint64 id;
-        uint64 vaultId;
+        uint48 vaultId;
+        AccessLevel requiredAccess;
+        uint40 uploadedAt;
+        address uploadedBy;
         string encryptedMetadata;
         string ipfsHash;
-        address uploadedBy;
-        uint40 uploadedAt;
-        AccessLevel requiredAccess;
     }
 
     struct AccessRequest {
-        uint256 requestId;
-        uint256 documentId;
+        uint64 requestId;
+        uint64 documentId;
         address requester;
-        address[] approvedBy;
         RequestStatus status;
-        uint256 expiresAt;
-        uint256 createdAt;
+        uint40 expiresAt;
+        uint40 createdAt;
+        address[] approvedBy;
     }
 
     // VaultReleaseState packs into a single slot aside from `targetBlocks`,
@@ -106,7 +106,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
 
     struct KeeperAuthorization {
         address keeper;
-        uint256 expiresAt;
+        uint40 expiresAt;
     }
 
     error OnlyVrfCoordinator();
@@ -537,14 +537,17 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         _vaultIdCounter += 1;
         uint256 vaultId = _vaultIdCounter;
 
-        SpooVaultAdminLogic.Vault storage newVault = vaults[vaultId];
-        newVault.id = uint64(vaultId);
-        newVault.creator = msg.sender;
-        newVault.name = name;
-        newVault.description = description;
-        newVault.approvalThreshold = uint96(approvalThreshold);
-        newVault.isActive = true;
-        newVault.createdAt = uint40(block.timestamp);
+        vaults[vaultId] = SpooVaultAdminLogic.Vault({
+            creator: msg.sender,
+            approvalThreshold: uint96(approvalThreshold),
+            isActive: true,
+            createdAt: uint40(block.timestamp),
+            id: uint64(vaultId),
+            name: name,
+            description: description,
+            guardians: new address[](0)
+        });
+        vaults[vaultId].guardians.push(msg.sender);
 
         _vaultReleaseStates[vaultId] = VaultReleaseState({
             emergencyMode: false,
@@ -554,25 +557,26 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
             targetBlocks: 30 days / getMedianBlockInterval()
         });
 
-        newVault.guardians.push(msg.sender);
         isGuardian[vaultId][msg.sender] = true;
 
-        for (uint256 i = 0; i < guardians.length; i++) {
-            address guardian = guardians[i];
-            if (guardian == msg.sender) {
-                continue;
-            }
+        uint40 inviteExpiry = uint40(block.timestamp + 7 days);
+        uint48 currentVaultId = uint48(vaultId);
 
-            if (guardianInvites[guardian][vaultId].expiresAt == 0) {
+        unchecked {
+            for (uint256 i = 0; i < guardians.length; i++) {
+                address guardian = guardians[i];
+                if (guardian == msg.sender) {
+                    continue;
+                }
+
                 userInviteVaultIds[guardian].push(vaultId);
+                guardianInvites[guardian][vaultId] = SpooVaultAdminLogic.GuardianInvite({
+                    guardian: guardian,
+                    vaultId: currentVaultId,
+                    accepted: false,
+                    expiresAt: inviteExpiry
+                });
             }
-            guardianInvites[guardian][vaultId] = SpooVaultAdminLogic.GuardianInvite({
-                guardian: guardian,
-                vaultId: uint64(vaultId),
-                accepted: false,
-                expiresAt: uint40(block.timestamp + 7 days)
-            });
-
         }
 
         emit VaultCreated(vaultId, msg.sender, name);
@@ -808,7 +812,7 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         if (signer != vaults[vaultId].creator) revert InvalidSigner();
 
         keeperAuthNonces[vaultId] = nonce + 1;
-        keeperAuthorizations[vaultId] = KeeperAuthorization({keeper: keeper, expiresAt: expiresAt});
+        keeperAuthorizations[vaultId] = KeeperAuthorization({keeper: keeper, expiresAt: uint40(expiresAt)});
 
         emit KeeperAuthorized(vaultId, signer, keeper, expiresAt);
     }
@@ -1318,18 +1322,19 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
             revert InvalidShareRefreshInput();
         }
 
-        for (uint256 i = 0; i < guardiansList.length; i++) {
+        if (_hasDuplicateAddresses(guardiansList)) {
+            revert InvalidShareRefreshInput();
+        }
+
+        for (uint256 i = 0; i < guardiansList.length; ) {
             address guardian = guardiansList[i];
             if (!isGuardian[vaultId][guardian]) revert InvalidShareRefreshInput();
-
-            for (uint256 j = 0; j < i; j++) {
-                if (guardiansList[j] == guardian) revert InvalidShareRefreshInput();
-            }
 
             encryptedGuardianShares[documentId][guardian] = newShares[i];
             if (bytes(newShares[i]).length > 0) {
                 guardianShareCommitments[documentId][guardian] = keccak256(bytes(newShares[i]));
             }
+            unchecked { ++i; }
         }
 
         if (session.submittedCount < vaultGuardians.length) {
@@ -1428,12 +1433,12 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
 
         documents[documentId] = Document({
             id: uint64(documentId),
-            vaultId: uint64(vaultId),
-            encryptedMetadata: encryptedMetadata,
-            ipfsHash: ipfsHash,
-            uploadedBy: msg.sender,
+            vaultId: uint48(vaultId),
+            requiredAccess: requiredAccess,
             uploadedAt: uint40(block.timestamp),
-            requiredAccess: requiredAccess
+            uploadedBy: msg.sender,
+            encryptedMetadata: encryptedMetadata,
+            ipfsHash: ipfsHash
         });
 
         documentReleaseCondition[documentId] = releaseCondition;
@@ -1480,13 +1485,13 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
         uint256 requestId = _requestIdCounter;
 
         accessRequests[requestId] = AccessRequest({
-            requestId: requestId,
-            documentId: documentId,
+            requestId: uint64(requestId),
+            documentId: uint64(documentId),
             requester: msg.sender,
-            approvedBy: new address[](0),
             status: RequestStatus.PENDING,
-            expiresAt: block.timestamp + 3 days,
-            createdAt: block.timestamp
+            expiresAt: uint40(block.timestamp + 3 days),
+            createdAt: uint40(block.timestamp),
+            approvedBy: new address[](0)
         });
 
         latestRequestId[documentId][msg.sender] = requestId;
@@ -2260,5 +2265,29 @@ contract SpooVault is ERC721, ISpooVault, ReentrancyGuardTransient, EIP712 {
             getApproved(tokenId) == spender ||
             isApprovedForAll(owner, spender)
         );
+    }
+
+    function _hasDuplicateAddresses(address[] calldata addrs) internal pure returns (bool hasDuplicate) {
+        uint256 len = addrs.length;
+        assembly {
+            let base := addrs.offset
+            for { let i := 0 } lt(i, len) { i := add(i, 1) } {
+                let addr := and(
+                    calldataload(add(base, mul(i, 0x20))),
+                    0xffffffffffffffffffffffffffffffffffffffff
+                )
+                for { let j := 0 } lt(j, i) { j := add(j, 1) } {
+                    let other := and(
+                        calldataload(add(base, mul(j, 0x20))),
+                        0xffffffffffffffffffffffffffffffffffffffff
+                    )
+                    if eq(other, addr) {
+                        hasDuplicate := 1
+                        i := len
+                        break
+                    }
+                }
+            }
+        }
     }
 }

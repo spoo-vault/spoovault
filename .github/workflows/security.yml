@@ -112,9 +112,9 @@ jobs:
           components: clippy
 
       - name: Install Security Tools
-        run: |
-          cargo install cargo-audit
-          cargo install cargo-geiger
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-geiger
 
       - name: Run Cargo Audit
         run: cargo audit --file Cargo.lock

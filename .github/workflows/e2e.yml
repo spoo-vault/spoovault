@@ -49,6 +49,7 @@ jobs:
           set -euo pipefail
           nohup anvil \
             --chain-id 43113 \
+            --code-size-limit 60000 \
             --mnemonic "test test test test test test test test test test test junk" \
             --accounts 10 \
             --balance 10000 \

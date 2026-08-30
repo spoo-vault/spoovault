@@ -179,7 +179,9 @@ jobs:
         run: cargo +stable test --features upgrade-tests
 
       - name: Install cargo-fuzz
-        run: cargo +nightly install cargo-fuzz --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
 
       - name: Pick cargo-fuzz campaign size
         id: config
