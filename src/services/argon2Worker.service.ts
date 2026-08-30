@@ -1,4 +1,4 @@
-import { Argon2WorkerRequest, Argon2WorkerResponse } from "../workers/argon2.worker";
+import type { Argon2WorkerRequest, Argon2WorkerResponse } from "../workers/argon2.worker.ts";
 
 /**
  * Memory-hard Argon2id derivation parameters (issue #74).

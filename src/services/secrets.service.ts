@@ -1,4 +1,4 @@
-import { argon2WorkerService, ARGON2ID_DEFAULTS } from "./argon2Worker.service";
+import { argon2WorkerService, ARGON2ID_DEFAULTS } from "./argon2Worker.service.ts";
 
 /**
  * Shamir's Secret Sharing (SSS) over Galois Field GF(256)
