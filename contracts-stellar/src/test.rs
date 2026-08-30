@@ -2317,8 +2317,8 @@ mod fhe_aggregation {
         nonce: u64,
         expiration_ledger: u32,
     ) -> (Vec<BytesN<64>>, Vec<BytesN<32>>) {
-        use ed25519_dalek::{Signer as _, SigningKey};
         use crate::threshold_sig::THRESHOLD_PREFIX;
+        use ed25519_dalek::{Signer as _, SigningKey};
 
         let mut payload = std::vec::Vec::new();
         payload.extend_from_slice(THRESHOLD_PREFIX);
@@ -2353,16 +2353,45 @@ mod fhe_aggregation {
         let expiration_ledger = 500u32;
 
         // Test 1-of-1
-        let (sigs1, pks1) = build_ed25519_threshold_batch(&env, &[1], message_bytes, 1, expiration_ledger);
-        assert!(client.verify_threshold_signatures(&message, &sigs1, &pks1, &1, &1, &expiration_ledger));
+        let (sigs1, pks1) =
+            build_ed25519_threshold_batch(&env, &[1], message_bytes, 1, expiration_ledger);
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs1,
+            &pks1,
+            &1,
+            &1,
+            &expiration_ledger
+        ));
 
         // Test 2-of-3
-        let (sigs2, pks2) = build_ed25519_threshold_batch(&env, &[2, 3, 4], message_bytes, 2, expiration_ledger);
-        assert!(client.verify_threshold_signatures(&message, &sigs2, &pks2, &2, &2, &expiration_ledger));
+        let (sigs2, pks2) =
+            build_ed25519_threshold_batch(&env, &[2, 3, 4], message_bytes, 2, expiration_ledger);
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs2,
+            &pks2,
+            &2,
+            &2,
+            &expiration_ledger
+        ));
 
         // Test 3-of-5
-        let (sigs3, pks3) = build_ed25519_threshold_batch(&env, &[10, 11, 12, 13, 14], message_bytes, 3, expiration_ledger);
-        assert!(client.verify_threshold_signatures(&message, &sigs3, &pks3, &3, &3, &expiration_ledger));
+        let (sigs3, pks3) = build_ed25519_threshold_batch(
+            &env,
+            &[10, 11, 12, 13, 14],
+            message_bytes,
+            3,
+            expiration_ledger,
+        );
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs3,
+            &pks3,
+            &3,
+            &3,
+            &expiration_ledger
+        ));
     }
 
     #[test]
@@ -2377,7 +2406,8 @@ mod fhe_aggregation {
         let message = Bytes::from_slice(&env, message_bytes);
         let expiration_ledger = 500u32; // Expired
 
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, 10, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, 10, expiration_ledger);
         client.verify_threshold_signatures(&message, &sigs, &pks, &2, &10, &expiration_ledger);
     }
 
@@ -2394,9 +2424,17 @@ mod fhe_aggregation {
         let expiration_ledger = 500u32;
         let nonce = 888u64;
 
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, nonce, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, nonce, expiration_ledger);
         // First call succeeds
-        assert!(client.verify_threshold_signatures(&message, &sigs, &pks, &2, &nonce, &expiration_ledger));
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs,
+            &pks,
+            &2,
+            &nonce,
+            &expiration_ledger
+        ));
         // Second call with same nonce must revert
         client.verify_threshold_signatures(&message, &sigs, &pks, &2, &nonce, &expiration_ledger);
     }
@@ -2415,7 +2453,8 @@ mod fhe_aggregation {
         let nonce = 999u64;
 
         // Build single signature and duplicate it to satisfy threshold of 2
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[5], message_bytes, nonce, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[5], message_bytes, nonce, expiration_ledger);
         let mut dup_sigs = Vec::new(&env);
         dup_sigs.push_back(sigs.get(0).unwrap());
         dup_sigs.push_back(sigs.get(0).unwrap());
@@ -2424,7 +2463,14 @@ mod fhe_aggregation {
         dup_pks.push_back(pks.get(0).unwrap());
         dup_pks.push_back(pks.get(0).unwrap());
 
-        client.verify_threshold_signatures(&message, &dup_sigs, &dup_pks, &2, &nonce, &expiration_ledger);
+        client.verify_threshold_signatures(
+            &message,
+            &dup_sigs,
+            &dup_pks,
+            &2,
+            &nonce,
+            &expiration_ledger,
+        );
     }
 
     #[test]
@@ -2440,7 +2486,8 @@ mod fhe_aggregation {
         let expiration_ledger = 500u32;
 
         // 1 signature provided but threshold is 2
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1], message_bytes, 123, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1], message_bytes, 123, expiration_ledger);
         client.verify_threshold_signatures(&message, &sigs, &pks, &2, &123, &expiration_ledger);
     }
 
@@ -2471,7 +2518,11 @@ mod fhe_aggregation {
             &AccessLevel::Read,
             &ReleaseCondition::Anytime,
             &vec![&env, creator.clone(), g1.clone()],
-            &vec![&env, String::from_str(&env, "s1"), String::from_str(&env, "s2")],
+            &vec![
+                &env,
+                String::from_str(&env, "s1"),
+                String::from_str(&env, "s2"),
+            ],
         );
         let req_id = client.request_access(&requester, &doc_id);
 
@@ -2482,7 +2533,8 @@ mod fhe_aggregation {
 
         let nonce = 5555u64;
         let expiration_ledger = 1000u32;
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1, 2], &msg_payload, nonce, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1, 2], &msg_payload, nonce, expiration_ledger);
 
         let share = Some(String::from_str(&env, "beneficiary_share_data"));
         client.approve_access_threshold(
@@ -2497,5 +2549,166 @@ mod fhe_aggregation {
 
         let request = client.get_access_request(&req_id).unwrap();
         assert_eq!(request.status, RequestStatus::Approved);
+    }
+
+    // ── Dead-man switch inactivity period tests ───────────────────────────────
+
+    /// Bug condition exploration: configure_vault_release with 1 day (86_400 s)
+    /// should panic on FIXED code. On unfixed code this test FAILS (no panic),
+    /// which proves the bug exists.
+    #[test]
+    #[should_panic(expected = "Inactivity period must be between 30 and 365 days")]
+    fn test_configure_vault_release_rejects_below_30_days() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let vault_id = client.create_vault(
+            &creator,
+            &String::from_str(&env, "V"),
+            &String::from_str(&env, "D"),
+            &vec![&env, g1],
+            &1,
+        );
+        // 1 day — below the 30-day minimum
+        client.configure_vault_release(&creator, &vault_id, &86_400u64);
+    }
+
+    /// Preservation: exact 30-day lower boundary must be accepted after fix.
+    #[test]
+    fn test_configure_vault_release_accepts_30_days_boundary() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let vault_id = client.create_vault(
+            &creator,
+            &String::from_str(&env, "V"),
+            &String::from_str(&env, "D"),
+            &vec![&env, g1],
+            &1,
+        );
+        let thirty_days: u64 = 30 * 24 * 60 * 60;
+        client.configure_vault_release(&creator, &vault_id, &thirty_days);
+        let state = client.get_release_state(&vault_id).unwrap();
+        assert_eq!(state.inactivity_period, thirty_days);
+    }
+
+    /// Preservation: exact 365-day upper boundary must be accepted.
+    #[test]
+    fn test_configure_vault_release_accepts_365_days_boundary() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let vault_id = client.create_vault(
+            &creator,
+            &String::from_str(&env, "V"),
+            &String::from_str(&env, "D"),
+            &vec![&env, g1],
+            &1,
+        );
+        let three_sixty_five_days: u64 = 365 * 24 * 60 * 60;
+        client.configure_vault_release(&creator, &vault_id, &three_sixty_five_days);
+        let state = client.get_release_state(&vault_id).unwrap();
+        assert_eq!(state.inactivity_period, three_sixty_five_days);
+    }
+
+    /// Heartbeat invariant: prove_life must set last_proof_of_life to exactly
+    /// env.ledger().timestamp() at the moment of the call.
+    #[test]
+    fn test_prove_life_resets_timestamp_exactly() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let vault_id = client.create_vault(
+            &creator,
+            &String::from_str(&env, "V"),
+            &String::from_str(&env, "D"),
+            &vec![&env, g1],
+            &1,
+        );
+
+        // Advance ledger to a known timestamp
+        let known_ts: u64 = 1_000_000;
+        let known_seq: u32 = 42;
+        env.ledger().with_mut(|li| {
+            li.timestamp = known_ts;
+            li.sequence_number = known_seq;
+        });
+
+        client.prove_life(&creator, &vault_id);
+
+        let state = client.get_release_state(&vault_id).unwrap();
+        assert_eq!(
+            state.last_proof_of_life, known_ts,
+            "last_proof_of_life must equal the ledger timestamp at call time"
+        );
+        assert_eq!(
+            state.last_proof_of_life_sequence, known_seq,
+            "last_proof_of_life_sequence must equal the ledger sequence at call time"
+        );
+    }
+
+    /// Proptest: any inactivity_period below 30 days must be rejected (fix-checking property).
+    #[test]
+    fn test_configure_vault_release_rejects_all_sub_30_day_periods() {
+        use proptest::prelude::*;
+        let config = proptest::test_runner::Config::with_cases(50);
+        let mut runner = proptest::test_runner::TestRunner::new(config);
+        runner
+            .run(&(1u64..2_592_000u64), |period| {
+                let env = Env::default();
+                let contract_id = env.register_contract(None, SpooVaultStellar);
+                let client = SpooVaultStellarClient::new(&env, &contract_id);
+                env.mock_all_auths();
+                let creator = Address::generate(&env);
+                let g1 = Address::generate(&env);
+                let vault_id = client.create_vault(
+                    &creator,
+                    &String::from_str(&env, "V"),
+                    &String::from_str(&env, "D"),
+                    &vec![&env, g1],
+                    &1,
+                );
+                let result = client.try_configure_vault_release(&creator, &vault_id, &period);
+                prop_assert!(
+                    result.is_err(),
+                    "period {} should be rejected but was accepted",
+                    period
+                );
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// Proptest: any inactivity_period in [30 days, 365 days] must be accepted (preservation property).
+    #[test]
+    fn test_configure_vault_release_accepts_all_valid_periods() {
+        use proptest::prelude::*;
+        let config = proptest::test_runner::Config::with_cases(50);
+        let mut runner = proptest::test_runner::TestRunner::new(config);
+        runner
+            .run(&(2_592_000u64..=31_536_000u64), |period| {
+                let env = Env::default();
+                let contract_id = env.register_contract(None, SpooVaultStellar);
+                let client = SpooVaultStellarClient::new(&env, &contract_id);
+                env.mock_all_auths();
+                let creator = Address::generate(&env);
+                let g1 = Address::generate(&env);
+                let vault_id = client.create_vault(
+                    &creator,
+                    &String::from_str(&env, "V"),
+                    &String::from_str(&env, "D"),
+                    &vec![&env, g1],
+                    &1,
+                );
+                let _ = client
+                    .try_configure_vault_release(&creator, &vault_id, &period)
+                    .map_err(|_| {
+                        TestCaseError::fail(std::format!("period {} should be accepted", period))
+                    })?;
+                let state = client.get_release_state(&vault_id).unwrap();
+                prop_assert_eq!(state.inactivity_period, period);
+                Ok(())
+            })
+            .unwrap();
     }
 }

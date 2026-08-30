@@ -1,13 +1,11 @@
 //! Emergency unlock / Soroban PRNG tests compiled as an integration crate
 //! so they do not depend on `upgrade_fixture` Wasm (`contractimport!` in
 //! `src/test.rs`).
-use spoovault_stellar::{
-    AccessLevel, ReleaseCondition, SpooVaultStellar, SpooVaultStellarClient,
-};
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
     vec, Address, Env, String,
 };
+use spoovault_stellar::{AccessLevel, ReleaseCondition, SpooVaultStellar, SpooVaultStellarClient};
 
 fn client(env: &Env) -> SpooVaultStellarClient<'_> {
     let contract_id = env.register_contract(None, SpooVaultStellar);
@@ -208,5 +206,10 @@ fn permissionless_fulfillment_does_not_require_owner_auth() {
     });
     // No extra auth: anyone may call after confirmations.
     client.fulfill_emergency_unlock_delay(&vault_id);
-    assert!(client.get_emergency_unlock_schedule(&vault_id).unwrap().fulfilled);
+    assert!(
+        client
+            .get_emergency_unlock_schedule(&vault_id)
+            .unwrap()
+            .fulfilled
+    );
 }
