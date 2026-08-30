@@ -24,23 +24,54 @@ const RPC_URL = process.env.ANVIL_RPC_URL || "http://localhost:8545";
 const CHAIN_ID = Number(process.env.E2E_CHAIN_ID || 43113);
 const CHAIN_NAME = "Avalanche Fuji Testnet";
 
-function loadArtifact() {
-  const artifactPath = resolve(
+function loadArtifacts() {
+  const vaultPath = resolve(
     repoRoot,
     "artifacts/contracts/SpooVault.sol/SpooVault.json"
   );
-  if (!existsSync(artifactPath)) {
-    console.log("[deploy-anvil] Hardhat artifact missing, compiling...");
+  const vrfPath = resolve(
+    repoRoot,
+    "artifacts/contracts/libraries/EmergencyVrfLogic.sol/EmergencyVrfLogic.json"
+  );
+  const adminPath = resolve(
+    repoRoot,
+    "artifacts/contracts/libraries/SpooVaultAdminLogic.sol/SpooVaultAdminLogic.json"
+  );
+  if (!existsSync(vaultPath) || !existsSync(vrfPath) || !existsSync(adminPath)) {
+    console.log("[deploy-anvil] Hardhat artifacts missing, compiling...");
     execSync("npx hardhat compile --config hardhat.config.cjs", {
       cwd: repoRoot,
       stdio: "inherit",
     });
   }
-  return JSON.parse(readFileSync(artifactPath, "utf8"));
+  return {
+    vault: JSON.parse(readFileSync(vaultPath, "utf8")),
+    vrf: JSON.parse(readFileSync(vrfPath, "utf8")),
+    admin: JSON.parse(readFileSync(adminPath, "utf8")),
+  };
+}
+
+function linkBytecode(unlinked, linkReferences, libraries) {
+  let bytecode = unlinked.startsWith("0x") ? unlinked : `0x${unlinked}`;
+  for (const file of Object.keys(linkReferences || {})) {
+    for (const name of Object.keys(linkReferences[file])) {
+      const address = libraries[name];
+      if (!address) {
+        throw new Error(`Missing linked library ${name}`);
+      }
+      const hex = address.toLowerCase().replace(/^0x/, "");
+      for (const loc of linkReferences[file][name]) {
+        const start = 2 + loc.start * 2;
+        bytecode =
+          bytecode.slice(0, start) + hex + bytecode.slice(start + loc.length * 2);
+      }
+    }
+  }
+  return bytecode;
 }
 
 async function main() {
-  const artifact = loadArtifact();
+  const artifacts = loadArtifacts();
   const provider = new JsonRpcProvider(RPC_URL);
   const deployer = new Wallet(DEPLOYER_PRIVATE_KEY, provider);
 
@@ -49,12 +80,41 @@ async function main() {
   );
   console.log(`[deploy-anvil] Deployer: ${deployer.address}`);
 
-  const factory = new ContractFactory(
-    artifact.abi,
-    artifact.bytecode,
+  const startNonce = await provider.getTransactionCount(deployer.address, "latest");
+
+  const vrfFactory = new ContractFactory(
+    artifacts.vrf.abi,
+    artifacts.vrf.bytecode,
     deployer
   );
-  const contract = await factory.deploy();
+  const vrfLib = await vrfFactory.deploy({ nonce: startNonce });
+  await vrfLib.waitForDeployment();
+  const vrfAddress = await vrfLib.getAddress();
+
+  const adminFactory = new ContractFactory(
+    artifacts.admin.abi,
+    artifacts.admin.bytecode,
+    deployer
+  );
+  const adminLib = await adminFactory.deploy({ nonce: startNonce + 1 });
+  await adminLib.waitForDeployment();
+  const adminAddress = await adminLib.getAddress();
+
+  const linkedBytecode = linkBytecode(
+    artifacts.vault.bytecode,
+    artifacts.vault.linkReferences,
+    {
+      EmergencyVrfLogic: vrfAddress,
+      SpooVaultAdminLogic: adminAddress,
+    }
+  );
+
+  const factory = new ContractFactory(
+    artifacts.vault.abi,
+    linkedBytecode,
+    deployer
+  );
+  const contract = await factory.deploy({ nonce: startNonce + 2 });
   await contract.waitForDeployment();
   const address = await contract.getAddress();
 
