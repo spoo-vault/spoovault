@@ -17,6 +17,11 @@ pub mod threshold_sig;
 pub mod bls;
 pub use bls::{BLSVerifier, GuardianBLSKeyInfo};
 
+/// Groth16 ZK-SNARK proof-of-access verifier (issue #70).
+/// Pure-Rust BN254 pairing implementation (Soroban SDK v21 exposes no
+/// bn254 host functions, so no `env.crypto()` calls are used here).
+pub mod zk_verifier;
+
 /// Zero-pads a `u64` into a 32-byte big-endian word, matching how Solidity's
 /// `abi.encodePacked` serializes a `uint256`.
 fn u256_be(value: u64) -> [u8; 32] {
@@ -301,6 +306,10 @@ pub enum DataKey {
     TokenUri(u64),
     OwnerBalance(Address),
     VaultTokenBalance(u64, Address),
+    // Groth16 ZK-SNARK proof-of-access nullifier registry (issue #70):
+    // spent nullifier hash => true. Prevents double-claiming a single
+    // beneficiary access proof.
+    ZkNullifier(BytesN<32>),
 }
 
 #[contract]
@@ -2763,6 +2772,133 @@ impl SpooVaultStellar {
         }
 
         result_bytes
+    }
+
+    // -------------------------------------------------------------------
+    // Groth16 ZK-SNARK proof-of-access verification (issue #70)
+    //
+    // Allows a beneficiary to submit a zero-knowledge proof that they hold
+    // a valid vault key share, without revealing the secret share or their
+    // private identity on-chain.
+    //
+    // verify_access_proof: state-changing verification that marks the
+    //      nullifier as spent and returns success.
+    // verify_access_proof_view: view-only verification (pre-flight check).
+    // is_access_nullifier_spent: query whether a nullifier hash has been
+    //      consumed.
+    //
+    // The Groth16 pairing check lives in `zk_verifier::verify_proof`, a
+    // pure-Rust BN254 implementation (the Soroban SDK v21/22 `Crypto` host
+    // API exposes no bn254 functions), so these entrypoints only handle
+    // argument marshalling, authorization and nullifier bookkeeping.
+    // -------------------------------------------------------------------
+
+    /// Verifies a Groth16 ZK-SNARK proof of access and records the nullifier.
+    /// Reverts if the proof is invalid or the nullifier was already spent.
+    ///
+    /// # Arguments
+    /// * `submitter` - The account submitting the proof (must authorize).
+    /// * `proof_a` - G1 point (64 bytes: X || Y).
+    /// * `proof_b` - G2 point (128 bytes: X_im || X_re || Y_im || Y_re).
+    /// * `proof_c` - G1 point (64 bytes).
+    /// * `vault_root_commitment` - Public signal: Poseidon(share, blinding).
+    /// * `nullifier_hash` - Public signal: Poseidon(privkey, document_id).
+    /// * `document_id` - Public signal.
+    /// * `vk` - Bundled verifying key (see `ZkVerifyingKeyArgs`): alpha G1,
+    ///   beta/gamma/delta G2, plus 4 IC G1 points for the 3 public inputs.
+    pub fn verify_access_proof(
+        env: Env,
+        submitter: Address,
+        proof_a: BytesN<64>,
+        proof_b: BytesN<128>,
+        proof_c: BytesN<64>,
+        vault_root_commitment: BytesN<32>,
+        nullifier_hash: BytesN<32>,
+        document_id: BytesN<32>,
+        vk: zk_verifier::ZkVerifyingKeyArgs,
+    ) -> bool {
+        submitter.require_auth();
+        Self::bump_instance(&env);
+
+        let proof = zk_verifier::Groth16Proof {
+            a: proof_a.to_array(),
+            b: proof_b.to_array(),
+            c: proof_c.to_array(),
+        };
+        let signals = zk_verifier::PublicSignals {
+            vault_root_commitment: vault_root_commitment.to_array(),
+            nullifier_hash: nullifier_hash.to_array(),
+            document_id: document_id.to_array(),
+        };
+        let mut ic = Vec::new(&env);
+        for point in vk.ic.iter() {
+            ic.push_back(point.to_array());
+        }
+        let vk = zk_verifier::VerifyingKey {
+            alpha: vk.alpha.to_array(),
+            beta: vk.beta.to_array(),
+            gamma: vk.gamma.to_array(),
+            delta: vk.delta.to_array(),
+            ic,
+        };
+
+        match zk_verifier::verify_proof(&env, &proof, &signals, &vk) {
+            Ok(true) => true,
+            Ok(false) => panic_with_error!(&env, zk_verifier::ZkVerifierError::InvalidProof),
+            Err(zk_verifier::ZkVerifierError::NullifierAlreadySpent) => {
+                panic_with_error!(&env, zk_verifier::ZkVerifierError::NullifierAlreadySpent)
+            }
+            Err(zk_verifier::ZkVerifierError::InvalidInputCount) => {
+                panic_with_error!(&env, zk_verifier::ZkVerifierError::InvalidInputCount)
+            }
+            Err(zk_verifier::ZkVerifierError::InvalidCurvePoint) => {
+                panic_with_error!(&env, zk_verifier::ZkVerifierError::InvalidCurvePoint)
+            }
+            Err(zk_verifier::ZkVerifierError::InvalidProof) => {
+                panic_with_error!(&env, zk_verifier::ZkVerifierError::InvalidProof)
+            }
+        }
+    }
+
+    /// View-only proof verification (does not modify nullifier state).
+    pub fn verify_access_proof_view(
+        env: Env,
+        proof_a: BytesN<64>,
+        proof_b: BytesN<128>,
+        proof_c: BytesN<64>,
+        vault_root_commitment: BytesN<32>,
+        nullifier_hash: BytesN<32>,
+        document_id: BytesN<32>,
+        vk: zk_verifier::ZkVerifyingKeyArgs,
+    ) -> bool {
+        let proof = zk_verifier::Groth16Proof {
+            a: proof_a.to_array(),
+            b: proof_b.to_array(),
+            c: proof_c.to_array(),
+        };
+        let signals = zk_verifier::PublicSignals {
+            vault_root_commitment: vault_root_commitment.to_array(),
+            nullifier_hash: nullifier_hash.to_array(),
+            document_id: document_id.to_array(),
+        };
+        let mut ic = Vec::new(&env);
+        for point in vk.ic.iter() {
+            ic.push_back(point.to_array());
+        }
+        let vk = zk_verifier::VerifyingKey {
+            alpha: vk.alpha.to_array(),
+            beta: vk.beta.to_array(),
+            gamma: vk.gamma.to_array(),
+            delta: vk.delta.to_array(),
+            ic,
+        };
+
+        zk_verifier::verify_proof(&env, &proof, &signals, &vk).unwrap_or(false)
+    }
+
+    /// Returns whether a nullifier hash has already been consumed.
+    pub fn is_access_nullifier_spent(env: Env, nullifier_hash: BytesN<32>) -> bool {
+        zk_verifier::is_nullifier_spent(&env, &nullifier_hash.to_array())
     }
 }
 

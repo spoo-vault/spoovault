@@ -71,6 +71,7 @@
     "SpooVault.SpooVaultAdminLogic": 1566178,
     "SpooVault.SpooVaultConsumer": 270013,
     "SpooVault.TestEd25519": 1297129,
-    "SpooVault.VDFVerifier.sol:VDFVerifier": 425293
+    "SpooVault.VDFVerifier.sol:VDFVerifier": 425293,
+    "SpooVault.ZKAccessVerifier.sol:ZKAccessVerifier": 683859
   }
 }

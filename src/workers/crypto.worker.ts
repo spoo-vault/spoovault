@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+
 import { splitSecretVSS } from "../services/secrets.service";
 import { decryptWithPrivateKey, encryptWithPublicKey } from "../utils/crypto";
 
@@ -152,8 +154,6 @@ self.onmessage = async (event: MessageEvent<CryptoWorkerRequest>) => {
 
   
 };
-
-/// <reference lib="webworker" />
 
 self.onmessage = async (event: MessageEvent<{ type: string; buffer: ArrayBuffer }>) => {
   const { type, buffer } = event.data;
