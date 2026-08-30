@@ -2317,8 +2317,8 @@ mod fhe_aggregation {
         nonce: u64,
         expiration_ledger: u32,
     ) -> (Vec<BytesN<64>>, Vec<BytesN<32>>) {
-        use ed25519_dalek::{Signer as _, SigningKey};
         use crate::threshold_sig::THRESHOLD_PREFIX;
+        use ed25519_dalek::{Signer as _, SigningKey};
 
         let mut payload = std::vec::Vec::new();
         payload.extend_from_slice(THRESHOLD_PREFIX);
@@ -2353,16 +2353,45 @@ mod fhe_aggregation {
         let expiration_ledger = 500u32;
 
         // Test 1-of-1
-        let (sigs1, pks1) = build_ed25519_threshold_batch(&env, &[1], message_bytes, 1, expiration_ledger);
-        assert!(client.verify_threshold_signatures(&message, &sigs1, &pks1, &1, &1, &expiration_ledger));
+        let (sigs1, pks1) =
+            build_ed25519_threshold_batch(&env, &[1], message_bytes, 1, expiration_ledger);
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs1,
+            &pks1,
+            &1,
+            &1,
+            &expiration_ledger
+        ));
 
         // Test 2-of-3
-        let (sigs2, pks2) = build_ed25519_threshold_batch(&env, &[2, 3, 4], message_bytes, 2, expiration_ledger);
-        assert!(client.verify_threshold_signatures(&message, &sigs2, &pks2, &2, &2, &expiration_ledger));
+        let (sigs2, pks2) =
+            build_ed25519_threshold_batch(&env, &[2, 3, 4], message_bytes, 2, expiration_ledger);
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs2,
+            &pks2,
+            &2,
+            &2,
+            &expiration_ledger
+        ));
 
         // Test 3-of-5
-        let (sigs3, pks3) = build_ed25519_threshold_batch(&env, &[10, 11, 12, 13, 14], message_bytes, 3, expiration_ledger);
-        assert!(client.verify_threshold_signatures(&message, &sigs3, &pks3, &3, &3, &expiration_ledger));
+        let (sigs3, pks3) = build_ed25519_threshold_batch(
+            &env,
+            &[10, 11, 12, 13, 14],
+            message_bytes,
+            3,
+            expiration_ledger,
+        );
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs3,
+            &pks3,
+            &3,
+            &3,
+            &expiration_ledger
+        ));
     }
 
     #[test]
@@ -2377,7 +2406,8 @@ mod fhe_aggregation {
         let message = Bytes::from_slice(&env, message_bytes);
         let expiration_ledger = 500u32; // Expired
 
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, 10, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, 10, expiration_ledger);
         client.verify_threshold_signatures(&message, &sigs, &pks, &2, &10, &expiration_ledger);
     }
 
@@ -2394,9 +2424,17 @@ mod fhe_aggregation {
         let expiration_ledger = 500u32;
         let nonce = 888u64;
 
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, nonce, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1, 2], message_bytes, nonce, expiration_ledger);
         // First call succeeds
-        assert!(client.verify_threshold_signatures(&message, &sigs, &pks, &2, &nonce, &expiration_ledger));
+        assert!(client.verify_threshold_signatures(
+            &message,
+            &sigs,
+            &pks,
+            &2,
+            &nonce,
+            &expiration_ledger
+        ));
         // Second call with same nonce must revert
         client.verify_threshold_signatures(&message, &sigs, &pks, &2, &nonce, &expiration_ledger);
     }
@@ -2415,7 +2453,8 @@ mod fhe_aggregation {
         let nonce = 999u64;
 
         // Build single signature and duplicate it to satisfy threshold of 2
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[5], message_bytes, nonce, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[5], message_bytes, nonce, expiration_ledger);
         let mut dup_sigs = Vec::new(&env);
         dup_sigs.push_back(sigs.get(0).unwrap());
         dup_sigs.push_back(sigs.get(0).unwrap());
@@ -2424,7 +2463,14 @@ mod fhe_aggregation {
         dup_pks.push_back(pks.get(0).unwrap());
         dup_pks.push_back(pks.get(0).unwrap());
 
-        client.verify_threshold_signatures(&message, &dup_sigs, &dup_pks, &2, &nonce, &expiration_ledger);
+        client.verify_threshold_signatures(
+            &message,
+            &dup_sigs,
+            &dup_pks,
+            &2,
+            &nonce,
+            &expiration_ledger,
+        );
     }
 
     #[test]
@@ -2440,7 +2486,8 @@ mod fhe_aggregation {
         let expiration_ledger = 500u32;
 
         // 1 signature provided but threshold is 2
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1], message_bytes, 123, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1], message_bytes, 123, expiration_ledger);
         client.verify_threshold_signatures(&message, &sigs, &pks, &2, &123, &expiration_ledger);
     }
 
@@ -2471,7 +2518,11 @@ mod fhe_aggregation {
             &AccessLevel::Read,
             &ReleaseCondition::Anytime,
             &vec![&env, creator.clone(), g1.clone()],
-            &vec![&env, String::from_str(&env, "s1"), String::from_str(&env, "s2")],
+            &vec![
+                &env,
+                String::from_str(&env, "s1"),
+                String::from_str(&env, "s2"),
+            ],
         );
         let req_id = client.request_access(&requester, &doc_id);
 
@@ -2482,7 +2533,8 @@ mod fhe_aggregation {
 
         let nonce = 5555u64;
         let expiration_ledger = 1000u32;
-        let (sigs, pks) = build_ed25519_threshold_batch(&env, &[1, 2], &msg_payload, nonce, expiration_ledger);
+        let (sigs, pks) =
+            build_ed25519_threshold_batch(&env, &[1, 2], &msg_payload, nonce, expiration_ledger);
 
         let share = Some(String::from_str(&env, "beneficiary_share_data"));
         client.approve_access_threshold(
@@ -2497,5 +2549,353 @@ mod fhe_aggregation {
 
         let request = client.get_access_request(&req_id).unwrap();
         assert_eq!(request.status, RequestStatus::Approved);
+    }
+}
+
+#[cfg(test)]
+mod cross_chain_heartbeat_sync {
+    use super::*;
+    use k256::ecdsa::signature::hazmat::PrehashSigner;
+    use k256::ecdsa::SigningKey as EvmSigningKey;
+
+    struct EvmKeypair {
+        signing_key: EvmSigningKey,
+        address: BytesN<20>,
+    }
+
+    fn generate_evm_keypair(env: &Env, seed: u8) -> EvmKeypair {
+        let signing_key = EvmSigningKey::from_bytes(&[seed; 32].into()).unwrap();
+        let pk65: [u8; 65] = signing_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .try_into()
+            .unwrap();
+        // sync_proof_of_life hashes the full 65 bytes (including 0x04 prefix)
+        // returned by secp256k1_recover, then takes bytes [12..32] as the address.
+        let pk_hash = env.crypto().keccak256(&Bytes::from_array(env, &pk65));
+        let hash_bytes: Bytes = pk_hash.to_bytes().into();
+        let address: BytesN<20> = hash_bytes.slice(12..32).try_into().unwrap();
+        EvmKeypair {
+            signing_key,
+            address,
+        }
+    }
+
+    /// Build the EIP-191 personal-sign over the canonical cross-chain heartbeat
+    /// payload that `sync_proof_of_life` verifies on Soroban:
+    ///   "SpooVaultProofOfLife" || gid_hash(32) || evm_vault_id(8) || evm_owner(20) || timestamp(8)
+    fn sign_heartbeat(
+        env: &Env,
+        signer: &EvmSigningKey,
+        gid_hash: &BytesN<32>,
+        evm_vault_id: u64,
+        evm_owner: &BytesN<20>,
+        timestamp: u64,
+    ) -> (BytesN<64>, u32) {
+        let mut payload = Bytes::from_slice(env, b"SpooVaultProofOfLife");
+        payload.append(&Bytes::from(gid_hash.clone()));
+        payload.extend_from_slice(&evm_vault_id.to_be_bytes());
+        payload.append(&Bytes::from(evm_owner.clone()));
+        payload.extend_from_slice(&timestamp.to_be_bytes());
+
+        let message_hash = env.crypto().keccak256(&payload);
+
+        let mut prefixed = Bytes::from_slice(env, b"\x19Ethereum Signed Message:\n32");
+        prefixed.append(&Bytes::from(message_hash.to_bytes()));
+        let digest = env.crypto().keccak256(&prefixed);
+        let digest_arr: [u8; 32] = digest.to_bytes().to_array();
+
+        let sig: k256::ecdsa::Signature = signer.sign_prehash(&digest_arr).unwrap();
+        let sig_arr: [u8; 64] = sig.to_bytes()[..].try_into().unwrap();
+        let sig_bn = BytesN::from_array(env, &sig_arr);
+
+        // Match the contract's address derivation: keccak256(full 65-byte key)[12..32]
+        let expected_pk65: [u8; 65] = signer
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .try_into()
+            .unwrap();
+        let exp_hash = env
+            .crypto()
+            .keccak256(&Bytes::from_array(env, &expected_pk65));
+        let exp_bytes: Bytes = exp_hash.to_bytes().into();
+        let exp_addr: BytesN<20> = exp_bytes.slice(12..32).try_into().unwrap();
+        let mut recovery_id = 0u32;
+        for rid in 0..4u32 {
+            let rec65 = env.crypto().secp256k1_recover(&digest, &sig_bn, rid);
+            let rec_hash = env.crypto().keccak256(&Bytes::from(rec65));
+            let rec_bytes: Bytes = rec_hash.to_bytes().into();
+            let rec_addr: BytesN<20> = rec_bytes.slice(12..32).try_into().unwrap();
+            if rec_addr == exp_addr {
+                recovery_id = rid;
+                break;
+            }
+        }
+
+        (sig_bn, recovery_id)
+    }
+
+    /// Helper: create a vault, bind the cross-chain heartbeat, and return all handles.
+    fn setup_cross_chain_vault(
+        env: &Env,
+    ) -> (
+        SpooVaultStellarClient<'static>,
+        Address,    // creator
+        Address,    // relayer
+        u64,        // stellar vault_id
+        BytesN<32>, // gid_hash
+        EvmKeypair,
+        u64, // evm_vault_id
+    ) {
+        let contract_id = env.register_contract(None, SpooVaultStellar);
+        let client = SpooVaultStellarClient::new(env, &contract_id);
+        env.mock_all_auths();
+
+        let creator = Address::generate(env);
+        let g1 = Address::generate(env);
+        let relayer = Address::generate(env);
+        let evm_keys = generate_evm_keypair(env, 55);
+        let evm_vault_id: u64 = 1;
+        let gid_hash = BytesN::from_array(env, &[0xABu8; 32]);
+
+        let vault_id = client.create_vault(
+            &creator,
+            &String::from_str(env, "CC Vault"),
+            &String::from_str(env, "Cross-chain vault"),
+            &vec![env, g1],
+            &1,
+        );
+
+        client.bind_cross_chain_heartbeat(
+            &creator,
+            &vault_id,
+            &gid_hash,
+            &evm_keys.address,
+            &relayer,
+        );
+
+        (
+            client,
+            creator,
+            relayer,
+            vault_id,
+            gid_hash,
+            evm_keys,
+            evm_vault_id,
+        )
+    }
+
+    /// A valid signed heartbeat from Avalanche EVM updates the Soroban vault's
+    /// last_proof_of_life to exactly the relayed timestamp.
+    #[test]
+    fn test_sync_proof_of_life_updates_timestamp() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _creator, relayer, vault_id, gid_hash, evm_keys, evm_vault_id) =
+            setup_cross_chain_vault(&env);
+
+        let before = client
+            .get_release_state(&vault_id)
+            .unwrap()
+            .last_proof_of_life;
+
+        // Advance ledger so heartbeat timestamp is newer.
+        let new_ts: u64 = before + 3_600;
+        env.ledger().with_mut(|li| {
+            li.timestamp = new_ts + 1; // ledger slightly ahead of heartbeat
+            li.sequence_number += 10;
+        });
+
+        let (sig, rid) = sign_heartbeat(
+            &env,
+            &evm_keys.signing_key,
+            &gid_hash,
+            evm_vault_id,
+            &evm_keys.address,
+            new_ts,
+        );
+
+        client.sync_proof_of_life(
+            &relayer,
+            &vault_id,
+            &evm_vault_id,
+            &gid_hash,
+            &evm_keys.address,
+            &new_ts,
+            &sig,
+            &rid,
+        );
+
+        let state = client.get_release_state(&vault_id).unwrap();
+        assert_eq!(
+            state.last_proof_of_life, new_ts,
+            "last_proof_of_life must equal the relayed EVM timestamp"
+        );
+    }
+
+    /// The Soroban vault's sequence number is updated alongside the timestamp.
+    #[test]
+    fn test_sync_proof_of_life_updates_sequence() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _creator, relayer, vault_id, gid_hash, evm_keys, evm_vault_id) =
+            setup_cross_chain_vault(&env);
+
+        let base_ts = client
+            .get_release_state(&vault_id)
+            .unwrap()
+            .last_proof_of_life;
+        let new_ts = base_ts + 7_200;
+        let expected_seq: u32 = 42;
+        env.ledger().with_mut(|li| {
+            li.timestamp = new_ts + 1;
+            li.sequence_number = expected_seq;
+        });
+
+        let (sig, rid) = sign_heartbeat(
+            &env,
+            &evm_keys.signing_key,
+            &gid_hash,
+            evm_vault_id,
+            &evm_keys.address,
+            new_ts,
+        );
+
+        client.sync_proof_of_life(
+            &relayer,
+            &vault_id,
+            &evm_vault_id,
+            &gid_hash,
+            &evm_keys.address,
+            &new_ts,
+            &sig,
+            &rid,
+        );
+
+        let state = client.get_release_state(&vault_id).unwrap();
+        assert_eq!(state.last_proof_of_life_sequence, expected_seq);
+    }
+
+    /// A stale heartbeat (timestamp <= current last_proof_of_life) is rejected.
+    #[test]
+    #[should_panic(expected = "Stale heartbeat")]
+    fn test_sync_proof_of_life_rejects_stale_timestamp() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _creator, relayer, vault_id, gid_hash, evm_keys, evm_vault_id) =
+            setup_cross_chain_vault(&env);
+
+        let current_ts = client
+            .get_release_state(&vault_id)
+            .unwrap()
+            .last_proof_of_life;
+
+        env.ledger().with_mut(|li| {
+            li.timestamp = current_ts + 100;
+        });
+
+        // Use a timestamp equal to current — must be rejected.
+        let (sig, rid) = sign_heartbeat(
+            &env,
+            &evm_keys.signing_key,
+            &gid_hash,
+            evm_vault_id,
+            &evm_keys.address,
+            current_ts,
+        );
+
+        client.sync_proof_of_life(
+            &relayer,
+            &vault_id,
+            &evm_vault_id,
+            &gid_hash,
+            &evm_keys.address,
+            &current_ts,
+            &sig,
+            &rid,
+        );
+    }
+
+    /// A heartbeat signed by a different key is rejected.
+    #[test]
+    #[should_panic(expected = "Invalid heartbeat signature")]
+    fn test_sync_proof_of_life_rejects_wrong_signer() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _creator, relayer, vault_id, gid_hash, evm_keys, evm_vault_id) =
+            setup_cross_chain_vault(&env);
+
+        let base_ts = client
+            .get_release_state(&vault_id)
+            .unwrap()
+            .last_proof_of_life;
+        let new_ts = base_ts + 3_600;
+        env.ledger().with_mut(|li| {
+            li.timestamp = new_ts + 1;
+        });
+
+        // Sign with a different key — not the registered evm_owner.
+        let attacker = generate_evm_keypair(&env, 99);
+        let (sig, rid) = sign_heartbeat(
+            &env,
+            &attacker.signing_key,
+            &gid_hash,
+            evm_vault_id,
+            &evm_keys.address, // claim it's the real owner
+            new_ts,
+        );
+
+        client.sync_proof_of_life(
+            &relayer,
+            &vault_id,
+            &evm_vault_id,
+            &gid_hash,
+            &evm_keys.address,
+            &new_ts,
+            &sig,
+            &rid,
+        );
+    }
+
+    /// An unauthorized relayer is rejected.
+    #[test]
+    #[should_panic(expected = "Unauthorized relayer")]
+    fn test_sync_proof_of_life_rejects_wrong_relayer() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _creator, _relayer, vault_id, gid_hash, evm_keys, evm_vault_id) =
+            setup_cross_chain_vault(&env);
+
+        let base_ts = client
+            .get_release_state(&vault_id)
+            .unwrap()
+            .last_proof_of_life;
+        let new_ts = base_ts + 3_600;
+        env.ledger().with_mut(|li| {
+            li.timestamp = new_ts + 1;
+        });
+
+        let (sig, rid) = sign_heartbeat(
+            &env,
+            &evm_keys.signing_key,
+            &gid_hash,
+            evm_vault_id,
+            &evm_keys.address,
+            new_ts,
+        );
+
+        let bad_relayer = Address::generate(&env);
+        client.sync_proof_of_life(
+            &bad_relayer,
+            &vault_id,
+            &evm_vault_id,
+            &gid_hash,
+            &evm_keys.address,
+            &new_ts,
+            &sig,
+            &rid,
+        );
     }
 }
