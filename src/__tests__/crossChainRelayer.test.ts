@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { CrossChainRelayerService, CrossChainPayload, CrossChainRevocationPayload } from "../services/crossChainRelayer.service";
+﻿import { describe, it, expect, beforeEach, vi } from "vitest";
+import {
+  CrossChainRelayerService,
+  CrossChainPayload,
+  CrossChainRevocationPayload,
+  DEFAULT_APPROVAL_MESSAGE_TTL_MS,
+} from "../services/crossChainRelayer.service";
 
 describe("Axelar Cross-Chain Message Relayer", () => {
   const secretKey = "relayer-secret-key-12345";
@@ -28,10 +33,68 @@ describe("Axelar Cross-Chain Message Relayer", () => {
     const mockPayload = basePayload();
     const signedPayload = CrossChainRelayerService.signPayload(mockPayload, secretKey);
     expect(signedPayload.signature).toBeDefined();
+    expect(signedPayload.sourceChain).toBe("avalanche");
+    expect(signedPayload.destinationChain).toBe("stellar");
+    expect(signedPayload.expiresAt).toBe(mockPayload.timestamp + DEFAULT_APPROVAL_MESSAGE_TTL_MS);
 
     const result = relayer.processMessage(signedPayload, secretKey);
     expect(result.success).toBe(true);
     expect(result.messageHash).toBeDefined();
+  });
+
+  it("rejects expired cross-chain approval payloads", () => {
+    const stalePayload = CrossChainRelayerService.signPayload(
+      {
+        ...basePayload(),
+        timestamp: Date.now() - DEFAULT_APPROVAL_MESSAGE_TTL_MS - 5_000,
+      },
+      secretKey
+    );
+
+    expect(() => relayer.processMessage(stalePayload, secretKey)).toThrow(
+      "Cross-chain approval message expired"
+    );
+  });
+
+  it("prevents stale approval nonces across fresh signatures", () => {
+    const first = CrossChainRelayerService.signPayload(
+      { ...basePayload(), nonce: 9, timestamp: Date.now() + 1 },
+      secretKey
+    );
+    const replayedNonce = CrossChainRelayerService.signPayload(
+      { ...basePayload(), nonce: 9, timestamp: Date.now() + 2 },
+      secretKey
+    );
+
+    relayer.processMessage(first, secretKey);
+
+    expect(() => relayer.processMessage(replayedNonce, secretKey)).toThrow(
+      "Replay attack detected: Stale or replayed approval nonce"
+    );
+  });
+
+  it("relays a verified approval payload to Stellar Soroban", async () => {
+    const signedPayload = CrossChainRelayerService.signPayload(
+      { ...basePayload(), nonce: 22 },
+      secretKey
+    );
+    relayer.processMessage(signedPayload, secretKey);
+
+    const mockSorobanClient = {
+      relayApprovalGrant: vi.fn().mockResolvedValue({ ledger: 10701, success: true }),
+    };
+
+    const result = await relayer.relayApprovalToSoroban(signedPayload, mockSorobanClient);
+
+    expect(result).toEqual({ relayed: true, ledger: 10701 });
+    expect(mockSorobanClient.relayApprovalGrant).toHaveBeenCalledWith({
+      vaultGid: signedPayload.vaultGID,
+      guardian: signedPayload.guardian,
+      approvalType: signedPayload.approvalType,
+      sourceChain: "avalanche",
+      nonce: 22n,
+      signature: signedPayload.signature,
+    });
   });
 
   it("prevents replay attacks on duplicate execution", () => {
