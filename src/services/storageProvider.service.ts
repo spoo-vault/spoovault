@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Multi-storage provider adapter for permanent vault document archival.
  *
  * Pinata IPFS pinning is a single point of failure (expired subscriptions,
@@ -144,6 +144,48 @@ const extractDealList = (raw: unknown): unknown[] => {
     }
   }
   return [];
+};
+
+const isActiveFilecoinDeal = (deal: unknown): boolean => {
+  if (!deal || typeof deal !== "object") {
+    return false;
+  }
+  const record = deal as Record<string, unknown>;
+  const rawStatus =
+    record.status ??
+    record.dealStatus ??
+    record.state ??
+    record.Status ??
+    record.DealStatus;
+  const status =
+    typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : "";
+  if (!status) {
+    return false;
+  }
+  return [
+    "active",
+    "dealactive",
+    "storageactive",
+    "sealing",
+    "proving",
+  ].includes(status);
+};
+
+const hasConfirmedArweaveBlock = (raw: unknown): boolean => {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+  const record = raw as Record<string, unknown>;
+  const confirmed = record.confirmed;
+  if (confirmed && typeof confirmed === "object") {
+    const blockHeight = Number(
+      (confirmed as Record<string, unknown>).block_height ??
+        (confirmed as Record<string, unknown>).blockHeight
+    );
+    return Number.isFinite(blockHeight) && blockHeight > 0;
+  }
+  const blockHeight = Number(record.block_height ?? record.blockHeight);
+  return Number.isFinite(blockHeight) && blockHeight > 0;
 };
 
 export interface StorageProviderServiceOptions {
@@ -317,13 +359,16 @@ export const createStorageProviderService = (
         }
         const raw = await parseResponseBody(response);
         const deals = extractDealList(raw);
+        const activeDeals = deals.filter(isActiveFilecoinDeal);
         return {
           ...base,
-          archived: deals.length > 0,
+          archived: activeDeals.length > 0,
           detail:
-            deals.length > 0
+            activeDeals.length > 0
               ? undefined
-              : "no Filecoin storage deals found for CID",
+              : deals.length > 0
+                ? "Filecoin deals found, but none are active yet"
+                : "no Filecoin storage deals found for CID",
           raw,
         };
       } catch (error) {
@@ -349,13 +394,16 @@ export const createStorageProviderService = (
         }
         const raw = await parseResponseBody(response);
         const status = Number((raw as Record<string, unknown>)?.status);
+        const confirmed = status === 200 && hasConfirmedArweaveBlock(raw);
         return {
           ...base,
-          archived: status === 200,
+          archived: confirmed,
           detail:
-            status === 200
+            confirmed
               ? undefined
-              : `Arweave tx not confirmed yet (status ${status})`,
+              : status === 200
+                ? "Arweave tx accepted but not anchored in a block yet"
+                : `Arweave tx not confirmed yet (status ${status})`,
           raw,
         };
       } catch (error) {
