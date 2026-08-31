@@ -14,13 +14,28 @@ const toHex = (bytes) => "0x" + Buffer.from(bytes).toString("hex");
  * - EVM signature: signer.signMessage(messageHash) -> 65-byte EIP-191 sig
  * - Stellar signature: nacl Ed25519 detached signature over messageHash
  */
-const buildBinding = async ({ evmWallet, stellarKeyPair, timestamp }) => {
+const buildBinding = async ({
+  evmWallet,
+  stellarKeyPair,
+  timestamp,
+  registry,
+}) => {
   const stellarPublicKey = toHex(stellarKeyPair.publicKey);
+  const network = await ethers.provider.getNetwork();
   const messageHash = ethers.solidityPackedKeccak256(
-    ["bytes12", "address", "bytes32", "uint64"],
-    [BIND_PREFIX, evmWallet.address, stellarPublicKey, timestamp]
+    ["bytes12", "uint256", "address", "address", "bytes32", "uint64"],
+    [
+      BIND_PREFIX,
+      network.chainId,
+      await registry.getAddress(),
+      evmWallet.address,
+      stellarPublicKey,
+      timestamp,
+    ]
   );
-  const evmSignature = await evmWallet.signMessage(ethers.getBytes(messageHash));
+  const evmSignature = await evmWallet.signMessage(
+    ethers.getBytes(messageHash)
+  );
   const stellarSignature = toHex(
     nacl.sign.detached(ethers.getBytes(messageHash), stellarKeyPair.secretKey)
   );
@@ -50,11 +65,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
   describe("Dual-signed identity binding", function () {
     it("records a binding when both signatures are valid", async function () {
       const timestamp = Math.floor(Date.now() / 1000);
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: user,
-        stellarKeyPair,
-        timestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: user,
+          stellarKeyPair,
+          timestamp,
+          registry,
+        });
 
       await expect(
         registry.bindIdentity(
@@ -75,11 +92,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
     it("reverts when the EVM signature is invalid (wrong signer)", async function () {
       const timestamp = Math.floor(Date.now() / 1000);
       // Sign with a different wallet than the one being bound
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: other,
-        stellarKeyPair,
-        timestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: other,
+          stellarKeyPair,
+          timestamp,
+          registry,
+        });
 
       await expect(
         registry.bindIdentity(
@@ -95,11 +114,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
 
     it("reverts when the Stellar signature is invalid (tampered)", async function () {
       const timestamp = Math.floor(Date.now() / 1000);
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: user,
-        stellarKeyPair,
-        timestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: user,
+          stellarKeyPair,
+          timestamp,
+          registry,
+        });
 
       const tampered = "0x" + "ff".repeat(64);
       await expect(
@@ -120,6 +141,7 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
         evmWallet: user,
         stellarKeyPair,
         timestamp,
+        registry,
       });
 
       await expect(
@@ -140,6 +162,7 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
         evmWallet: user,
         stellarKeyPair,
         timestamp,
+        registry,
       });
 
       await expect(
@@ -156,11 +179,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
 
     it("reverts when the timestamp is stale", async function () {
       const staleTimestamp = Math.floor(Date.now() / 1000) - 2 * 24 * 60 * 60; // 2 days old
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: user,
-        stellarKeyPair,
-        timestamp: staleTimestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: user,
+          stellarKeyPair,
+          timestamp: staleTimestamp,
+          registry,
+        });
 
       await expect(
         registry.bindIdentity(
@@ -176,11 +201,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
 
     it("reverts when the timestamp is too far in the future", async function () {
       const futureTimestamp = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour ahead
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: user,
-        stellarKeyPair,
-        timestamp: futureTimestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: user,
+          stellarKeyPair,
+          timestamp: futureTimestamp,
+          registry,
+        });
 
       await expect(
         registry.bindIdentity(
@@ -196,11 +223,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
 
     it("reverts when the EVM address is already bound", async function () {
       const timestamp = Math.floor(Date.now() / 1000);
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: user,
-        stellarKeyPair,
-        timestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: user,
+          stellarKeyPair,
+          timestamp,
+          registry,
+        });
 
       await registry.bindIdentity(
         user.address,
@@ -218,6 +247,7 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
         evmWallet: user,
         stellarKeyPair: keyPair2,
         timestamp,
+        registry,
       });
 
       await expect(
@@ -234,11 +264,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
 
     it("reverts when the Stellar address is already bound", async function () {
       const timestamp = Math.floor(Date.now() / 1000);
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: user,
-        stellarKeyPair,
-        timestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: user,
+          stellarKeyPair,
+          timestamp,
+          registry,
+        });
 
       await registry.bindIdentity(
         user.address,
@@ -254,6 +286,7 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
         evmWallet: other,
         stellarKeyPair,
         timestamp,
+        registry,
       });
 
       await expect(
@@ -274,11 +307,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
       // submitted Ed25519 signature must fail verification.
       const timestamp = Math.floor(Date.now() / 1000);
       const keyPair2 = nacl.sign.keyPair();
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: other,
-        stellarKeyPair: keyPair2,
-        timestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: other,
+          stellarKeyPair: keyPair2,
+          timestamp,
+          registry,
+        });
 
       const forged = nacl.sign.keyPair();
       await expect(
@@ -297,11 +332,13 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
   describe("Identity resolution", function () {
     beforeEach(async function () {
       const timestamp = Math.floor(Date.now() / 1000);
-      const { evmSignature, stellarSignature, stellarPublicKey } = await buildBinding({
-        evmWallet: user,
-        stellarKeyPair,
-        timestamp,
-      });
+      const { evmSignature, stellarSignature, stellarPublicKey } =
+        await buildBinding({
+          evmWallet: user,
+          stellarKeyPair,
+          timestamp,
+          registry,
+        });
       await registry.bindIdentity(
         user.address,
         stellarAddress,
@@ -313,35 +350,39 @@ describe("CrossChainIdentityRegistry EVM Contract", function () {
     });
 
     it("resolves EVM -> Stellar", async function () {
-      expect(await registry.resolveEvmToStellar(user.address)).to.equal(stellarAddress);
+      expect(await registry.resolveEvmToStellar(user.address)).to.equal(
+        stellarAddress
+      );
     });
 
     it("resolves Stellar -> EVM", async function () {
-      expect(await registry.resolveStellarToEvm(stellarAddress)).to.equal(user.address);
+      expect(await registry.resolveStellarToEvm(stellarAddress)).to.equal(
+        user.address
+      );
     });
 
     it("returns the full binding record", async function () {
-      const [resolvedStellar, resolvedPubkey, timestamp] = await registry.getBinding(user.address);
+      const [resolvedStellar, resolvedPubkey, timestamp] =
+        await registry.getBinding(user.address);
       expect(resolvedStellar).to.equal(stellarAddress);
       expect(resolvedPubkey).to.equal(toHex(stellarKeyPair.publicKey));
       expect(timestamp).to.be.gt(0);
     });
 
     it("reverts when resolving an unbound EVM address", async function () {
-      await expect(registry.resolveEvmToStellar(other.address)).to.be.revertedWithCustomError(
-        registry,
-        "NotBound"
-      );
+      await expect(
+        registry.resolveEvmToStellar(other.address)
+      ).to.be.revertedWithCustomError(registry, "NotBound");
     });
 
     it("reverts when resolving an unbound Stellar address", async function () {
-      const unbound = StrKey.encodeEd25519PublicKey(nacl.sign.keyPair().publicKey);
-      await expect(registry.resolveStellarToEvm(unbound)).to.be.revertedWithCustomError(
-        registry,
-        "NotBound"
+      const unbound = StrKey.encodeEd25519PublicKey(
+        nacl.sign.keyPair().publicKey
       );
+      await expect(
+        registry.resolveStellarToEvm(unbound)
+      ).to.be.revertedWithCustomError(registry, "NotBound");
     });
-
   });
 });
 

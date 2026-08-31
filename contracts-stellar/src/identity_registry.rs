@@ -94,8 +94,10 @@ impl IdentityRegistry {
         }
 
         // payload = "BindIdentity" || evm_address(20) || stellar_pubkey(32) || timestamp(8, BE)
+        let contract_id = env.current_contract_address();
         let mut payload = Bytes::new(&env);
         payload.extend_from_slice(BIND_PREFIX);
+        payload.extend_from_slice(&contract_id.to_array());
         payload.extend_from_array(&evm_address.to_array());
         payload.extend_from_array(&stellar_pubkey.to_array());
         payload.extend_from_slice(&timestamp.to_be_bytes());
@@ -184,54 +186,50 @@ mod test {
         stellar_signature: BytesN<64>,
     }
 
-    fn build_signed_binding(env: &Env, timestamp: u64) -> TestKeys {
-        // Stellar Ed25519 keypair
-        let stellar_sk = SigningKey::from_bytes(&[7u8; 32]);
-        let stellar_pubkey: [u8; 32] = stellar_sk.verifying_key().to_bytes();
+fn build_signed_binding(env: &Env, timestamp: u64, contract_id: &BytesN<32>) -> TestKeys {
+    let stellar_sk = SigningKey::from_bytes(&[7u8; 32]);
+    let stellar_pubkey: [u8; 32] = stellar_sk.verifying_key().to_bytes();
 
-        // EVM secp256k1 keypair
-        let evm_sk = EvmSigningKey::from_bytes(&[9u8; 32].into()).unwrap();
-        let evm_pk65: [u8; 65] = evm_sk
-            .verifying_key()
-            .to_encoded_point(false)
-            .as_bytes()
-            .try_into()
-            .unwrap();
-        let evm_hash: [u8; 32] = Keccak256::digest(&evm_pk65).into();
-        let mut evm_address_bytes = [0u8; 20];
-        evm_address_bytes.copy_from_slice(&evm_hash[12..]);
-        let evm_address = BytesN::from_array(env, &evm_address_bytes);
+    let evm_sk = EvmSigningKey::from_bytes(&[9u8; 32].into()).unwrap();
+              let evm_pk65: [u8; 65] = evm_sk
+        .verifying_key()
+        .to_encoded_point(false)
+        .as_bytes()
+        .try_into()
+        .unwrap();
+    let evm_hash: [u8; 32] = Keccak256::digest(&evm_pk65).into();
+    let mut evm_address_bytes = [0u8; 20];
+    evm_address_bytes.copy_from_slice(&evm_hash[12..]);
+    let evm_address = BytesN::from_array(env, &evm_address_bytes);
 
-        // payload + message hash (must match the contract exactly)
-        let mut payload = Vec::new();
-        payload.extend_from_slice(BIND_PREFIX);
-        payload.extend_from_slice(&evm_address_bytes);
-        payload.extend_from_slice(&stellar_pubkey);
-        payload.extend_from_slice(&timestamp.to_be_bytes());
-        let message_hash: [u8; 32] = Keccak256::digest(&payload).into();
+    let mut payload = Vec::new();
+    payload.extend_from_slice(BIND_PREFIX);
+    payload.extend_from_slice(&contract_id.to_array());
+    payload.extend_from_slice(&evm_address_bytes);
+    payload.extend_from_slice(&stellar_pubkey);
+    payload.extend_from_slice(&timestamp.to_be_bytes());
+    let message_hash: [u8; 32] = Keccak256::digest(&payload).into();
 
-        // EVM signature: EIP-191 personal_sign digest
-        let mut eth_input = Vec::new();
-        eth_input.extend_from_slice(ETH_PREFIX);
-        eth_input.extend_from_slice(&message_hash);
-        let evm_digest: [u8; 32] = Keccak256::digest(&eth_input).into();
-        let evm_sig = evm_sk.sign_prehash(&evm_digest).unwrap();
-        let evm_sig_arr: [u8; 64] = evm_sig.to_bytes().as_slice().try_into().unwrap();
+    let mut eth_input = Vec::new();
+    eth_input.extend_from_slice(ETH_PREFIX);
+    eth_input.extend_from_slice(&message_hash);
+    let evm_digest: [u8; 32] = Keccak256::digest(&eth_input).into();
+    let evm_sig = evm_sk.sign_prehash(&evm_digest).unwrap();
+    let evm_sig_arr: [u8; 64] = evm_sig.to_bytes().as_slice().try_into().unwrap();
 
-        // Determine the recovery id that reproduces our public key.
-        let digest_bn = BytesN::from_array(env, &evm_digest);
-        let sig_bn = BytesN::from_array(env, &evm_sig_arr);
-        let mut recovery_id = 0u32;
-        for rid in 0..4u32 {
-            let recovered: [u8; 65] = env
-                .crypto()
-                .secp256k1_recover(&digest_bn, &sig_bn, rid)
-                .to_array();
-            if recovered == evm_pk65 {
-                recovery_id = rid;
-                break;
-            }
+    let digest_bn = BytesN::from_array(env, &evm_digest);
+    let sig_bn = BytesN::from_array(env, &evm_sig_arr);
+    let mut recovery_id = 0u32;
+    for rid in 0..4u32 {
+        let recovered: [u8; 65] = env
+            .crypto()
+            .secp256k1_recover(&digest_bn, &sig_bn, rid)
+            .to_array();
+        if recovered == evm_pk65 {
+            recovery_id = rid;
+            break;
         }
+    }
 
         // Stellar signature over the 32-byte message hash
         let stellar_sig: [u8; 64] = stellar_sk.sign(&message_hash).to_bytes();
@@ -253,7 +251,7 @@ mod test {
         let client = IdentityRegistryClient::new(&env, &contract_id);
 
         let timestamp = env.ledger().timestamp();
-        let keys = build_signed_binding(&env, timestamp);
+        let keys = build_signed_binding(&env, timestamp, &contract_id.contract_id());
 
         let binding = client.bind_identity(
             &keys.evm_address,
@@ -303,7 +301,7 @@ mod test {
         let client = IdentityRegistryClient::new(&env, &contract_id);
 
         let timestamp = env.ledger().timestamp();
-        let keys = build_signed_binding(&env, timestamp);
+        let keys = build_signed_binding(&env, timestamp, &contract_id.contract_id());
 
         let mut bad_sig = keys.stellar_signature.to_array();
         bad_sig[0] ^= 0xff;
@@ -328,7 +326,7 @@ mod test {
         let client = IdentityRegistryClient::new(&env, &contract_id);
 
         let timestamp = env.ledger().timestamp();
-        let keys = build_signed_binding(&env, timestamp);
+        let keys = build_signed_binding(&env, timestamp, &contract_id.contract_id());
 
         // Zeroed EVM signature cannot recover a valid address -> reverts.
         let zero_sig = BytesN::from_array(&env, &[0u8; 64]);
@@ -351,7 +349,7 @@ mod test {
         let client = IdentityRegistryClient::new(&env, &contract_id);
 
         let timestamp = env.ledger().timestamp();
-        let keys = build_signed_binding(&env, timestamp);
+        let keys = build_signed_binding(&env, timestamp, &contract_id.contract_id());
 
         // Signature recovers a different address than the one being bound.
         let wrong_evm = BytesN::from_array(&env, &[0xabu8; 20]);
@@ -373,7 +371,7 @@ mod test {
         let contract_id = env.register_contract(None, IdentityRegistry);
         let client = IdentityRegistryClient::new(&env, &contract_id);
 
-        let keys = build_signed_binding(&env, 1_600_000_000); // signed a long time ago
+        let keys = build_signed_binding(&env, 1_600_000_000, &contract_id.contract_id()); // signed a long time ago
         client.bind_identity(
             &keys.evm_address,
             &keys.stellar_pubkey,
@@ -393,7 +391,7 @@ mod test {
         let client = IdentityRegistryClient::new(&env, &contract_id);
 
         let timestamp = env.ledger().timestamp();
-        let keys = build_signed_binding(&env, timestamp);
+        let keys = build_signed_binding(&env, timestamp, &contract_id.contract_id());
 
         client.bind_identity(
             &keys.evm_address,

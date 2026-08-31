@@ -50,12 +50,7 @@ contract CrossChainIdentityRegistry {
     error InvalidStellarAddress();
     error NotBound();
 
-    event IdentityBound(
-        address indexed evmAddress,
-        string stellarAddress,
-        bytes32 stellarPublicKey,
-        uint256 timestamp
-    );
+    event IdentityBound(address indexed evmAddress, string stellarAddress, bytes32 stellarPublicKey, uint256 timestamp);
 
     /// Bindings are valid for at most one day before they are considered stale.
     uint256 public constant MAX_BINDING_AGE = 1 days;
@@ -95,22 +90,19 @@ contract CrossChainIdentityRegistry {
         bytes32 stellarHash = keccak256(bytes(stellarAddress));
         if (_stellarToEvm[stellarHash] != address(0)) revert AlreadyBound();
 
-        if (
-            timestamp < block.timestamp - MAX_BINDING_AGE ||
-            timestamp > block.timestamp + MAX_FUTURE_DRIFT
-        ) {
+        if (timestamp < block.timestamp - MAX_BINDING_AGE || timestamp > block.timestamp + MAX_FUTURE_DRIFT) {
             revert InvalidTimestamp();
         }
 
         bytes32 messageHash = keccak256(
-            abi.encodePacked("BindIdentity", evmAddress, stellarPublicKey, uint64(timestamp))
+            abi.encodePacked(
+                "BindIdentity", block.chainid, address(this), evmAddress, stellarPublicKey, uint64(timestamp)
+            )
         );
 
         // ---- EVM signature (MetaMask personal_sign) -------------------------
         if (evmSignature.length != 65) revert InvalidEvmSignature();
-        bytes32 evmDigest = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
-        );
+        bytes32 evmDigest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
         if (evmDigest.recover(evmSignature) != evmAddress) revert InvalidEvmSignature();
 
         // ---- Stellar signature (Freighter signBlob / Ed25519) ---------------
@@ -119,10 +111,7 @@ contract CrossChainIdentityRegistry {
         }
 
         bindings[evmAddress] = IdentityBinding({
-            stellarAddress: stellarAddress,
-            stellarPublicKey: stellarPublicKey,
-            timestamp: timestamp,
-            bound: true
+            stellarAddress: stellarAddress, stellarPublicKey: stellarPublicKey, timestamp: timestamp, bound: true
         });
         _stellarToEvm[stellarHash] = evmAddress;
 
