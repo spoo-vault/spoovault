@@ -2902,13 +2902,13 @@ impl SpooVaultStellar {
     }
 }
 
+pub mod payment_token_policy;
+
 #[cfg(test)]
 mod test;
 
 #[cfg(test)]
 mod fuzz_test;
-
-
 
 #[contract]
 pub struct FheVaultContract;
@@ -2933,3 +2933,4 @@ impl FheVaultContract {
         base.clone()
     }
 }
+
