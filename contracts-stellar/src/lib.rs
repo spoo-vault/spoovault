@@ -57,6 +57,8 @@ pub enum UpgradeError {
     UnauthorizedAdmin = 2,
     /// The caller already approved the currently pending upgrade proposal.
     AlreadyApproved = 3,
+    /// Stored approval threshold is missing, zero, or exceeds the admin set.
+    InvalidAdminThreshold = 4,
 }
 
 #[contracttype]
@@ -458,6 +460,12 @@ impl SpooVaultStellar {
             .instance()
             .get(&DataKey::AdminThreshold)
             .unwrap_or(0);
+        // Validate persisted governance state before recording an approval or
+        // attempting a Wasm swap. A zero threshold would otherwise authorize
+        // the first caller; an unreachable threshold would lock upgrades.
+        if threshold == 0 || threshold > admins.len() {
+            panic_with_error!(&env, UpgradeError::InvalidAdminThreshold);
+        }
 
         let mut proposal: UpgradeProposal = env
             .storage()
