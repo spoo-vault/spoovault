@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 use soroban_sdk::{
     auth::{Context, CustomAccountInterface},
     contract, contracterror, contractimpl,
@@ -1660,6 +1660,7 @@ mod upgrade_governance {
 
         assert_eq!(client.get_admins(), vec![&env, admin_a, admin_b]);
         assert_eq!(client.get_admin_threshold(), 2);
+        assert_eq!(client.get_schema_version(), CURRENT_SCHEMA_VERSION);
     }
 
     #[test]
@@ -1734,6 +1735,29 @@ mod upgrade_governance {
             result,
             Err(Ok(Error::from_contract_error(
                 UpgradeError::NotInitialized as u32
+            )))
+        );
+    }
+
+    #[test]
+    fn test_upgrade_contract_rejects_corrupted_zero_threshold() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, SpooVaultStellar);
+        let client = SpooVaultStellarClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admins(&vec![&env, admin.clone()], &1);
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(&DataKey::AdminThreshold, &0u32);
+        });
+
+        let some_hash = BytesN::from_array(&env, &[7u8; 32]);
+        let result = client.try_upgrade_contract(&admin, &some_hash);
+        assert_eq!(
+            result,
+            Err(Ok(Error::from_contract_error(
+                UpgradeError::InvalidAdminThreshold as u32
             )))
         );
     }
