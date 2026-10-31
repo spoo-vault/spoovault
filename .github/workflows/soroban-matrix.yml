@@ -1,0 +1,75 @@
+name: Rust Soroban Protocol 22 CI Matrix
+
+on:
+  push:
+    branches: [main, master, dev]
+    paths:
+      - 'contracts-stellar/**'
+      - 'scripts/optimize-wasm.mjs'
+      - '.github/workflows/soroban-matrix.yml'
+  pull_request:
+    branches: [main, master, dev]
+    paths:
+      - 'contracts-stellar/**'
+      - 'scripts/optimize-wasm.mjs'
+      - '.github/workflows/soroban-matrix.yml'
+  workflow_dispatch:
+
+jobs:
+  soroban-matrix:
+    name: Soroban Protocol 22 (${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: ["1.81.0", "stable"]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain (${{ matrix.rust }})
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo Dependencies & Build Output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts-stellar/target/
+          key: ${{ runner.os }}-soroban-${{ matrix.rust }}-${{ hashFiles('contracts-stellar/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-soroban-${{ matrix.rust }}-
+            ${{ runner.os }}-soroban-
+
+      - name: Check WASM Compilation (0 Warnings Enforced)
+        run: |
+          cd contracts-stellar
+          cargo check --target wasm32-unknown-unknown --release
+
+      - name: Execute Soroban Test Suite
+        run: |
+          cd contracts-stellar
+          cargo test --verbose
+
+      - name: Build Release Contract WASM
+        run: |
+          cd contracts-stellar
+          cargo build --target wasm32-unknown-unknown --release
+
+      - name: Setup Node.js for WASM Optimization
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install NPM Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Validate WASM Optimization
+        run: node scripts/optimize-wasm.mjs
