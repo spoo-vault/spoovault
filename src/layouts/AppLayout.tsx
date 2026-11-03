@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { Button, Avatar, Tooltip } from "@heroui/react";
 import {
@@ -22,10 +28,12 @@ import {
 import { useWeb3 } from "../context/Web3Context";
 import { contractService } from "../services/contract.service";
 import { shortenAddress } from "../utils/helpers";
-import { toast } from "react-hot-toast";
 import { buttonClasses } from "../utils/buttonClasses";
 import BrandLogo from "../components/BrandLogo";
 import OfflineBanner from "../components/offline/OfflineBanner";
+import { useRelayNotifications } from "../context/RelayNotificationContext";
+import { notifyCenter } from "../services/relayNotification.service";
+import RelayNotificationDrawer from "../components/notifications/RelayNotificationDrawer";
 
 const AppLayout = () => {
   const location = useLocation();
@@ -43,6 +51,35 @@ const AppLayout = () => {
   const [desktopSidebarExpanded, setDesktopSidebarExpanded] = useState(true);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const desktopMenuRef = useRef<HTMLDivElement | null>(null);
+  const lastBellTriggerRef = useRef<HTMLElement | null>(null);
+  const {
+    items: notificationItems,
+    drawerOpen: notificationDrawerOpen,
+    setDrawerOpen: setNotificationDrawerOpen,
+  } = useRelayNotifications();
+
+  const activeRelayCount = useMemo(
+    () =>
+      notificationItems.filter(
+        (item) => item.status === "pending" || item.status === "submitted"
+      ).length,
+    [notificationItems]
+  );
+
+  const unreadNotificationCount = useMemo(
+    () => notificationItems.filter((item) => !item.read).length,
+    [notificationItems]
+  );
+
+  const notificationBadgeCount =
+    Math.max(unreadNotificationCount, activeRelayCount) + pendingApprovalCount;
+
+  const handleOpenNotificationCenter = (
+    event: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    lastBellTriggerRef.current = event.currentTarget;
+    setNotificationDrawerOpen(true);
+  };
 
   useEffect(() => {
     setMobileDrawerOpen(false);
@@ -101,7 +138,7 @@ const AppLayout = () => {
 
   const handleCreateVault = () => {
     if (!isConnected) {
-      toast.error("Please connect your Freighter wallet first");
+      notifyCenter.error("Please connect your Freighter wallet first");
       return;
     }
     navigate("/vaults?create=true");
@@ -138,7 +175,7 @@ const AppLayout = () => {
         tone: "default",
         onClick: () => {
           navigator.clipboard.writeText(account || "");
-          toast.success("Address copied");
+          notifyCenter.success("Address copied", { category: "system" });
         },
       },
       {
@@ -281,37 +318,42 @@ const AppLayout = () => {
               </Link>
             </Tooltip>
 
-            {/* Row 1: Status & Queue Icon (Height matches Status chip: 38px) */}
+            {/* Row 1: Status & Notification Center Icon (Height matches Status chip: 38px) */}
             <Tooltip
               content={
-                pendingApprovalCount > 0
-                  ? `Approval Queue: ${pendingApprovalCount} pending`
+                activeRelayCount > 0
+                  ? `${activeRelayCount} async relay(s) in progress`
+                  : notificationBadgeCount > 0
+                  ? `Notifications (${notificationBadgeCount})`
                   : !isConnected
-                  ? "Freighter Disconnected"
-                  : "Stellar Testnet (Soroban)"
+                  ? "Notification Center (Disconnected)"
+                  : "Notification Center"
               }
               placement="right"
               delay={150}
             >
               <button
                 type="button"
-                onClick={openApprovalQueue}
+                aria-label="Open notifications"
+                aria-haspopup="dialog"
+                aria-expanded={notificationDrawerOpen}
+                onClick={handleOpenNotificationCenter}
                 className="mb-3 w-11 h-[38px] rounded-xl border border-purple-900/40 bg-purple-950/20 flex items-center justify-center text-purple-300 transition-colors hover:border-purple-600/50"
               >
-                {pendingApprovalCount > 0 ? (
-                  <div className="relative">
-                    <FiBell className="text-brand-300 text-[15px]" />
-                    <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-brand-500 animate-pulse" />
-                  </div>
-                ) : (
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      !isConnected
-                        ? "bg-gray-500"
-                        : "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
+                <div className="relative flex items-center justify-center">
+                  <FiBell
+                    className={`text-[15px] ${
+                      notificationBadgeCount > 0
+                        ? "text-brand-300"
+                        : isConnected
+                        ? "text-purple-300"
+                        : "text-gray-400"
                     }`}
                   />
-                )}
+                  {notificationBadgeCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-brand-500 animate-pulse" />
+                  )}
+                </div>
               </button>
             </Tooltip>
 
@@ -415,15 +457,18 @@ const AppLayout = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={openApprovalQueue}
+                  aria-label="Open notifications"
+                  aria-haspopup="dialog"
+                  aria-expanded={notificationDrawerOpen}
+                  onClick={handleOpenNotificationCenter}
                   className={`h-full px-2.5 rounded-xl border flex items-center gap-1.5 transition-colors text-xs font-medium flex-shrink-0 ${
-                    pendingApprovalCount > 0
+                    notificationBadgeCount > 0
                       ? "border-purple-600/50 bg-purple-700/20 text-purple-200"
                       : "border-gray-800/80 bg-gray-900/65 text-gray-400 hover:bg-gray-900/85"
                   }`}
                 >
                   <FiBell className="text-[13px]" />
-                  <span>{pendingApprovalCount}</span>
+                  <span>{notificationBadgeCount}</span>
                 </button>
               </div>
 
@@ -566,29 +611,29 @@ const AppLayout = () => {
 
           {/* Right: Notifications + Wallet Pill */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {isConnected && (
-              <button
-                type="button"
-                aria-label="Open approval queue"
-                onClick={openApprovalQueue}
-                className={`relative w-9 h-9 rounded-xl border text-gray-300 flex items-center justify-center transition-colors ${
-                  pendingApprovalCount > 0
-                    ? "border-brand-700/60 bg-brand-700/12 text-brand-300 shadow-[0_10px_20px_-16px_rgba(185,28,28,0.9)]"
-                    : "border-gray-700/75 bg-gray-900/75 hover:border-gray-600 hover:text-gray-100"
+            <button
+              type="button"
+              aria-label="Open notifications"
+              aria-haspopup="dialog"
+              aria-expanded={notificationDrawerOpen}
+              onClick={handleOpenNotificationCenter}
+              className={`relative w-9 h-9 rounded-xl border text-gray-300 flex items-center justify-center transition-colors ${
+                notificationBadgeCount > 0
+                  ? "border-brand-700/60 bg-brand-700/12 text-brand-300 shadow-[0_10px_20px_-16px_rgba(185,28,28,0.9)]"
+                  : "border-gray-700/75 bg-gray-900/75 hover:border-gray-600 hover:text-gray-100"
+              }`}
+            >
+              <FiBell
+                className={`text-[14px] ${
+                  notificationBadgeCount > 0 ? "text-brand-300" : ""
                 }`}
-              >
-                <FiBell
-                  className={`text-[14px] ${
-                    pendingApprovalCount > 0 ? "text-brand-300" : ""
-                  }`}
-                />
-                {pendingApprovalCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[1rem] h-4 px-1 rounded-full bg-brand-700 text-[10px] font-semibold text-white leading-none inline-flex items-center justify-center">
-                    {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
-                  </span>
-                )}
-              </button>
-            )}
+              />
+              {notificationBadgeCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[1rem] h-4 px-1 rounded-full bg-brand-700 text-[10px] font-semibold text-white leading-none inline-flex items-center justify-center">
+                  {notificationBadgeCount > 9 ? "9+" : notificationBadgeCount}
+                </span>
+              )}
+            </button>
 
             {!isConnected ? (
               <Button
@@ -764,6 +809,12 @@ const AppLayout = () => {
           </div>
         </div>
       </main>
+
+      <RelayNotificationDrawer
+        triggerRef={lastBellTriggerRef}
+        pendingApprovalCount={pendingApprovalCount}
+        onOpenApprovalQueue={openApprovalQueue}
+      />
     </div>
   );
 };
