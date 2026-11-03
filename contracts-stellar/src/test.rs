@@ -2499,3 +2499,331 @@ mod fhe_aggregation {
         assert_eq!(request.status, RequestStatus::Approved);
     }
 }
+
+mod automation_registry_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Events as _, token, TryFromVal};
+
+    fn setup_token<'a>(
+        env: &'a Env,
+        admin: &Address,
+    ) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
+        let sac = env.register_stellar_asset_contract_v2(admin.clone());
+        let addr = sac.address();
+        (
+            addr.clone(),
+            token::Client::new(env, &addr),
+            token::StellarAssetClient::new(env, &addr),
+        )
+    }
+
+    fn create_sample_vault(
+        env: &Env,
+        client: &SpooVaultStellarClient,
+        creator: &Address,
+        guardian: &Address,
+    ) -> u64 {
+        client.create_vault(
+            creator,
+            &String::from_str(env, "Automated Vault"),
+            &String::from_str(env, "Keeper bounty vault"),
+            &vec![env, guardian.clone()],
+            &1,
+        )
+    }
+
+    #[test]
+    fn test_configure_keeper_stake_validation_and_admin_guard() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, SpooVaultStellar);
+        let client = SpooVaultStellarClient::new(&env, &contract_id);
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let outsider = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let (stake_token, _, _) = setup_token(&env, &token_admin);
+
+        assert_eq!(
+            client.try_configure_keeper_stake(&admin, &stake_token, &1_000),
+            Err(Ok(AutomationRegistryError::NotInitialized))
+        );
+
+        client.init_admins(&vec![&env, admin.clone()], &1);
+
+        assert_eq!(
+            client.try_configure_keeper_stake(&outsider, &stake_token, &1_000),
+            Err(Ok(AutomationRegistryError::UnauthorizedAdmin))
+        );
+        assert_eq!(
+            client.try_configure_keeper_stake(&admin, &stake_token, &0),
+            Err(Ok(AutomationRegistryError::InvalidStakeAmount))
+        );
+        assert_eq!(
+            client.try_configure_keeper_stake(&admin, &stake_token, &-50),
+            Err(Ok(AutomationRegistryError::InvalidStakeAmount))
+        );
+
+        client.configure_keeper_stake(&admin, &stake_token, &1_000);
+        let cfg = client.get_keeper_stake_config().expect("stake config stored");
+        assert_eq!(cfg.stake_token, stake_token);
+        assert_eq!(cfg.min_stake, 1_000);
+    }
+
+    #[test]
+    fn test_keeper_registration_anti_spam_escrow_and_unregister_refund() {
+        let env = Env::default();
+        env.ledger().with_mut(|li| li.timestamp = 1_700_000_000);
+        let contract_id = env.register_contract(None, SpooVaultStellar);
+        let client = SpooVaultStellarClient::new(&env, &contract_id);
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let keeper = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let (stake_token, stake_client, stake_mint) = setup_token(&env, &token_admin);
+        stake_mint.mint(&keeper, &5_000);
+
+        assert_eq!(
+            client.try_register_keeper(&keeper, &1_000),
+            Err(Ok(AutomationRegistryError::StakeConfigMissing))
+        );
+
+        client.init_admins(&vec![&env, admin.clone()], &1);
+        client.configure_keeper_stake(&admin, &stake_token, &1_000);
+
+        assert_eq!(
+            client.try_register_keeper(&keeper, &999),
+            Err(Ok(AutomationRegistryError::InsufficientStake))
+        );
+        assert_eq!(stake_client.balance(&keeper), 5_000);
+
+        let profile = client.register_keeper(&keeper, &1_500);
+        assert!(profile.active);
+        assert_eq!(profile.staked_amount, 1_500);
+        assert_eq!(profile.registered_at, 1_700_000_000);
+        assert_eq!(stake_client.balance(&keeper), 3_500);
+        assert_eq!(stake_client.balance(&contract_id), 1_500);
+        assert_eq!(client.get_registered_keepers(), vec![&env, keeper.clone()]);
+
+        assert_eq!(
+            client.try_register_keeper(&keeper, &1_500),
+            Err(Ok(AutomationRegistryError::KeeperAlreadyRegistered))
+        );
+
+        let refunded = client.unregister_keeper(&keeper);
+        assert_eq!(refunded, 1_500);
+        assert_eq!(stake_client.balance(&keeper), 5_000);
+        assert_eq!(stake_client.balance(&contract_id), 0);
+        assert!(client.get_registered_keepers().is_empty());
+        assert!(!client.get_keeper_profile(&keeper).unwrap().active);
+
+        assert_eq!(
+            client.try_unregister_keeper(&keeper),
+            Err(Ok(AutomationRegistryError::KeeperNotRegistered))
+        );
+
+        let re_registered = client.register_keeper(&keeper, &1_000);
+        assert!(re_registered.active);
+        assert_eq!(re_registered.staked_amount, 1_000);
+    }
+
+    #[test]
+    fn test_deposit_bounty_emits_discovery_event_and_accumulates_topups() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, SpooVaultStellar);
+        let client = SpooVaultStellarClient::new(&env, &contract_id);
+        env.mock_all_auths();
+
+        let creator = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let (reward_token, reward_client, reward_mint) = setup_token(&env, &token_admin);
+        let (other_token, _, other_mint) = setup_token(&env, &token_admin);
+        reward_mint.mint(&funder, &2_000);
+        other_mint.mint(&funder, &2_000);
+
+        assert_eq!(
+            client.try_deposit_automation_bounty(
+                &funder,
+                &999,
+                &reward_token,
+                &600,
+                &200,
+                &3_600
+            ),
+            Err(Ok(AutomationRegistryError::VaultNotFound))
+        );
+
+        let vault_id = create_sample_vault(&env, &client, &creator, &guardian);
+
+        assert_eq!(
+            client.try_deposit_automation_bounty(
+                &funder,
+                &vault_id,
+                &reward_token,
+                &100,
+                &200,
+                &3_600
+            ),
+            Err(Ok(AutomationRegistryError::InsufficientBounty))
+        );
+        assert_eq!(
+            client.try_deposit_automation_bounty(
+                &funder,
+                &vault_id,
+                &reward_token,
+                &600,
+                &200,
+                &0
+            ),
+            Err(Ok(AutomationRegistryError::InvalidBountyConfig))
+        );
+
+        let task = client.deposit_automation_bounty(
+            &funder,
+            &vault_id,
+            &reward_token,
+            &600,
+            &200,
+            &3_600,
+        );
+        assert!(task.is_open);
+        assert_eq!(task.bounty_balance, 600);
+        assert_eq!(reward_client.balance(&contract_id), 600);
+
+        let events = env.events().all();
+        let mut found_discovery_event = false;
+        for (emitter, topics, data) in events.iter() {
+            if emitter != contract_id || topics.len() != 3 {
+                continue;
+            }
+            let Ok(topic0) = Symbol::try_from_val(&env, &topics.get(0).unwrap()) else {
+                continue;
+            };
+            if topic0 == Symbol::new(&env, "bounty_deposited") {
+                let ev_vault = u64::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+                let ev_token = Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap();
+                let payload = BountyDepositedEvent::try_from_val(&env, &data).unwrap();
+                assert_eq!(ev_vault, vault_id);
+                assert_eq!(ev_token, reward_token);
+                assert_eq!(payload.amount_added, 600);
+                assert_eq!(payload.bounty_balance, 600);
+                assert_eq!(payload.reward_per_execution, 200);
+                assert_eq!(payload.interval_seconds, 3_600);
+                found_discovery_event = true;
+            }
+        }
+        assert!(found_discovery_event, "expected bounty_deposited event");
+
+        assert_eq!(
+            client.try_deposit_automation_bounty(
+                &funder,
+                &vault_id,
+                &other_token,
+                &400,
+                &200,
+                &3_600
+            ),
+            Err(Ok(AutomationRegistryError::TokenMismatch))
+        );
+
+        let topped_up = client.deposit_automation_bounty(
+            &funder,
+            &vault_id,
+            &reward_token,
+            &400,
+            &250,
+            &1_800,
+        );
+        assert_eq!(topped_up.bounty_balance, 1_000);
+        assert_eq!(topped_up.reward_per_execution, 250);
+        assert_eq!(topped_up.interval_seconds, 1_800);
+        assert_eq!(reward_client.balance(&contract_id), 1_000);
+    }
+
+    #[test]
+    fn test_task_discovery_execution_heartbeat_and_cancel_flow() {
+        let env = Env::default();
+        env.ledger().with_mut(|li| {
+            li.timestamp = 10_000;
+            li.sequence_number = 50;
+        });
+        let contract_id = env.register_contract(None, SpooVaultStellar);
+        let client = SpooVaultStellarClient::new(&env, &contract_id);
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let creator = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let keeper = Address::generate(&env);
+        let unregistered = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let (token_addr, token_client, token_mint) = setup_token(&env, &token_admin);
+
+        token_mint.mint(&keeper, &1_000);
+        token_mint.mint(&funder, &2_000);
+
+        client.init_admins(&vec![&env, admin.clone()], &1);
+        client.configure_keeper_stake(&admin, &token_addr, &500);
+        client.register_keeper(&keeper, &500);
+
+        let vault1 = create_sample_vault(&env, &client, &creator, &guardian);
+        let _vault2 = create_sample_vault(&env, &client, &creator, &guardian);
+        let vault3 = create_sample_vault(&env, &client, &creator, &guardian);
+
+        client.deposit_automation_bounty(&funder, &vault1, &token_addr, &400, &200, &600);
+        client.deposit_automation_bounty(&funder, &vault3, &token_addr, &300, &150, &600);
+        assert_eq!(client.get_open_bounty_vaults(), vec![&env, vault1, vault3]);
+        assert_eq!(client.get_open_automation_tasks().len(), 2);
+
+        client.deactivate_vault(&creator, &vault3);
+        assert_eq!(client.get_open_bounty_vaults(), vec![&env, vault1]);
+        assert_eq!(client.get_open_automation_tasks().len(), 1);
+
+        assert_eq!(
+            client.try_execute_automation_task(&unregistered, &vault1),
+            Err(Ok(AutomationRegistryError::KeeperNotRegistered))
+        );
+
+        env.ledger().with_mut(|li| {
+            li.timestamp = 10_500;
+            li.sequence_number = 60;
+        });
+        let payout1 = client.execute_automation_task(&keeper, &vault1);
+        assert_eq!(payout1, 200);
+        assert_eq!(token_client.balance(&keeper), 700);
+        let release_state = client.get_release_state(&vault1).unwrap();
+        assert_eq!(release_state.last_proof_of_life, 10_500);
+        assert_eq!(release_state.last_proof_of_life_sequence, 60);
+
+        assert_eq!(
+            client.try_execute_automation_task(&keeper, &vault1),
+            Err(Ok(AutomationRegistryError::IntervalNotElapsed))
+        );
+
+        env.ledger().with_mut(|li| {
+            li.timestamp = 11_100;
+            li.sequence_number = 75;
+        });
+        let payout2 = client.execute_automation_task(&keeper, &vault1);
+        assert_eq!(payout2, 200);
+        assert_eq!(token_client.balance(&keeper), 900);
+        assert!(client.get_open_bounty_vaults().is_empty());
+        assert!(!client.get_automation_task(&vault1).unwrap().is_open);
+
+        assert_eq!(
+            client.try_cancel_automation_bounty(&funder, &vault3),
+            Err(Ok(AutomationRegistryError::OnlyCreator))
+        );
+        let refunded = client.cancel_automation_bounty(&creator, &vault3);
+        assert_eq!(refunded, 300);
+        assert_eq!(token_client.balance(&funder), 1_600);
+        assert_eq!(
+            client.try_cancel_automation_bounty(&creator, &vault3),
+            Err(Ok(AutomationRegistryError::TaskNotOpen))
+        );
+    }
+}
