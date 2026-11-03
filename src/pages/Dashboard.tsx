@@ -29,11 +29,14 @@ import {
   DocumentData,
   ActivityEvent,
   PendingApprovalData,
+  VaultReleaseState,
 } from "../services/contract.service";
 import { toast } from "react-hot-toast";
 import { formatDistanceToNow } from "date-fns";
 import { buttonClasses } from "../utils/buttonClasses";
-import { shortenAddress } from "../utils/helpers";
+import { shortenAddress, getVaultGID } from "../utils/helpers";
+import { HeartbeatSparkline } from "../components/analytics/HeartbeatSparkline";
+import { readStoredHeartbeats } from "../utils/heartbeatSparkline";
 import { captureError } from "../services/telemetry.service";
 import { encryptWithPublicKey, decryptWithPrivateKey } from "../utils/crypto";
 import { clientKeyringService } from "../services/clientKeyring.service";
@@ -67,13 +70,14 @@ interface DashboardStats {
 }
 
 const Dashboard = () => {
-  const { account, isConnected, connect } = useWeb3();
+  const { account, isConnected, connect, ecosystem, chainId } = useWeb3();
   const navigate = useNavigate();
   const location = useLocation();
   const loadVersionRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [activityLoading, setActivityLoading] = useState(false);
   const [vaults, setVaults] = useState<VaultData[]>([]);
+  const [releaseStates, setReleaseStates] = useState<Record<number, VaultReleaseState>>({});
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalVaults: 0,
@@ -98,6 +102,7 @@ const Dashboard = () => {
     } else {
       loadVersionRef.current += 1;
       setVaults([]);
+      setReleaseStates({});
       setDocuments([]);
       setRecentActivity([]);
       setPendingApprovals([]);
@@ -429,6 +434,23 @@ const Dashboard = () => {
         [],
         loadVersion
       );
+      if (
+        userVaults.length > 0 &&
+        typeof contractService.fetchVaultReleaseStates === "function"
+      ) {
+        contractService
+          .fetchVaultReleaseStates(userVaults.map((v) => v.id))
+          .then((states) => {
+            if (loadVersionRef.current === loadVersion) {
+              setReleaseStates(states);
+            }
+          })
+          .catch(() => {
+            if (loadVersionRef.current === loadVersion) {
+              setReleaseStates({});
+            }
+          });
+      }
       window.setTimeout(() => {
         void loadPendingApprovals(account, userVaults, baseStats, issuedPasses, loadVersion);
       }, 160);
@@ -1015,17 +1037,33 @@ const Dashboard = () => {
             vaults.map((vault) => {
               const docCount = docCountByVault[vault.id] || 0;
               const progress = maxDocCount > 0 ? Math.round((docCount / maxDocCount) * 100) : 0;
+              const releaseState = releaseStates[vault.id];
+              const vaultGid = getVaultGID(ecosystem, chainId, vault.id);
 
               return (
-                <div key={vault.id}>
-                  <div className="flex justify-between mb-2">
+                <div key={vault.id} className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="font-medium">{vault.name}</span>
                       <span className="text-sm text-gray-400 ml-3">{docCount} docs</span>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold leading-none">{progress}%</p>
-                      <p className="text-[11px] text-gray-500 mt-1">Relative share</p>
+                    <div className="flex items-center gap-4 ml-auto">
+                      <HeartbeatSparkline
+                        compact
+                        vaultId={vault.id}
+                        vaultName={vault.name}
+                        vaultCreatedAt={vault.createdAt}
+                        lastProofOfLife={releaseState?.lastProofOfLife ?? vault.createdAt}
+                        inactivityPeriod={releaseState?.inactivityPeriod}
+                        emergencyMode={releaseState?.emergencyMode}
+                        postDeathUnlocked={releaseState?.postDeathUnlocked}
+                        timestamps={readStoredHeartbeats(vaultGid)}
+                        activities={recentActivity}
+                      />
+                      <div className="text-right">
+                        <p className="font-semibold leading-none">{progress}%</p>
+                        <p className="text-[11px] text-gray-500 mt-1">Relative share</p>
+                      </div>
                     </div>
                   </div>
                   <Progress

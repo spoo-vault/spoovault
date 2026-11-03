@@ -27,10 +27,16 @@ import {
 import { captureError } from "../services/telemetry.service";
 import { toast } from "react-hot-toast";
 import { buttonClasses } from "../utils/buttonClasses";
+import { getVaultGID } from "../utils/helpers";
 import {
   computeSecurityHealth,
   type HealthGrade,
 } from "../utils/securityHealth";
+import { HeartbeatSparkline } from "../components/analytics/HeartbeatSparkline";
+import {
+  readStoredHeartbeats,
+  recordStoredHeartbeat,
+} from "../utils/heartbeatSparkline";
 
 const DAY_SECONDS = 24 * 60 * 60;
 const ACTIVITY_WINDOW_DAYS = 14;
@@ -99,6 +105,8 @@ const AnalyticsDashboard = () => {
     account,
     isConnected,
     connect,
+    ecosystem,
+    chainId,
   } = useWeb3();
   const prefersReducedMotion = useReducedMotion();
 
@@ -111,6 +119,16 @@ const AnalyticsDashboard = () => {
     Record<number, VaultReleaseState>
   >({});
   const [recordingVaultId, setRecordingVaultId] = useState<number | null>(null);
+  const [heartbeatVersion, setHeartbeatVersion] = useState(0);
+
+  const storedHeartbeatsByVault = useMemo(() => {
+    const map: Record<number, number[]> = {};
+    vaults.forEach((vault) => {
+      const gid = getVaultGID(ecosystem, chainId, vault.id);
+      map[vault.id] = readStoredHeartbeats(gid);
+    });
+    return map;
+  }, [vaults, ecosystem, chainId, heartbeatVersion]);
 
   useEffect(() => {
     if (isConnected && account) {
@@ -178,6 +196,9 @@ const AnalyticsDashboard = () => {
     setRecordingVaultId(vaultId);
     try {
       await contractService.recordProofOfLife(vaultId);
+      const gid = getVaultGID(ecosystem, chainId, vaultId);
+      recordStoredHeartbeat(gid, Math.floor(Date.now() / 1000));
+      setHeartbeatVersion((v) => v + 1);
       toast.success("Proof-of-life heartbeat recorded");
       await loadAnalytics({ silent: true });
     } catch (error) {
@@ -770,6 +791,20 @@ const AnalyticsDashboard = () => {
                           duration: animationDuration,
                           ease: "easeOut",
                         }}
+                      />
+                    </div>
+                    <div className="pt-1 border-t border-white/10">
+                      <HeartbeatSparkline
+                        vaultId={vault.id}
+                        vaultName={vault.name}
+                        vaultCreatedAt={vault.createdAt}
+                        lastProofOfLife={releaseStates[vault.id]?.lastProofOfLife}
+                        inactivityPeriod={releaseStates[vault.id]?.inactivityPeriod}
+                        emergencyMode={releaseStates[vault.id]?.emergencyMode}
+                        postDeathUnlocked={releaseStates[vault.id]?.postDeathUnlocked}
+                        timestamps={storedHeartbeatsByVault[vault.id]}
+                        activities={activity}
+                        now={nowSec}
                       />
                     </div>
                       <Button

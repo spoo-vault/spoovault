@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardBody,
@@ -40,9 +40,15 @@ import {
   VaultData,
   VaultReleaseState,
   EmergencyUnlockSchedule,
+  ActivityEvent,
 } from "../services/contract.service";
 import { shortenAddress, isValidAddress, isValidStellarAddress, isValidMultiChainAddress, formatDate, getVaultGID, buildVaultDocumentCounts, keyRecordByVaultGID } from "../utils/helpers";
 import { EmergencyUnlockStatusView } from "../components/EmergencyUnlockStatusView";
+import { HeartbeatSparkline } from "../components/analytics/HeartbeatSparkline";
+import {
+  readStoredHeartbeats,
+  recordStoredHeartbeat,
+} from "../utils/heartbeatSparkline";
 import { identityService } from "../services/identity.service";
 import { toast } from "react-hot-toast";
 import { buttonClasses } from "../utils/buttonClasses";
@@ -70,6 +76,16 @@ const Vaults = () => {
   const [togglingEmergencyVaultId, setTogglingEmergencyVaultId] = useState<number | null>(null);
   const [provingLifeVaultId, setProvingLifeVaultId] = useState<number | null>(null);
   const [selectedBLSVaultId, setSelectedBLSVaultId] = useState<number | null>(null);
+  const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
+  const [heartbeatVersion, setHeartbeatVersion] = useState(0);
+
+  const storedHeartbeatsByVault = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    vaults.forEach((vault) => {
+      map[vault.gid] = readStoredHeartbeats(vault.gid);
+    });
+    return map;
+  }, [vaults, heartbeatVersion]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -154,6 +170,19 @@ const Vaults = () => {
         setUnlockScheduleLoadState("error");
         setReleaseStatesByVault({});
         setUnlockSchedulesByVault({});
+      }
+
+      if (typeof contractService.getRecentActivity === "function") {
+        contractService
+          .getRecentActivity(60)
+          .then((events) =>
+            setRecentActivity(
+              events.filter(
+                (evt) => evt.actor.toLowerCase() === account.toLowerCase()
+              )
+            )
+          )
+          .catch(() => setRecentActivity([]));
       }
     } catch (error) {
       console.error("Error loading vaults:", error);
@@ -272,6 +301,8 @@ const Vaults = () => {
         const nowTs = Math.floor(Date.now() / 1000);
         const ownerAddress = account || "";
         const gid = getVaultGID(ecosystem, chainId, vaultId);
+        recordStoredHeartbeat(gid, nowTs);
+        setHeartbeatVersion((v) => v + 1);
         const optimisticVault: Vault = {
           id: vaultId,
           gid,
@@ -394,6 +425,9 @@ const Vaults = () => {
     setProvingLifeVaultId(vaultId);
     try {
       await contractService.recordProofOfLife(vaultId);
+      const gid = getVaultGID(ecosystem, chainId, vaultId);
+      recordStoredHeartbeat(gid, Math.floor(Date.now() / 1000));
+      setHeartbeatVersion((v) => v + 1);
       toast.success("Proof-of-life recorded");
       await loadVaults();
     } catch (error: any) {
@@ -671,6 +705,19 @@ const Vaults = () => {
                           ? formatDate(releaseState.lastProofOfLife)
                           : "not recorded"}
                       </p>
+                    </div>
+                    <div className="pt-2 border-t border-gray-800/80">
+                      <HeartbeatSparkline
+                        vaultId={vault.id}
+                        vaultName={vault.name}
+                        vaultCreatedAt={vault.createdAt}
+                        lastProofOfLife={releaseState.lastProofOfLife}
+                        inactivityPeriod={releaseState.inactivityPeriod}
+                        emergencyMode={releaseState.emergencyMode}
+                        postDeathUnlocked={releaseState.postDeathUnlocked}
+                        timestamps={storedHeartbeatsByVault[vault.gid]}
+                        activities={recentActivity}
+                      />
                     </div>
                     {isCreator && (
                       <div className="flex flex-wrap gap-2 pt-1">
