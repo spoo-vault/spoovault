@@ -70,4 +70,4 @@ Please include:
 
 ## Bounty Program
 
-Valid security vulnerabilities reported responsibly are eligible for recognition in our Security Hall of Fame and potential grant-backed bounties.
+Valid security vulnerabilities reported responsibly are eligible for recognition in our Security Hall of Fame and potential grant-backed bounties. For complete details on reward tiers, safe harbor guidelines, PGP encryption, and response SLAs, please refer to [docs/BUG_BOUNTY.md](./docs/BUG_BOUNTY.md).
