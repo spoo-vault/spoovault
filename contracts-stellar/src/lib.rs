@@ -16,6 +16,11 @@ extern crate std;
 pub mod threshold_sig;
 pub mod bls;
 pub use bls::{BLSVerifier, GuardianBLSKeyInfo};
+pub mod automation_registry;
+pub use automation_registry::{
+    AutomationRegistryError, AutomationTask, BountyDepositedEvent, KeeperProfile,
+    KeeperStakeConfig,
+};
 
 /// Groth16 ZK-SNARK proof-of-access verifier (issue #70).
 /// Pure-Rust BN254 pairing implementation (Soroban SDK v21 exposes no
@@ -2899,6 +2904,99 @@ impl SpooVaultStellar {
     /// Returns whether a nullifier hash has already been consumed.
     pub fn is_access_nullifier_spent(env: Env, nullifier_hash: BytesN<32>) -> bool {
         zk_verifier::is_nullifier_spent(&env, &nullifier_hash.to_array())
+    }
+
+    /// Configure the stake token and minimum stake required for community keepers.
+    pub fn configure_keeper_stake(
+        env: Env,
+        admin: Address,
+        stake_token: Address,
+        min_stake: i128,
+    ) -> Result<(), AutomationRegistryError> {
+        automation_registry::configure_keeper_stake(&env, admin, stake_token, min_stake)
+    }
+
+    /// Return the current keeper anti-spam stake requirement, if configured.
+    pub fn get_keeper_stake_config(env: Env) -> Option<KeeperStakeConfig> {
+        automation_registry::get_keeper_stake_config(&env)
+    }
+
+    /// Register a community keeper by staking at least `min_stake` tokens.
+    pub fn register_keeper(
+        env: Env,
+        keeper: Address,
+        stake_amount: i128,
+    ) -> Result<KeeperProfile, AutomationRegistryError> {
+        automation_registry::register_keeper(&env, keeper, stake_amount)
+    }
+
+    /// Unregister an active community keeper and return its escrowed stake.
+    pub fn unregister_keeper(env: Env, keeper: Address) -> Result<i128, AutomationRegistryError> {
+        automation_registry::unregister_keeper(&env, keeper)
+    }
+
+    /// Fetch the registration profile for a keeper address, if any.
+    pub fn get_keeper_profile(env: Env, keeper: Address) -> Option<KeeperProfile> {
+        automation_registry::get_keeper_profile(&env, keeper)
+    }
+
+    /// List all currently active registered community keepers.
+    pub fn get_registered_keepers(env: Env) -> Vec<Address> {
+        automation_registry::get_registered_keepers(&env)
+    }
+
+    /// Deposit or top up an automation reward bounty for a vault and emit a discovery event.
+    pub fn deposit_automation_bounty(
+        env: Env,
+        funder: Address,
+        vault_id: u64,
+        reward_token: Address,
+        amount: i128,
+        reward_per_execution: i128,
+        interval_seconds: u64,
+    ) -> Result<AutomationTask, AutomationRegistryError> {
+        automation_registry::deposit_automation_bounty(
+            &env,
+            funder,
+            vault_id,
+            reward_token,
+            amount,
+            reward_per_execution,
+            interval_seconds,
+        )
+    }
+
+    /// Execute scheduled heartbeat maintenance for an open vault task and claim the reward.
+    pub fn execute_automation_task(
+        env: Env,
+        keeper: Address,
+        vault_id: u64,
+    ) -> Result<i128, AutomationRegistryError> {
+        automation_registry::execute_automation_task(&env, keeper, vault_id)
+    }
+
+    /// Close an open vault automation task and refund any remaining escrowed bounty.
+    pub fn cancel_automation_bounty(
+        env: Env,
+        creator: Address,
+        vault_id: u64,
+    ) -> Result<i128, AutomationRegistryError> {
+        automation_registry::cancel_automation_bounty(&env, creator, vault_id)
+    }
+
+    /// Inspect the automation task state for a vault, if any.
+    pub fn get_automation_task(env: Env, vault_id: u64) -> Option<AutomationTask> {
+        automation_registry::get_automation_task(&env, vault_id)
+    }
+
+    /// Discover vault IDs with active open automation reward bounties.
+    pub fn get_open_bounty_vaults(env: Env) -> Vec<u64> {
+        automation_registry::get_open_bounty_vaults(&env)
+    }
+
+    /// Discover full task metadata for all active vaults with open reward bounties.
+    pub fn get_open_automation_tasks(env: Env) -> Vec<AutomationTask> {
+        automation_registry::get_open_automation_tasks(&env)
     }
 }
 
