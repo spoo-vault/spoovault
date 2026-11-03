@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { notifyCenter } from "./relayNotification.service";
 
 export const DEFAULT_APPROVAL_MESSAGE_TTL_MS = 5 * 60 * 1000;
 
@@ -141,19 +142,46 @@ export class CrossChainRelayerService {
       }) => Promise<{ ledger: number; success: boolean }>;
     }
   ): Promise<{ relayed: boolean; ledger: number }> {
-    const result = await sorobanClient.relayApprovalGrant({
-      vaultGid: payload.vaultGID,
-      guardian: payload.guardian,
-      approvalType: payload.approvalType,
-      sourceChain: payload.sourceChain ?? "avalanche",
-      nonce: BigInt(payload.nonce ?? 0),
-      signature: payload.signature ?? "0x00",
+    const notificationId = notifyCenter.trackTask({
+      title: "Relaying cross-chain guardian approval",
+      description: `${payload.sourceChain ?? "avalanche"} -> Soroban`,
+      category: "cross-chain-relay",
+      network: "stellar",
+      messageId: payload.signature,
+      dedupeKey: `relay-approval:${payload.vaultGID}:${String(payload.nonce ?? 0)}`,
     });
 
-    return {
-      relayed: result.success,
-      ledger: result.ledger,
-    };
+    try {
+      notifyCenter.markSubmitted(notificationId, {
+        description: "Submitting verified approval grant to Soroban",
+      });
+
+      const result = await sorobanClient.relayApprovalGrant({
+        vaultGid: payload.vaultGID,
+        guardian: payload.guardian,
+        approvalType: payload.approvalType,
+        sourceChain: payload.sourceChain ?? "avalanche",
+        nonce: BigInt(payload.nonce ?? 0),
+        signature: payload.signature ?? "0x00",
+      });
+
+      if (result.success) {
+        notifyCenter.markConfirmed(notificationId, {
+          title: "Cross-chain guardian approval confirmed",
+          description: `Finalized on Soroban ledger #${result.ledger}`,
+        });
+      } else {
+        notifyCenter.markFailed(notificationId, "Soroban rejected approval relay");
+      }
+
+      return {
+        relayed: result.success,
+        ledger: result.ledger,
+      };
+    } catch (error) {
+      notifyCenter.markFailed(notificationId, error);
+      throw error;
+    }
   }
 
   /**
@@ -208,19 +236,46 @@ export class CrossChainRelayerService {
       }) => Promise<{ ledger: number; success: boolean }>;
     }
   ): Promise<{ relayed: boolean; ledger: number }> {
-    const result = await sorobanClient.relayRevokeAccess({
-      vaultGid: payload.vaultGID,
-      documentId: BigInt(payload.documentId),
-      targetEvmUser: payload.targetUser,
-      targetStellarUser: payload.targetStellarUser ?? payload.targetUser,
-      nonce: BigInt(payload.nonce),
-      signature: payload.signature ?? "0x00",
-      recoveryId: payload.recoveryId ?? 0,
+    const notificationId = notifyCenter.trackTask({
+      title: `Relaying access revocation for Document #${String(payload.documentId)}`,
+      description: "Broadcasting instant revocation to Soroban",
+      category: "cross-chain-relay",
+      network: "stellar",
+      messageId: payload.signature,
+      dedupeKey: `relay-revoke:${payload.vaultGID}:${String(payload.documentId)}:${String(payload.nonce)}`,
     });
 
-    return {
-      relayed: result.success,
-      ledger: result.ledger,
-    };
+    try {
+      notifyCenter.markSubmitted(notificationId, {
+        description: "Invalidating beneficiary grant on Soroban",
+      });
+
+      const result = await sorobanClient.relayRevokeAccess({
+        vaultGid: payload.vaultGID,
+        documentId: BigInt(payload.documentId),
+        targetEvmUser: payload.targetUser,
+        targetStellarUser: payload.targetStellarUser ?? payload.targetUser,
+        nonce: BigInt(payload.nonce),
+        signature: payload.signature ?? "0x00",
+        recoveryId: payload.recoveryId ?? 0,
+      });
+
+      if (result.success) {
+        notifyCenter.markConfirmed(notificationId, {
+          title: `Revocation anchored for Document #${String(payload.documentId)}`,
+          description: `Finalized on Soroban ledger #${result.ledger}`,
+        });
+      } else {
+        notifyCenter.markFailed(notificationId, "Soroban rejected revocation relay");
+      }
+
+      return {
+        relayed: result.success,
+        ledger: result.ledger,
+      };
+    } catch (error) {
+      notifyCenter.markFailed(notificationId, error);
+      throw error;
+    }
   }
 }

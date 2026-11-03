@@ -4,6 +4,7 @@ import { HeroUIProvider } from "@heroui/react";
 import { Toaster } from "react-hot-toast";
 import { captureError } from "./services/telemetry.service";
 import { SessionLockGate } from "./components/SessionLockGate";
+import { RelayNotificationProvider } from "./context/RelayNotificationContext";
 
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -62,41 +63,43 @@ function App() {
 
   return (
     <HeroUIProvider>
-      <Router>
-        <Suspense
-          fallback={
-            <div className="min-h-screen flex items-center justify-center bg-[#040306] text-gray-300">
-              <div className="text-sm tracking-wide">Loading SpooVault...</div>
-            </div>
-          }
-        >
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/docs" element={<DocsPage />} />
-            <Route element={<AppLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/analytics" element={<AnalyticsDashboard />} />
-              <Route path="/vaults" element={<Vaults />} />
-              <Route path="/documents" element={<Documents />} />
-              <Route path="/access" element={<AccessCenter />} />
-              <Route path="/nfts" element={<NFTGallery />} />
-              <Route path="/profile" element={<Profile />} />
-            </Route>
-          </Routes>
-        </Suspense>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            className: "bg-gray-900 text-white border border-gray-800",
-            style: {
-              background: "hsl(var(--background))",
-              color: "hsl(var(--foreground))",
-              border: "1px solid hsl(var(--border))",
-            },
-          }}
-        />
-        <SessionLockGate />
-      </Router>
+      <RelayNotificationProvider>
+        <Router>
+          <Suspense
+            fallback={
+              <div className="min-h-screen flex items-center justify-center bg-[#040306] text-gray-300">
+                <div className="text-sm tracking-wide">Loading SpooVault...</div>
+              </div>
+            }
+          >
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/docs" element={<DocsPage />} />
+              <Route element={<AppLayout />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/analytics" element={<AnalyticsDashboard />} />
+                <Route path="/vaults" element={<Vaults />} />
+                <Route path="/documents" element={<Documents />} />
+                <Route path="/access" element={<AccessCenter />} />
+                <Route path="/nfts" element={<NFTGallery />} />
+                <Route path="/profile" element={<Profile />} />
+              </Route>
+            </Routes>
+          </Suspense>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              className: "bg-gray-900 text-white border border-gray-800",
+              style: {
+                background: "hsl(var(--background))",
+                color: "hsl(var(--foreground))",
+                border: "1px solid hsl(var(--border))",
+              },
+            }}
+          />
+          <SessionLockGate />
+        </Router>
+      </RelayNotificationProvider>
     </HeroUIProvider>
   );
 }

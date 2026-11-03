@@ -30,7 +30,7 @@ import {
   ActivityEvent,
   PendingApprovalData,
 } from "../services/contract.service";
-import { toast } from "react-hot-toast";
+import { notifyCenter } from "../services/relayNotification.service";
 import { formatDistanceToNow } from "date-fns";
 import { buttonClasses } from "../utils/buttonClasses";
 import { shortenAddress } from "../utils/helpers";
@@ -67,7 +67,7 @@ interface DashboardStats {
 }
 
 const Dashboard = () => {
-  const { account, isConnected, connect } = useWeb3();
+  const { account, isConnected, connect, ecosystem } = useWeb3();
   const navigate = useNavigate();
   const location = useLocation();
   const loadVersionRef = useRef(0);
@@ -442,7 +442,7 @@ const Dashboard = () => {
       console.error("Error loading dashboard data:", error);
       captureError("dashboard.loadData", error, { account: account || "" });
       const message = error instanceof Error ? error.message : "Failed to load dashboard data";
-      toast.error(message);
+      notifyCenter.error(message);
     } finally {
       if (!options?.silent && loadVersionRef.current === loadVersion) {
         setLoading(false);
@@ -452,6 +452,13 @@ const Dashboard = () => {
 
   const handleApproveRequest = async (requestId: number) => {
     setApprovingRequestId(requestId);
+    const activeNetwork = ecosystem === "stellar" ? "stellar" : "avalanche";
+    const taskId = notifyCenter.trackTask({
+      title: `Approving access request #${requestId}`,
+      category: "transaction",
+      network: activeNetwork,
+      onRetry: () => handleApproveRequest(requestId),
+    });
     try {
       const approvalInfo = pendingApprovals.find((a) => a.requestId === requestId);
       if (!approvalInfo) {
@@ -470,7 +477,9 @@ const Dashboard = () => {
           throw new Error("Wallet not connected");
         }
 
-        toast("Decrypting key share from secure keyring...");
+        notifyCenter.markSubmitted(taskId, {
+          description: "Decrypting and re-encrypting guardian key share...",
+        });
         const guardianPrivateKey = await clientKeyringService.getDecryptedPrivateKey(account);
         const decryptedShare = await decryptWithPrivateKey(encryptedShare, guardianPrivateKey);
 
@@ -505,17 +514,24 @@ const Dashboard = () => {
         encryptedShareForBeneficiary = await encryptWithPublicKey(decryptedShare, beneficiaryPubKey);
       }
 
+      notifyCenter.markSubmitted(taskId, {
+        description: "Submitting guardian approval transaction...",
+      });
+
       if (encryptedShareForBeneficiary) {
         await contractService.approveAccess(requestId, encryptedShareForBeneficiary);
       } else {
         await contractService.approveAccess(requestId);
       }
 
-      toast.success(`Approved request #${requestId}`);
+      notifyCenter.markConfirmed(taskId, {
+        title: `Approved request #${requestId}`,
+        network: activeNetwork,
+      });
       await loadDashboardData();
     } catch (error: any) {
       captureError("dashboard.approveAccess", error, { requestId });
-      toast.error(error.message || "Failed to approve request");
+      notifyCenter.markFailed(taskId, error?.message || "Failed to approve request");
     } finally {
       setApprovingRequestId(null);
     }

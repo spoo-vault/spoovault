@@ -58,6 +58,7 @@ import {
   importStreamingKey,
 } from "../services/streamingCrypto.service";
 import { storageProviderService } from "../services/storageProvider.service";
+import { notifyCenter } from "../services/relayNotification.service";
 
 type WordArray = { words: number[]; sigBytes: number };
 type ImportedKeyPayload = {
@@ -745,29 +746,78 @@ const Documents = () => {
 
       // Replicate the encrypted payload to permanent backup providers
       // (Filecoin/Arweave) in the background — never blocks or fails the upload.
-      storageProviderService
-        .backupDocument({
-          ipfsHash: ipfsResult.hash,
-          plaintext: selectedFile,
-          keyHex: key,
-          filename: `${selectedFile.name}.svsc`,
-          signal: abortController.signal,
-        })
-        .then((report) => {
+      const uploadedFileSnapshot = selectedFile;
+      const runPermanentArchival = async (
+        existingTaskId?: string,
+        signal?: AbortSignal
+      ): Promise<void> => {
+        const archiveTaskId: string =
+          existingTaskId ??
+          notifyCenter.trackTask({
+            title: `Archiving "${uploadedFileSnapshot.name}" to permanent storage`,
+            description: "Replicating encrypted ciphertext to Arweave / Filecoin",
+            category: "arweave-archive",
+            silentToast: true,
+          });
+
+        notifyCenter.markSubmitted(archiveTaskId, {
+          description: "Uploading encrypted payload to secondary archive nodes",
+          silentToast: true,
+          onRetry: () => runPermanentArchival(archiveTaskId),
+        });
+
+        try {
+          const report = await storageProviderService.backupDocument({
+            ipfsHash: ipfsResult.hash,
+            plaintext: uploadedFileSnapshot,
+            keyHex: key,
+            filename: `${uploadedFileSnapshot.name}.svsc`,
+            signal,
+          });
           report.failures.forEach((failure) =>
             captureError("documents.backupReplication", failure.error, {
               provider: failure.provider,
               documentHash: ipfsResult.hash,
             })
           );
-        })
-        .catch((error) =>
+
+          const arweaveBackup = report.backups.find(
+            (entry) => entry.provider === "arweave"
+          );
+          const primaryBackup = arweaveBackup ?? report.backups[0];
+
+          if (primaryBackup) {
+            notifyCenter.markConfirmed(archiveTaskId, {
+              title: `Permanent archive confirmed for "${uploadedFileSnapshot.name}"`,
+              description: `Pinned across ${report.backups
+                .map((entry) => entry.provider)
+                .join(", ")}`,
+              messageId: arweaveBackup?.reference ?? primaryBackup.reference,
+              silentToast: true,
+            });
+          } else if (report.failures.length > 0) {
+            notifyCenter.markFailed(
+              archiveTaskId,
+              report.failures[0].error || "Permanent backup replication failed",
+              { silentToast: true }
+            );
+          }
+        } catch (error) {
           captureError("documents.backupReplication", error, {
             documentHash: ipfsResult.hash,
-          })
-        );
+          });
+          notifyCenter.markFailed(archiveTaskId, error, { silentToast: true });
+        }
+      };
+      void runPermanentArchival(undefined, abortController.signal);
 
       setUploadStage("submitting_tx");
+      const uploadTxTaskId = notifyCenter.trackTask({
+        title: `Registering "${selectedFile.name}" on-chain`,
+        category: "transaction",
+        network: ecosystem === "stellar" ? "stellar" : "avalanche",
+      });
+      notifyCenter.markSubmitted(uploadTxTaskId);
       const documentId = await contractService.addDocument(
         selectedVaultId,
         encryptedMetadata,
@@ -780,14 +830,19 @@ const Documents = () => {
       setUploadStage("confirming_tx");
 
       if (!documentId) {
-        toast.error("Document uploaded but ID was not returned");
+        notifyCenter.markFailed(
+          uploadTxTaskId,
+          "Document uploaded but ID was not returned"
+        );
       } else {
         keyStoreService.set(documentId, key);
         setLastKey(key);
         setLastDocumentId(documentId);
         setKeyBackupConfirmed(false);
         setShowKeyModal(true);
-        toast.success("Document uploaded successfully");
+        notifyCenter.markConfirmed(uploadTxTaskId, {
+          title: `Document #${documentId} uploaded successfully`,
+        });
       }
 
       setUploadStage("finalizing");

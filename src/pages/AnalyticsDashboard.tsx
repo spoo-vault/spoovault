@@ -25,7 +25,7 @@ import {
   VaultReleaseState,
 } from "../services/contract.service";
 import { captureError } from "../services/telemetry.service";
-import { toast } from "react-hot-toast";
+import { notifyCenter } from "../services/relayNotification.service";
 import { buttonClasses } from "../utils/buttonClasses";
 import {
   computeSecurityHealth,
@@ -99,6 +99,7 @@ const AnalyticsDashboard = () => {
     account,
     isConnected,
     connect,
+    ecosystem,
   } = useWeb3();
   const prefersReducedMotion = useReducedMotion();
 
@@ -166,7 +167,7 @@ const AnalyticsDashboard = () => {
         error instanceof Error
           ? error.message
           : "Failed to load analytics data";
-      toast.error(message);
+      notifyCenter.error(message);
     } finally {
       if (!options?.silent && loadVersionRef.current === loadVersion) {
         setLoading(false);
@@ -176,15 +177,35 @@ const AnalyticsDashboard = () => {
 
   const handleRecordHeartbeat = async (vaultId: number) => {
     setRecordingVaultId(vaultId);
+    const activeNetwork = ecosystem === "stellar" ? "stellar" : "avalanche";
+    const taskId = notifyCenter.trackTask({
+      title: `Recording proof-of-life for Vault #${vaultId}`,
+      description:
+        activeNetwork === "stellar"
+          ? "Submitting heartbeat and Soroban state TTL extension"
+          : "Submitting proof-of-life check-in transaction",
+      category: activeNetwork === "stellar" ? "soroban-ttl" : "transaction",
+      network: activeNetwork,
+      onRetry: () => handleRecordHeartbeat(vaultId),
+    });
     try {
-      await contractService.recordProofOfLife(vaultId);
-      toast.success("Proof-of-life heartbeat recorded");
+      notifyCenter.markSubmitted(taskId);
+      const txHash = await contractService.recordProofOfLife(vaultId);
+      notifyCenter.markConfirmed(taskId, {
+        title: "Proof-of-life heartbeat recorded",
+        description:
+          activeNetwork === "stellar"
+            ? `Vault #${vaultId} check-in and Soroban TTL renewed`
+            : `Vault #${vaultId} check-in confirmed`,
+        txHash: typeof txHash === "string" && txHash ? txHash : undefined,
+        network: activeNetwork,
+      });
       await loadAnalytics({ silent: true });
     } catch (error) {
       captureError("analyticsDashboard.recordProofOfLife", error, { vaultId });
       const message =
         error instanceof Error ? error.message : "Failed to record heartbeat";
-      toast.error(message);
+      notifyCenter.markFailed(taskId, message);
     } finally {
       setRecordingVaultId(null);
     }

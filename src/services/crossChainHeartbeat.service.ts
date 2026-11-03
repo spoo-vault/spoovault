@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { contractService } from "./contract.service";
 import { stellarService } from "./stellar.service";
+import { notifyCenter } from "./relayNotification.service";
 
 export interface HeartbeatPayload {
   gid: string;
@@ -61,28 +62,57 @@ export const synchronizeHeartbeat = async (
   relayer: string,
   signer: ethers.Signer
 ): Promise<CrossChainHeartbeatResult> => {
-  const evmOwner = await signer.getAddress();
-  const gid = await contractService.getVaultGID(vaultId);
-  const timestamp = Math.floor(Date.now() / 1000);
-  const payload = buildHeartbeatPayload(gid, vaultId, evmOwner, timestamp);
-  const signature = await signHeartbeatPayload(payload, signer);
-  const evmTransactionHash = await contractService.recordProofOfLife(vaultId);
+  const notificationId = notifyCenter.trackTask({
+    title: `Relaying Vault #${vaultId} proof-of-life`,
+    description: `Preparing cross-chain sync to Soroban Vault #${stellarVaultId}`,
+    category: "cross-chain-relay",
+    network: "avalanche",
+    dedupeKey: `heartbeat-relay:${vaultId}:${stellarVaultId}`,
+  });
 
-  await stellarService.syncProofOfLife(
-    stellarVaultId,
-    vaultId,
-    payload.gidHash,
-    evmOwner,
-    timestamp,
-    signature.signature,
-    signature.recoveryId,
-    relayer
-  );
+  try {
+    const evmOwner = await signer.getAddress();
+    const gid = await contractService.getVaultGID(vaultId);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const payload = buildHeartbeatPayload(gid, vaultId, evmOwner, timestamp);
+    const signature = await signHeartbeatPayload(payload, signer);
+    const evmTransactionHash = await contractService.recordProofOfLife(vaultId);
 
-  return {
-    evmTransactionHash,
-    payload,
-    signature,
-    stellarSynchronized: true,
-  };
+    notifyCenter.markSubmitted(notificationId, {
+      title: `Relaying Vault #${vaultId} proof-of-life to Soroban`,
+      description: `EVM check-in recorded; anchoring on Soroban Vault #${stellarVaultId}`,
+      txHash: evmTransactionHash,
+      network: "avalanche",
+    });
+
+    await stellarService.syncProofOfLife(
+      stellarVaultId,
+      vaultId,
+      payload.gidHash,
+      evmOwner,
+      timestamp,
+      signature.signature,
+      signature.recoveryId,
+      relayer
+    );
+
+    notifyCenter.markConfirmed(notificationId, {
+      title: `Cross-chain heartbeat synced for Vault #${vaultId}`,
+      description: `Anchored on Avalanche and Soroban Vault #${stellarVaultId}`,
+      txHash: evmTransactionHash,
+      network: "avalanche",
+    });
+
+    return {
+      evmTransactionHash,
+      payload,
+      signature,
+      stellarSynchronized: true,
+    };
+  } catch (error) {
+    notifyCenter.markFailed(notificationId, error, {
+      title: `Heartbeat relay failed for Vault #${vaultId}`,
+    });
+    throw error;
+  }
 };

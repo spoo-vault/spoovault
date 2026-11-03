@@ -44,7 +44,7 @@ import {
 import { shortenAddress, isValidAddress, isValidStellarAddress, isValidMultiChainAddress, formatDate, getVaultGID, buildVaultDocumentCounts, keyRecordByVaultGID } from "../utils/helpers";
 import { EmergencyUnlockStatusView } from "../components/EmergencyUnlockStatusView";
 import { identityService } from "../services/identity.service";
-import { toast } from "react-hot-toast";
+import { notifyCenter } from "../services/relayNotification.service";
 import { buttonClasses } from "../utils/buttonClasses";
 import { pushNotificationService } from "../services/pushNotification.service";
 import { BLSKeyManagementModal } from "../components/modals/BLSKeyManagementModal";
@@ -158,7 +158,7 @@ const Vaults = () => {
     } catch (error) {
       console.error("Error loading vaults:", error);
       const message = error instanceof Error ? error.message : "Failed to load vaults";
-      toast.error(message);
+      notifyCenter.error(message);
       setReleaseStatesByVault({});
       setUnlockSchedulesByVault({});
       setUnlockScheduleLoadState("error");
@@ -172,13 +172,13 @@ const Vaults = () => {
   const handleAddGuardian = async () => {
     const rawInput = formData.newGuardian.trim();
     if (!rawInput) {
-      toast.error("Please enter a guardian address");
+      notifyCenter.error("Please enter a guardian address");
       return;
     }
 
     const isStellar = isValidStellarAddress(rawInput);
     if (!isStellar && !isValidMultiChainAddress(rawInput)) {
-      toast.error("Invalid address format. Please enter a valid Stellar address (G... or C...).");
+      notifyCenter.error("Invalid address format. Please enter a valid Stellar address (G... or C...).");
       return;
     }
 
@@ -192,7 +192,7 @@ const Vaults = () => {
     }
 
     if (formData.guardians.includes(resolvedAddress)) {
-      toast.error("Guardian already added");
+      notifyCenter.error("Guardian already added");
       return;
     }
 
@@ -203,9 +203,11 @@ const Vaults = () => {
     });
 
     if (resolvedAddress !== rawInput) {
-      toast.success(`Guardian resolved and added as ${shortenAddress(resolvedAddress, 6)}`);
+      notifyCenter.success(`Guardian resolved and added as ${shortenAddress(resolvedAddress, 6)}`, {
+        category: "system",
+      });
     } else {
-      toast.success("Guardian added");
+      notifyCenter.success("Guardian added", { category: "system" });
     }
   };
 
@@ -218,33 +220,33 @@ const Vaults = () => {
 
   const handleCreateVault = async () => {
     if (!isConnected) {
-      toast.error("Please connect your Freighter wallet first");
+      notifyCenter.error("Please connect your Freighter wallet first");
       await connect();
       return;
     }
 
     if (!formData.name.trim()) {
-      toast.error("Vault name is required");
+      notifyCenter.error("Vault name is required");
       return;
     }
 
     if (formData.guardians.length === 0) {
-      toast.error("At least one guardian is required");
+      notifyCenter.error("At least one guardian is required");
       return;
     }
 
     if (formData.approvalThreshold > formData.guardians.length + 1) {
-      toast.error("Approval threshold cannot exceed number of guardians");
+      notifyCenter.error("Approval threshold cannot exceed number of guardians");
       return;
     }
 
     if (!formData.beneficiaryAddress.trim()) {
-      toast.error("A beneficiary wallet address is required");
+      notifyCenter.error("A beneficiary wallet address is required");
       return;
     }
 
     if (!isValidAddress(formData.beneficiaryAddress, "stellar")) {
-      toast.error("Invalid beneficiary Stellar address (e.g. G...)");
+      notifyCenter.error("Invalid beneficiary Stellar address (e.g. G...)");
       return;
     }
 
@@ -256,8 +258,18 @@ const Vaults = () => {
       beneficiaryAddress: formData.beneficiaryAddress.trim(),
     };
 
+    const activeNetwork = ecosystem === "stellar" ? "stellar" : "avalanche";
+    const taskId = notifyCenter.trackTask({
+      title: `Creating vault "${draftForm.name}"`,
+      category: "transaction",
+      network: activeNetwork,
+    });
+
     setCreating(true);
     try {
+      notifyCenter.markSubmitted(taskId, {
+        description: "Submitting vault creation transaction...",
+      });
       const vaultId = await contractService.createVault(
         draftForm.name,
         draftForm.description,
@@ -266,9 +278,12 @@ const Vaults = () => {
       );
 
       if (!vaultId) {
-        toast.error("Vault created but ID was not returned");
+        notifyCenter.markFailed(taskId, "Vault created but ID was not returned");
       } else {
-        toast.success(`Vault #${vaultId} created successfully!`);
+        notifyCenter.markConfirmed(taskId, {
+          title: `Vault #${vaultId} created successfully!`,
+          network: activeNetwork,
+        });
         const nowTs = Math.floor(Date.now() / 1000);
         const ownerAddress = account || "";
         const gid = getVaultGID(ecosystem, chainId, vaultId);
@@ -308,13 +323,15 @@ const Vaults = () => {
             vaultId,
             draftForm.inactivityDays * 24 * 60 * 60
           );
-          toast.success(`Post-death timer set to ${draftForm.inactivityDays} days`);
+          notifyCenter.success(`Post-death timer set to ${draftForm.inactivityDays} days`, {
+            network: activeNetwork,
+          });
         } catch (policyError) {
           const policyMessage =
             policyError instanceof Error
               ? policyError.message
               : "Vault created, but release policy setup was skipped";
-          toast.error(policyMessage);
+          notifyCenter.error(policyMessage);
         }
 
         try {
@@ -324,7 +341,7 @@ const Vaults = () => {
             beneficiaryError instanceof Error
               ? beneficiaryError.message
               : "Vault created, but beneficiary setup was skipped";
-          toast.error(beneficiaryMessage);
+          notifyCenter.error(beneficiaryMessage);
         }
       }
 
@@ -341,7 +358,7 @@ const Vaults = () => {
       onClose();
       void loadVaults({ silent: true });
     } catch (error: any) {
-      toast.error(error.message || "Failed to create vault");
+      notifyCenter.markFailed(taskId, error.message || "Failed to create vault");
     } finally {
       setCreating(false);
     }
@@ -349,17 +366,29 @@ const Vaults = () => {
 
   const handleToggleEmergencyMode = async (vaultId: number, enabled: boolean) => {
     setTogglingEmergencyVaultId(vaultId);
+    const activeNetwork = ecosystem === "stellar" ? "stellar" : "avalanche";
+    const taskId = notifyCenter.trackTask({
+      title: `${enabled ? "Enabling" : "Disabling"} emergency mode for Vault #${vaultId}`,
+      category: "transaction",
+      network: activeNetwork,
+      onRetry: () => handleToggleEmergencyMode(vaultId, enabled),
+    });
     try {
+      notifyCenter.markSubmitted(taskId);
       await contractService.setEmergencyMode(vaultId, enabled);
       if (enabled) {
         const schedule = await contractService.getEmergencyUnlockSchedule(vaultId);
-        toast.success(
-          schedule.requested
+        notifyCenter.markConfirmed(taskId, {
+          title: schedule.requested
             ? "Emergency mode enabled. Unlock time is randomized on-chain and documents stay locked until VRF fulfillment."
-            : "Emergency mode enabled"
-        );
+            : "Emergency mode enabled",
+          network: activeNetwork,
+        });
       } else {
-        toast.success("Emergency mode disabled");
+        notifyCenter.markConfirmed(taskId, {
+          title: "Emergency mode disabled",
+          network: activeNetwork,
+        });
       }
 
       try {
@@ -371,7 +400,7 @@ const Vaults = () => {
 
       await loadVaults();
     } catch (error: any) {
-      toast.error(error.message || "Failed to update emergency mode");
+      notifyCenter.markFailed(taskId, error.message || "Failed to update emergency mode");
     } finally {
       setTogglingEmergencyVaultId(null);
     }
@@ -379,12 +408,26 @@ const Vaults = () => {
 
   const handleFulfillEmergencyDelay = async (vaultId: number) => {
     setTogglingEmergencyVaultId(vaultId);
+    const activeNetwork = ecosystem === "stellar" ? "stellar" : "avalanche";
+    const taskId = notifyCenter.trackTask({
+      title: `Fulfilling VRF unlock delay for Vault #${vaultId}`,
+      category: "transaction",
+      network: activeNetwork,
+      onRetry: () => handleFulfillEmergencyDelay(vaultId),
+    });
     try {
+      notifyCenter.markSubmitted(taskId);
       await contractService.fulfillEmergencyUnlockDelay(vaultId);
-      toast.success("Random delay submitted on-chain");
+      notifyCenter.markConfirmed(taskId, {
+        title: "Random delay submitted on-chain",
+        network: activeNetwork,
+      });
       await loadVaults();
     } catch (error: any) {
-      toast.error(error.message || "Unlock delay is not ready yet. Wait a few ledgers and try again.");
+      notifyCenter.markFailed(
+        taskId,
+        error.message || "Unlock delay is not ready yet. Wait a few ledgers and try again."
+      );
     } finally {
       setTogglingEmergencyVaultId(null);
     }
@@ -392,12 +435,28 @@ const Vaults = () => {
 
   const handleProveLife = async (vaultId: number) => {
     setProvingLifeVaultId(vaultId);
+    const activeNetwork = ecosystem === "stellar" ? "stellar" : "avalanche";
+    const taskId = notifyCenter.trackTask({
+      title: `Recording proof-of-life for Vault #${vaultId}`,
+      description:
+        activeNetwork === "stellar"
+          ? "Submitting check-in and extending Soroban state TTL"
+          : "Submitting proof-of-life transaction",
+      category: activeNetwork === "stellar" ? "soroban-ttl" : "transaction",
+      network: activeNetwork,
+      onRetry: () => handleProveLife(vaultId),
+    });
     try {
-      await contractService.recordProofOfLife(vaultId);
-      toast.success("Proof-of-life recorded");
+      notifyCenter.markSubmitted(taskId);
+      const txHash = await contractService.recordProofOfLife(vaultId);
+      notifyCenter.markConfirmed(taskId, {
+        title: "Proof-of-life recorded",
+        txHash: typeof txHash === "string" && txHash ? txHash : undefined,
+        network: activeNetwork,
+      });
       await loadVaults();
     } catch (error: any) {
-      toast.error(error.message || "Failed to record proof-of-life");
+      notifyCenter.markFailed(taskId, error.message || "Failed to record proof-of-life");
     } finally {
       setProvingLifeVaultId(null);
     }
