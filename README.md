@@ -13,6 +13,15 @@
 [![Vitest](https://img.shields.io/badge/Tests-918%20Passed-emerald?logo=vitest)](https://vitest.dev/)
 [![Soroban Tests](https://img.shields.io/badge/Soroban%20Tests-94%20Passed-brightgreen)](https://stellar.expert/explorer/testnet/contract/CCYKK34DEO2BJABJQ7DW5MZ6PYFC7MRJYTZL2QPKBFCXHR4P347EUFZL)
 [![Grants: Drips Wave](https://img.shields.io/badge/Grants-Drips%20Wave%20%26%20SCF-orange)](https://drips.network)
+
+  <p>
+    🌍 <strong>Translations:</strong>
+    <a href="README.md">English</a> •
+    <a href="docs/i18n/es/README.md">Español</a> •
+    <a href="docs/i18n/zh/README.md">简体中文</a> •
+    <a href="docs/i18n/fr/README.md">Français</a> •
+    <a href="docs/i18n/README.md">i18n Guide</a>
+  </p>
 </div>
 
 <br />
