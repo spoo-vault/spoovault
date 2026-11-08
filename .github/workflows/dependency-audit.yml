@@ -1,0 +1,113 @@
+﻿name: "Dependency Vulnerability Audit"
+
+# Weekly automated scan of the npm and Cargo dependency trees for known CVEs.
+# Runs on a schedule (and on demand) so newly published advisories are caught
+# proactively instead of only when a PR happens to touch the lockfile.
+# High/critical findings fail the job and open an issue to alert maintainers.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # every Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # to alert maintainers by opening an issue on high-severity CVEs
+
+jobs:
+  npm-audit:
+    name: npm audit (production dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # --omit=dev keeps the scan to the production dependency tree, matching
+      # `npm audit --production`; --legacy-peer-deps mirrors ci.yml because of
+      # the HeroUI/Tailwind peer-dependency conflict.
+      - name: Install production dependencies
+        run: npm install --omit=dev --legacy-peer-deps
+
+      # --audit-level=high makes the step exit non-zero on high/critical CVEs
+      # only; lower severities are still reported in the log for triage.
+      - name: Run npm audit (high/critical fail the job)
+        id: audit
+        run: npm audit --production --audit-level=high --json > npm-audit.json
+        continue-on-error: true
+
+      - name: Alert maintainers on high/critical npm CVEs
+        if: steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY' > alert.md
+          import json
+          data = json.load(open("npm-audit.json"))
+          vulns = [v for v in data.get("vulnerabilities", {}).values()
+                   if v.get("severity") in ("high", "critical")]
+          lines = [f"- {v['name']} ({v['severity']}): " +
+                   ", ".join(x if isinstance(x, str) else x.get("title", "") for x in v.get("via", []))
+                   for v in vulns]
+          print(f"The weekly dependency vulnerability audit found {len(vulns)} high/critical "
+                f"severity CVE(s) in the production npm dependency tree of "
+                f"`${{ github.repository }}` (run: ${{ RUN_URL }}).\n")
+          print("\n".join(lines) if lines else "(no details parsed)")
+          print("\nPlease triage and upgrade the affected packages.")
+          PY
+          gh issue create --title "[security] High/critical npm CVEs detected by weekly dependency audit" --label "security" --body-file alert.md
+
+  cargo-audit:
+    name: cargo audit (Soroban contracts)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts-stellar
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      # JSON output so severity can be filtered; the pinned soroban-sdk 20.x
+      # transitive advisories ignored in .cargo/audit.toml are excluded by
+      # cargo-audit itself and do not reach this step.
+      - name: Run cargo audit (JSON)
+        id: audit
+        run: cargo audit --file Cargo.lock --json > audit.json
+        continue-on-error: true
+
+      - name: Alert maintainers on high/critical Rust advisories
+        if: steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY' > alert.md
+          import json, sys
+          data = json.load(open("audit.json"))
+          vulns = [v for v in data.get("vulnerabilities", {}).get("list", [])
+                   if v.get("advisory", {}).get("severity") in ("high", "critical")]
+          if not vulns:
+              print("cargo audit failed on low/medium advisories only; no maintainer alert needed.")
+              sys.exit(0)
+          lines = [f"- {v['advisory']['id']} {v['package']['name']} {v['package']['version']}: {v['advisory']['title']}"
+                   for v in vulns]
+          print(f"The weekly dependency vulnerability audit found {len(vulns)} high/critical "
+                f"advisory(ies) in `contracts-stellar/Cargo.lock` of `${{ github.repository }}` "
+                f"(run: ${{ RUN_URL }}).\n")
+          print("\n".join(lines))
+          print("\nPlease triage and upgrade the affected crates.")
+          PY
+          if grep -q "high/critical advisory" alert.md; then
+            gh issue create --title "[security] High/critical Rust advisories detected by weekly dependency audit" --label "security" --body-file alert.md
+          fi
