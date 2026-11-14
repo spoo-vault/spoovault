@@ -1624,6 +1624,38 @@ mod cross_chain_revocation {
     }
 }
 
+#[test]
+fn test_upgrade_contract_rejects_invalid_stored_threshold() {
+    for threshold in [Some(0_u32), Some(3_u32), None] {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, SpooVaultStellar);
+        let client = SpooVaultStellarClient::new(&env, &contract_id);
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        client.init_admins(&vec![&env, admin_a.clone(), admin_b], &2);
+
+        // Simulate corrupt or migrated instance storage. init_admins itself
+        // rejects invalid thresholds, so this state cannot arise normally.
+        env.as_contract(&contract_id, || match threshold {
+            Some(value) => env.storage().instance().set(&DataKey::AdminThreshold, &value),
+            None => env.storage().instance().remove(&DataKey::AdminThreshold),
+        });
+
+        let hash = BytesN::from_array(&env, &[7_u8; 32]);
+        assert_eq!(
+            client.try_upgrade_contract(&admin_a, &hash),
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                UpgradeError::InvalidAdminThreshold as u32,
+            )))
+        );
+        assert!(!env.as_contract(&contract_id, || env
+            .storage()
+            .instance()
+            .has(&DataKey::UpgradeProposal)));
+    }
+}
+
 #[cfg(feature = "upgrade-tests")]
 /// Upgrade governance: contract-wide multi-sig admin authorization for
 /// `upgrade_contract` (Wasm code replacement) and `migrate`.
