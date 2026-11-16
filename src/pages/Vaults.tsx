@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ArkheLiveBanner } from "../components/ArkheLiveBanner";
 import {
   Card,
   CardBody,
@@ -450,6 +451,7 @@ const Vaults = () => {
   if (!isConnected) {
     return (
       <div className="min-h-[calc(100vh-11rem)] flex items-center justify-center">
+      <ArkheLiveBanner />
         <div className="w-full max-w-4xl rounded-2xl bg-gradient-to-r from-gray-900/50 to-[#040306] border border-gray-800 p-8 text-center">
           <div className="w-20 h-20 bg-gradient-to-br from-brand-700 to-brand-900 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <FiZap className="text-white text-3xl" />
