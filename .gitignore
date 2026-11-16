@@ -70,3 +70,4 @@ blob-report/
 CLAUDE.md
 .vercel
 .env*
+out/
