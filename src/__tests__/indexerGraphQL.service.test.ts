@@ -1,3 +1,4 @@
+// @ts-ignore
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import http from 'node:http';
 import { WebSocketServer, type WebSocket as WsSocket } from 'ws';

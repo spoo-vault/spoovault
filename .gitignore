@@ -68,3 +68,6 @@ blob-report/
 # Claude Code
 .claude
 CLAUDE.md
+.vercel
+.env*
+out/

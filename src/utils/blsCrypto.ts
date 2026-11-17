@@ -1,5 +1,5 @@
 import { bls12_381 } from '@noble/curves/bls12-381.js';
-import { sha256 } from '@noble/hashes/sha256';
+import { sha256 } from '@noble/hashes/sha2';
 import { pbkdf2 } from '@noble/hashes/pbkdf2';
 import { ethers } from 'ethers';
 import { BLSKeyPair, BLSSignatureShare, BLSAggregatedApprovalPayload } from '../types/bls';
