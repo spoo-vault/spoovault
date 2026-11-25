@@ -88,6 +88,7 @@
     "autoprefixer": "^10.4.14",
     "binaryen": "^132.0.0",
     "fake-indexeddb": "^6.2.5",
+    "fast-check": "^4.9.0",
     "happy-dom": "^20.11.6",
     "hardhat": "^2.22.0",
     "hardhat-gas-reporter": "^2.3.0",
