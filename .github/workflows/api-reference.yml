@@ -1,0 +1,26 @@
+name: TypeScript API reference
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run docs:api
+      - uses: actions/upload-artifact@v4
+        with:
+          name: typescript-api-reference
+          path: docs/api
+          if-no-files-found: error

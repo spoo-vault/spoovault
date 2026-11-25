@@ -173,6 +173,10 @@ npm run build
 
 ---
 
+### TypeScript API reference
+
+Run `npm run docs:api` and open `docs/api/index.html` to browse the generated reference for client services and utilities. The TypeScript API reference workflow also makes the site available as a downloadable artifact on pull requests and pushes to `main`.
+
 ## 🔌 Automated Keeper & Proof-of-Life Relay
 
 The SpooVault Keeper Relayer allows creators to maintain an unbroken proof-of-life signal without continuous manual wallet signing. See the [Keeper Relay Architecture Documentation](docs/HEARTBEAT_RELAYER.md) for authorization specifications, security nonces, and automated cron setups.
