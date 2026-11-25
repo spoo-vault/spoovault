@@ -68,3 +68,6 @@ blob-report/
 # Claude Code
 .claude
 CLAUDE.md
+
+# Generated TypeScript API reference
+/docs/api/

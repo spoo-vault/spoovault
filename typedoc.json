@@ -1,0 +1,9 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "SpooVault Client SDK",
+  "entryPoints": ["src/services", "src/utils"],
+  "entryPointStrategy": "expand",
+  "exclude": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**"],
+  "out": "docs/api",
+  "readme": "none"
+}
